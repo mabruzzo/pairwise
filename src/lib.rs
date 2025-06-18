@@ -86,8 +86,8 @@ mod tests {
         accum.initialize(&mut data);
         accum.consume(&mut data, 4.0, 1.0, 0);
         accum.consume(&mut data, 8.0, 1.0, 0);
-        let mut data_other = Data::new(1).unwrap();
 
+        let mut data_other = Data::new(1).unwrap();
         accum.initialize(&mut data_other);
         accum.consume(&mut data_other, 1.0, 1.0, 0);
         accum.consume(&mut data_other, 3.0, 1.0, 0);
