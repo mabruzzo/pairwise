@@ -47,7 +47,7 @@ impl Mean {
     pub fn merge(&self, data: &mut Data, other: &Data) {
         for i in 0..data.weight.len() {
             data.total[i] += other.total[i];
-            data.weight[i] += other.total[i];
+            data.weight[i] += other.weight[i];
         }
     }
 }
@@ -62,7 +62,7 @@ mod tests {
         let mut data = Data::new(1).unwrap();
         accum.initialize(&mut data);
         accum.consume(&mut data, 4.0, 1.0, 0_usize);
-        let (mean_vec, weight_vec) = accum.get_value(&mut data);
+        let (mean_vec, weight_vec) = accum.get_value(&data);
         assert_eq!(mean_vec[0], 4.0);
         assert_eq!(weight_vec[0], 1.0);
     }
@@ -74,8 +74,26 @@ mod tests {
         accum.initialize(&mut data);
         accum.consume(&mut data, 4.0, 1.0, 0);
         accum.consume(&mut data, 8.0, 1.0, 0);
-        let (mean_vec, weight_vec) = accum.get_value(&mut data);
+        let (mean_vec, weight_vec) = accum.get_value(&data);
         assert_eq!(mean_vec[0], 6.0);
         assert_eq!(weight_vec[0], 2.0);
+    }
+
+    #[test]
+    fn merge() {
+        let accum = Mean {};
+        let mut data = Data::new(1).unwrap();
+        accum.initialize(&mut data);
+        accum.consume(&mut data, 4.0, 1.0, 0);
+        accum.consume(&mut data, 8.0, 1.0, 0);
+        let mut data_other = Data::new(1).unwrap();
+
+        accum.initialize(&mut data_other);
+        accum.consume(&mut data_other, 1.0, 1.0, 0);
+        accum.consume(&mut data_other, 3.0, 1.0, 0);
+        accum.merge(&mut data, &data_other);
+        let (mean_vec, weight_vec) = accum.get_value(&data);
+        assert_eq!(mean_vec[0], 4.0);
+        assert_eq!(weight_vec[0], 4.0);
     }
 }
