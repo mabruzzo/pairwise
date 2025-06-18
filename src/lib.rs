@@ -52,53 +52,29 @@ impl Mean {
     }
 }
 
-struct Accumulator {
-    kernel: Mean,
-    data: Data,
-}
-
-impl Accumulator {
-    pub fn new(n: usize) -> Result<Accumulator, String> {
-        Ok(Accumulator {
-            kernel: Mean {},
-            data: Data::new(n)?,
-        })
-    }
-
-    /// Apply the accumulator to a pair of values
-    pub fn consume(&mut self, val: f64, weight: f64, partition_idx: usize) {
-        self.kernel
-            .consume(&mut self.data, val, weight, partition_idx);
-    }
-
-    pub fn get_value(&self) -> (Vec<f64>, Vec<f64>) {
-        self.kernel.get_value(&self.data)
-    }
-}
-
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn consume_once() {
-        let mut accum = Accumulator::new(1).unwrap();
-        accum.consume(4.0, 1.0, 0_usize);
-        let (mean_vec, weight_vec) = accum.get_value();
+        let accum = Mean {};
+        let mut data = Data::new(1).unwrap();
+        accum.initialize(&mut data);
+        accum.consume(&mut data, 4.0, 1.0, 0_usize);
+        let (mean_vec, weight_vec) = accum.get_value(&mut data);
         assert_eq!(mean_vec[0], 4.0);
         assert_eq!(weight_vec[0], 1.0);
     }
 
     #[test]
     fn consume_twice() {
-        let mut accum = Accumulator::new(1).unwrap();
-        accum.consume(4.0, 1.0, 0);
-        accum.consume(8.0, 1.0, 0);
-        let (mean_vec, weight_vec) = accum.get_value();
+        let accum = Mean {};
+        let mut data = Data::new(1).unwrap();
+        accum.initialize(&mut data);
+        accum.consume(&mut data, 4.0, 1.0, 0);
+        accum.consume(&mut data, 8.0, 1.0, 0);
+        let (mean_vec, weight_vec) = accum.get_value(&mut data);
         assert_eq!(mean_vec[0], 6.0);
         assert_eq!(weight_vec[0], 2.0);
     }
