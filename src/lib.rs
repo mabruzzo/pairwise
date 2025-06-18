@@ -29,9 +29,9 @@ impl Mean {
         data.total.fill(0.0);
     }
 
-    pub fn consume(&self, data: &mut Data, val: f64, weight: f64, index: usize) {
-        data.weight[index] += weight;
-        data.total[index] += val * weight;
+    pub fn consume(&self, data: &mut Data, val: f64, weight: f64, partition_idx: usize) {
+        data.weight[partition_idx] += weight;
+        data.total[partition_idx] += val * weight;
     }
 
     pub fn get_value(&self, data: &Data) -> (Vec<f64>, Vec<f64>) {
@@ -66,8 +66,9 @@ impl Accumulator {
     }
 
     /// Apply the accumulator to a pair of values
-    pub fn consume(&mut self, val: f64, weight: f64, index: usize) {
-        self.kernel.consume(&mut self.data, val, weight, index);
+    pub fn consume(&mut self, val: f64, weight: f64, partition_idx: usize) {
+        self.kernel
+            .consume(&mut self.data, val, weight, partition_idx);
     }
 
     pub fn get_value(&self) -> (Vec<f64>, Vec<f64>) {
