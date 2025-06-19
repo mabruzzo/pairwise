@@ -1,6 +1,7 @@
-use std::{f64::DIGITS, process::Output, usize};
+use std::usize;
 
-struct Mean {
+// TODO undo pub?
+pub struct Mean {
     weight: Vec<f64>,
     total: Vec<f64>,
 }
@@ -51,7 +52,8 @@ impl Mean {
 }
 
 // TODO: implement PointProps::new (i.e. no attributes should be public)
-struct PointProps<'a> {
+// TODO undo pub?
+pub struct PointProps<'a> {
     // the convention used in pyvsf holds that different vector-components are
     // indexed along the slow axis.
     //
@@ -98,10 +100,42 @@ fn get_distance_bin(distance_squared: f64, squared_bin_edges: &[f64]) -> Option<
     }
 }
 
+/// calculate the squared norm of a (mathematical) vector which is part of a
+/// rust vec that encodes a list of vectors with dimension on the "slow axis"
+fn squared_norm(v: &[f64], i: usize, spatial_dim_stride: usize, n_spatial_dims: usize) -> f64 {
+    let mut sum = 0.0;
+    for k in 0..n_spatial_dims {
+        let idx = i + k * spatial_dim_stride;
+        sum += v[idx].powi(2);
+    }
+    sum
+}
+
+/// calculate the squared norm of the difference between two (mathematical) vectors
+/// which are part of rust vecs that encodes a list of vectors with dimension on
+/// the "slow axis"
+fn squared_diff_norm(
+    v1: &[f64],
+    v2: &[f64],
+    i1: usize,
+    i2: usize,
+    spatial_dim_stride_1: usize,
+    spatial_dim_stride_2: usize,
+    n_spatial_dims: usize,
+) -> f64 {
+    let mut sum = 0.0;
+    for k in 0..n_spatial_dims {
+        let idx1 = i1 + k * spatial_dim_stride_1;
+        let idx2 = i2 + k * spatial_dim_stride_2;
+        sum += (v1[idx1] - v2[idx2]).powi(2);
+    }
+    sum
+}
+
 // maybe we want to make separate functions for auto-stats vs
 // cross-stats
 // TODO: generalize to allow faster calculations for regular spatial grids
-fn apply_accum(
+pub fn apply_accum(
     out: &mut Vec<f64>,
     weights_out: &mut Vec<f64>,
     accum: &mut Mean,
@@ -137,21 +171,25 @@ fn apply_accum(
 
     // complicated case first: two arrays, we combine points with pairwise_op
     if let Some(points_b) = points_b {
-        for i in 0..points_a.n_points {
-            for j in 0..points_b.n_points {
+        for i_a in 0..points_a.n_points {
+            for i_b in 0..points_b.n_points {
                 // compute the distance between the points, then the distance bin
-                let mut distance_squared = 0.0;
-                for k in 0..points_a.n_spatial_dims {
-                    distance_squared += (points_a.positions[i + k * points_a.spatial_dim_stride]
-                        - points_b.positions[j + k * points_b.spatial_dim_stride])
-                        .powi(2);
-                }
+                let distance_squared = squared_diff_norm(
+                    points_a.positions,
+                    points_b.positions,
+                    i_a,
+                    i_b,
+                    points_a.spatial_dim_stride,
+                    points_b.spatial_dim_stride,
+                    points_a.n_spatial_dims,
+                );
                 let Some(distance_bin) = get_distance_bin(distance_squared, &squared_bin_edges)
                 else {
                     continue;
                 };
 
-                // get the value
+                // get the value. This is hardcoded to correspont to the velocity structure
+                // function when accumulated with Mean
                 // TODO switch on pairwise op?
                 // TODO I want to talk this design through before we roll further with it
                 // I was imagining that there would be separate AccumKernels for, e.g.
@@ -159,10 +197,18 @@ fn apply_accum(
                 // different pairwise_ops. I think it might be possible to write some
                 // nice "AccumKernel combinators" to make this clean, but maybe it would
                 // require too much magic.
-                let val = points_a.values[i] - points_b.values[j];
+                let val = squared_diff_norm(
+                    &points_a.values,
+                    &points_b.values,
+                    i_a,
+                    i_b,
+                    points_a.spatial_dim_stride,
+                    points_b.spatial_dim_stride,
+                    points_a.n_spatial_dims,
+                );
 
                 // get the weight
-                let pair_weight = points_a.get_weight(i) * points_b.get_weight(j);
+                let pair_weight = points_a.get_weight(i_a) * points_b.get_weight(i_b);
 
                 accum.consume(val, pair_weight, distance_bin);
             }
@@ -171,16 +217,26 @@ fn apply_accum(
     } else {
         // single array case
         for i in 0..points_a.n_points {
-            let mut distance_squared = 0.0;
-            for k in 0..points_a.n_spatial_dims {
-                let idx = i + k * points_a.spatial_dim_stride;
-                distance_squared += points_a.positions[idx].powi(2);
-            }
+            let distance_squared = squared_norm(
+                &points_a.positions,
+                i,
+                points_a.spatial_dim_stride,
+                points_a.n_spatial_dims,
+            );
             let Some(distance_bin) = get_distance_bin(distance_squared, &squared_bin_edges) else {
                 continue;
             };
 
-            accum.consume(points_a.values[i], points_a.get_weight(i), distance_bin);
+            println!("computing value norm");
+            let val = squared_norm(
+                &points_a.values,
+                i,
+                points_a.spatial_dim_stride,
+                points_a.n_spatial_dims,
+            )
+            .sqrt();
+
+            accum.consume(val, points_a.get_weight(i), distance_bin);
         }
         accum.get_value(out, weights_out);
     }
@@ -285,12 +341,14 @@ mod tests {
             None,
             &bin_edges,
         );
-        assert!(result == Ok(()));
-        // TODO check that this is actually right
+        assert_eq!(result, Ok(()));
+        assert_eq!(weight_vec[0], 0.);
+        assert_eq!(weight_vec[1], 2.);
+        assert!(mean_vec[0].is_nan());
+        assert!((mean_vec[1] - 9.55751288048894).abs() < 1e-10); // artisinally calculated
 
         // should fail for non-monotonic bins
         let unsorted_bin_edges = vec![25.0, 21.0, 17.0];
-
         let result = apply_accum(
             &mut mean_vec,
             &mut weight_vec,
@@ -309,9 +367,8 @@ mod tests {
             weights: None,
             n_points: 6_usize,
             spatial_dim_stride: 6_usize,
-            n_spatial_dims: 3_usize,
+            n_spatial_dims: 2_usize,
         };
-
         let result = apply_accum(
             &mut mean_vec,
             &mut weight_vec,
