@@ -81,7 +81,12 @@ fn apply_accum(
     bin_edges: &[f64],
     /* pairwise_op, */ // probably an Enum
 ) -> Result<(), String> {
-    // TODO: check that bin_edges monotonically increases
+    // Check that bin_edges are monotonically increasing
+    if !bin_edges.is_sorted() {
+        return Err(String::from(
+            "bin_edges must be sorted (monotonically increasing)",
+        ));
+    }
     // TODO: if points_b is not None, make sure there is agreement in the
     //       n_spatial_dims attribute
     Err(String::from("Not implemented yet!"))
@@ -175,5 +180,11 @@ mod tests {
 
         let result = apply_accum(&mut accum, &points, None, &bin_edges);
         assert!(result.is_err());
+
+        // should fail for non-monotonic bins
+        let bin_edges = vec![25.0, 21.0, 17.0];
+        let result = apply_accum(&mut accum, &points, None, &bin_edges);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("monotonic"));
     }
 }
