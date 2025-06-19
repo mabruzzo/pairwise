@@ -1,4 +1,4 @@
-use std::usize;
+use std::{f64::DIGITS, process::Output, usize};
 
 struct Mean {
     weight: Vec<f64>,
@@ -18,6 +18,7 @@ impl Mean {
         }
     }
 
+    // TODO this should potentially be merged with new
     pub fn initialize(&mut self) {
         self.weight.fill(0.0);
         self.total.fill(0.0);
@@ -49,16 +50,13 @@ impl Mean {
     }
 }
 
-// I would potentially like to see us do better than this, but it seemse like
-// ok place to start
-//
 // TODO: implement PointProps::new (i.e. no attributes should be public)
 struct PointProps<'a> {
     // the convention used in pyvsf holds that different vector-components are
     // indexed along the slow axis.
     //
-    // In other words, the ith component of the jth point (for positions &
-    // values) is located at an index of `j + i*spatial_dim_stride`
+    // In other words, the kth component of the ith point (for positions &
+    // values) is located at an index of `i + k*spatial_dim_stride`
     pub positions: &'a [f64],
     // for the moment, let's assume that values always holds vector-values
     // (since that is more general)
@@ -72,15 +70,50 @@ struct PointProps<'a> {
     pub n_spatial_dims: usize,
 }
 
+impl PointProps<'_> {
+    pub fn get_weight(&self, idx: usize) -> f64 {
+        if let Some(weights) = self.weights {
+            weights[idx]
+        } else {
+            1.0
+        }
+    }
+}
+
+// TODO use binary search, and have specialized version for regularly spaced bins?
+fn get_distance_bin(distance_squared: f64, squared_bin_edges: &[f64]) -> Option<usize> {
+    // index of first element greater than distance_squared
+    // (or squared_bin_edges.len() if none are greater)
+    let mut first_greater = 0;
+    for &edge in squared_bin_edges.iter() {
+        if distance_squared < edge {
+            break;
+        }
+        first_greater += 1;
+    }
+    if (first_greater == squared_bin_edges.len()) || (first_greater == 0) {
+        None
+    } else {
+        Some(first_greater - 1)
+    }
+}
+
 // maybe we want to make separate functions for auto-stats vs
 // cross-stats
+// TODO: generalize to allow faster calculations for regular spatial grids
 fn apply_accum(
+    out: &mut Vec<f64>,
+    weights_out: &mut Vec<f64>,
     accum: &mut Mean,
     points_a: &PointProps,
     points_b: Option<&PointProps>,
+    // TODO decide bin, partition, or something else, then unify the naming
+    // TODO should bin_edges should be a member of the AccumKernel Struct
     bin_edges: &[f64],
     /* pairwise_op, */ // probably an Enum
 ) -> Result<(), String> {
+    // TODO check size of output buffers
+
     // Check that bin_edges are monotonically increasing
     if !bin_edges.is_sorted() {
         return Err(String::from(
@@ -98,7 +131,60 @@ fn apply_accum(
         }
     }
 
-    Err(String::from("Not implemented yet!"))
+    accum.initialize();
+    // I think this alloc is worth it? Could use a buffer?
+    let squared_bin_edges: Vec<f64> = bin_edges.iter().map(|x| x.powi(2)).collect();
+
+    // complicated case first: two arrays, we combine points with pairwise_op
+    if let Some(points_b) = points_b {
+        for i in 0..points_a.n_points {
+            for j in 0..points_b.n_points {
+                // compute the distance between the points, then the distance bin
+                let mut distance_squared = 0.0;
+                for k in 0..points_a.n_spatial_dims {
+                    distance_squared += (points_a.positions[i + k * points_a.spatial_dim_stride]
+                        - points_b.positions[j + k * points_b.spatial_dim_stride])
+                        .powi(2);
+                }
+                let Some(distance_bin) = get_distance_bin(distance_squared, &squared_bin_edges)
+                else {
+                    continue;
+                };
+
+                // get the value
+                // TODO switch on pairwise op?
+                // TODO I want to talk this design through before we roll further with it
+                // I was imagining that there would be separate AccumKernels for, e.g.
+                // structure functions and correlations, rather than using Mean with
+                // different pairwise_ops. I think it might be possible to write some
+                // nice "AccumKernel combinators" to make this clean, but maybe it would
+                // require too much magic.
+                let val = points_a.values[i] - points_b.values[j];
+
+                // get the weight
+                let pair_weight = points_a.get_weight(i) * points_b.get_weight(j);
+
+                accum.consume(val, pair_weight, distance_bin);
+            }
+            accum.get_value(out, weights_out);
+        }
+    } else {
+        // single array case
+        for i in 0..points_a.n_points {
+            let mut distance_squared = 0.0;
+            for k in 0..points_a.n_spatial_dims {
+                let idx = i + k * points_a.spatial_dim_stride;
+                distance_squared += points_a.positions[idx].powi(2);
+            }
+            let Some(distance_bin) = get_distance_bin(distance_squared, &squared_bin_edges) else {
+                continue;
+            };
+
+            accum.consume(points_a.values[i], points_a.get_weight(i), distance_bin);
+        }
+        accum.get_value(out, weights_out);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -178,21 +264,41 @@ mod tests {
              3.,  4.,  5.,  6.,  7.,  8.,
         ];
 
+        // output buffers
+        let mut mean_vec = vec![0.0; 3];
+        let mut weight_vec = vec![0.0; 3];
+
         let points = PointProps {
             positions: &positions,
             values: &velocities,
             weights: None,
             n_points: 6_usize,
             spatial_dim_stride: 6_usize,
-            n_spatial_dims: 6_usize,
+            n_spatial_dims: 3_usize,
         };
 
-        let result = apply_accum(&mut accum, &points, None, &bin_edges);
-        assert!(result.is_err());
+        let result = apply_accum(
+            &mut mean_vec,
+            &mut weight_vec,
+            &mut accum,
+            &points,
+            None,
+            &bin_edges,
+        );
+        assert!(result == Ok(()));
+        // TODO check that this is actually right
 
         // should fail for non-monotonic bins
         let unsorted_bin_edges = vec![25.0, 21.0, 17.0];
-        let result = apply_accum(&mut accum, &points, None, &unsorted_bin_edges);
+
+        let result = apply_accum(
+            &mut mean_vec,
+            &mut weight_vec,
+            &mut accum,
+            &points,
+            None,
+            &unsorted_bin_edges,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("monotonic"));
 
@@ -205,7 +311,15 @@ mod tests {
             spatial_dim_stride: 6_usize,
             n_spatial_dims: 3_usize,
         };
-        let result = apply_accum(&mut accum, &points, Some(&points_b), &bin_edges);
+
+        let result = apply_accum(
+            &mut mean_vec,
+            &mut weight_vec,
+            &mut accum,
+            &points,
+            Some(&points_b),
+            &bin_edges,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("spatial dimensions"));
     }
