@@ -28,7 +28,7 @@ impl Mean {
         self.total[partition_idx] += val * weight;
     }
 
-    pub fn get_value(&self, out: &mut Vec<f64>, weights_out: &mut Vec<f64>) {
+    pub fn get_value(&self, out: &mut [f64], weights_out: &mut [f64]) {
         for i in 0..self.weight.len() {
             // TODO need to think about divide by 0
             out[i] = self.total[i] / self.weight[i];
