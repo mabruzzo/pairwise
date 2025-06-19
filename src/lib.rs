@@ -87,8 +87,17 @@ fn apply_accum(
             "bin_edges must be sorted (monotonically increasing)",
         ));
     }
-    // TODO: if points_b is not None, make sure there is agreement in the
-    //       n_spatial_dims attribute
+
+    //  if points_b is not None, make sure a and b have the same number of
+    // spatial dimensions
+    if let Some(points_b) = points_b {
+        if points_a.n_spatial_dims != points_b.n_spatial_dims {
+            return Err(String::from(
+                "points_a and points_b must have the same number of spatial dimensions",
+            ));
+        }
+    }
+
     Err(String::from("Not implemented yet!"))
 }
 
@@ -182,9 +191,22 @@ mod tests {
         assert!(result.is_err());
 
         // should fail for non-monotonic bins
-        let bin_edges = vec![25.0, 21.0, 17.0];
-        let result = apply_accum(&mut accum, &points, None, &bin_edges);
+        let unsorted_bin_edges = vec![25.0, 21.0, 17.0];
+        let result = apply_accum(&mut accum, &points, None, &unsorted_bin_edges);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("monotonic"));
+
+        // should fail for mismatched spatial dimensions
+        let points_b = PointProps {
+            positions: &positions,
+            values: &velocities,
+            weights: None,
+            n_points: 6_usize,
+            spatial_dim_stride: 6_usize,
+            n_spatial_dims: 3_usize,
+        };
+        let result = apply_accum(&mut accum, &points, Some(&points_b), &bin_edges);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("spatial dimensions"));
     }
 }
