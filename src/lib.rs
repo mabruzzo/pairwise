@@ -49,6 +49,44 @@ impl Mean {
     }
 }
 
+// I would potentially like to see us do better than this, but it seemse like
+// ok place to start
+//
+// TODO: implement PointProps::new (i.e. no attributes should be public)
+struct PointProps<'a> {
+    // the convention used in pyvsf holds that different vector-components are
+    // indexed along the slow axis.
+    //
+    // In other words, the ith component of the jth point (for positions &
+    // values) is located at an index of `j + i*spatial_dim_stride`
+    pub positions: &'a [f64],
+    // for the moment, let's assume that values always holds vector-values
+    // (since that is more general)
+    pub values: &'a [f64],
+    pub weights: Option<&'a [f64]>,
+    pub n_points: usize,
+    // we may want to just get rid of spatial_dim_stride and assume contiguous
+    // (i.e. spatial_dim_stride == n_points)
+    pub spatial_dim_stride: usize,
+    // we could potentially handle this separately
+    pub n_spatial_dims: usize,
+}
+
+// maybe we want to make separate functions for auto-stats vs
+// cross-stats
+fn apply_accum(
+    accum: &mut Mean,
+    points_a: &PointProps,
+    points_b: Option<&PointProps>,
+    bin_edges: &[f64],
+    /* pairwise_op, */ // probably an Enum
+) -> Result<(), String> {
+    // TODO: check that bin_edges monotonically increases
+    // TODO: if points_b is not None, make sure there is agreement in the
+    //       n_spatial_dims attribute
+    Err(String::from("Not implemented yet!"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,5 +137,43 @@ mod tests {
         accum.get_value(&mut mean_vec, &mut weight_vec);
         assert_eq!(mean_vec[0], 4.0);
         assert_eq!(weight_vec[0], 4.0);
+    }
+
+    #[test]
+    fn test_apply_accum() {
+        // this is based on some inputs from pyvsf:tests/test_vsf_props
+
+        // set up our separation bins (they must monotonically increase)
+        let bin_edges = vec![17.0, 21.0, 25.0];
+
+        // set up our accumulator
+        let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
+        accum.initialize();
+
+        #[rustfmt::skip]
+        let positions = vec![
+             6.,  7.,  8.,  9., 10., 11.,
+            12., 13., 14., 15., 16., 17.,
+            18., 19., 20., 21., 22., 23.,
+        ];
+
+        #[rustfmt::skip]
+        let velocities = vec![
+            -9., -8., -7., -6., -5., -4.,
+            -3., -2., -1.,  0.,  1.,  2.,
+             3.,  4.,  5.,  6.,  7.,  8.,
+        ];
+
+        let points = PointProps {
+            positions: &positions,
+            values: &velocities,
+            weights: None,
+            n_points: 6_usize,
+            spatial_dim_stride: 6_usize,
+            n_spatial_dims: 6_usize,
+        };
+
+        let result = apply_accum(&mut accum, &points, None, &bin_edges);
+        assert!(result.is_err());
     }
 }
