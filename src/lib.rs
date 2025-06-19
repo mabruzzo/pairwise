@@ -1,4 +1,4 @@
-use std::{str::FromStr, usize};
+use std::usize;
 
 struct Data {
     // generalize these to be the registers required by the accumulator
@@ -34,16 +34,19 @@ impl Mean {
         data.total[partition_idx] += val * weight;
     }
 
-    pub fn get_value(&self, data: &Data) -> (Vec<f64>, Vec<f64>) {
-        let mut mean = vec![0.0; data.weight.len()];
+    pub fn get_value(&self, out: &mut Vec<f64>, weights_out: &mut Vec<f64>, data: &Data) {
         for i in 0..data.weight.len() {
             // TODO need to think about divide by 0
-            mean[i] = data.total[i] / data.weight[i];
+            out[i] = data.total[i] / data.weight[i];
+
+            // is this the most efficient way to do this?
+            weights_out[i] = data.weight[i];
         }
-        (mean, data.weight.clone())
     }
 
     // TODO consider default implementation
+    // It would only work in cases where the registers are purely additive,
+    // which might not be idomatic.
     pub fn merge(&self, data: &mut Data, other: &Data) {
         for i in 0..data.weight.len() {
             data.total[i] += other.total[i];
@@ -62,7 +65,11 @@ mod tests {
         let mut data = Data::new(1).unwrap();
         accum.initialize(&mut data);
         accum.consume(&mut data, 4.0, 1.0, 0_usize);
-        let (mean_vec, weight_vec) = accum.get_value(&data);
+
+        let mut mean_vec = vec![0.0; data.weight.len()];
+        let mut weight_vec = vec![0.0; data.weight.len()];
+        accum.get_value(&mut mean_vec, &mut weight_vec, &data);
+
         assert_eq!(mean_vec[0], 4.0);
         assert_eq!(weight_vec[0], 1.0);
     }
@@ -74,7 +81,10 @@ mod tests {
         accum.initialize(&mut data);
         accum.consume(&mut data, 4.0, 1.0, 0);
         accum.consume(&mut data, 8.0, 1.0, 0);
-        let (mean_vec, weight_vec) = accum.get_value(&data);
+
+        let mut mean_vec = vec![0.0; data.weight.len()];
+        let mut weight_vec = vec![0.0; data.weight.len()];
+        accum.get_value(&mut mean_vec, &mut weight_vec, &data);
         assert_eq!(mean_vec[0], 6.0);
         assert_eq!(weight_vec[0], 2.0);
     }
@@ -92,7 +102,10 @@ mod tests {
         accum.consume(&mut data_other, 1.0, 1.0, 0);
         accum.consume(&mut data_other, 3.0, 1.0, 0);
         accum.merge(&mut data, &data_other);
-        let (mean_vec, weight_vec) = accum.get_value(&data);
+
+        let mut mean_vec = vec![0.0; data.weight.len()];
+        let mut weight_vec = vec![0.0; data.weight.len()];
+        accum.get_value(&mut mean_vec, &mut weight_vec, &data);
         assert_eq!(mean_vec[0], 4.0);
         assert_eq!(weight_vec[0], 4.0);
     }
