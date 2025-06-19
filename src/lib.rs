@@ -73,6 +73,7 @@ pub struct PointProps<'a> {
 }
 
 impl PointProps<'_> {
+    /// If no weights are provided, returns 1.0, i.e., weights are just counts.
     pub fn get_weight(&self, idx: usize) -> f64 {
         if let Some(weights) = self.weights {
             weights[idx]
@@ -83,6 +84,8 @@ impl PointProps<'_> {
 }
 
 // TODO use binary search, and have specialized version for regularly spaced bins?
+/// Get the index of the bin that the squared distance falls into.
+/// Returns None if its out of bounds.
 fn get_distance_bin(distance_squared: f64, squared_bin_edges: &[f64]) -> Option<usize> {
     // index of first element greater than distance_squared
     // (or squared_bin_edges.len() if none are greater)
@@ -100,7 +103,7 @@ fn get_distance_bin(distance_squared: f64, squared_bin_edges: &[f64]) -> Option<
     }
 }
 
-/// calculate the squared norm of a (mathematical) vector which is part of a
+/// calculate the squared norm of the `i`th (mathematical) vector in a
 /// rust vec that encodes a list of vectors with dimension on the "slow axis"
 fn squared_norm(v: &[f64], i: usize, spatial_dim_stride: usize, n_spatial_dims: usize) -> f64 {
     let mut sum = 0.0;
