@@ -1,5 +1,3 @@
-use std::usize;
-
 pub struct Mean {
     weight: Vec<f64>,
     total: Vec<f64>,
@@ -61,7 +59,7 @@ impl<'a> PointProps<'a> {
         weights: Option<&'a [f64]>,
         n_spatial_dims: usize,
     ) -> Result<PointProps<'a>, &'static str> {
-        if positions.len() == 0 {
+        if positions.is_empty() {
             return Err("positions must hold at least n_spatial_dims");
         } else if positions.len() % n_spatial_dims != 0 {
             return Err("the length of positions must be an integer multiple of n_spatial_dims");
@@ -69,10 +67,10 @@ impl<'a> PointProps<'a> {
         let n_points = positions.len() / n_spatial_dims;
 
         if weights.is_some_and(|w| w.len() != n_points) {
-            return Err("weights must be have the same number of points as positions");
+            Err("weights must be have the same number of points as positions")
         } else if values.len() != n_points && values.len() != positions.len() {
             // assumes vector or scalar values
-            return Err("values must be have the same number of points as positions");
+            Err("values must be have the same number of points as positions")
         } else {
             Ok(Self {
                 positions,
@@ -154,13 +152,13 @@ fn apply_accum_helper<const CROSS: bool>(
                 points_b.n_points,
                 points_a.n_spatial_dims,
             );
-            if let Some(distance_bin_idx) = get_distance_bin(distance_squared, &squared_bin_edges) {
+            if let Some(distance_bin_idx) = get_distance_bin(distance_squared, squared_bin_edges) {
                 // get the value. This is hardcoded to correspont to the velocity structure
                 // function when accumulated with Mean
                 // TODO switch on pairwise op?
                 let val = squared_diff_norm(
-                    &points_a.values,
-                    &points_b.values,
+                    points_a.values,
+                    points_b.values,
                     i_a,
                     i_b,
                     points_a.n_points,
@@ -217,9 +215,9 @@ pub fn apply_accum(
     let squared_bin_edges: Vec<f64> = distance_bin_edges.iter().map(|x| x.powi(2)).collect();
 
     if let Some(points_b) = points_b {
-        apply_accum_helper::<false>(accum, &points_a, &points_b, &squared_bin_edges)
+        apply_accum_helper::<false>(accum, points_a, points_b, &squared_bin_edges)
     } else {
-        apply_accum_helper::<true>(accum, &points_a, &points_a, &squared_bin_edges)
+        apply_accum_helper::<true>(accum, points_a, points_a, &squared_bin_edges)
     }
     Ok(())
 }
@@ -380,7 +378,7 @@ mod tests {
         let bin_edges = [2., 6., 10., 15.];
 
         // the expected results were printed by pyvsf
-        let expected_mean = [4.206409104095845, 7.505553499465134, std::f64::NAN];
+        let expected_mean = [4.206409104095845, 7.505553499465134, f64::NAN];
         let expected_weight = [7., 3., 0.];
 
         // perform the calculation!
