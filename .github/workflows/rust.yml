@@ -10,14 +10,42 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  # in the future, we may want to only collect coverage for a subset of tests
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - name: Install Rust and rustfmt
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        components: llvm-tools
     - name: Build
+      env:
+        RUSTFLAGS: -Cinstrument-coverage
       run: cargo build --verbose
-    - name: Run tests
+    - name: Build and Run
+      env:
+        RUSTFLAGS: -Cinstrument-coverage
+        LLVM_PROFILE_FILE: pairwise-%p-%m.profraw
       run: cargo test --verbose
+    - name: Generate coverage
+      run: |
+        cargo install grcov
+        grcov $(find . -name "pairwise-*.profraw" -print) \
+          --branch \
+          --ignore-not-existing \
+          --binary-path ./target/debug/ \
+          -s . \
+          -t lcov \
+          --ignore "/*" \
+          -o lcov.info
+    - name: Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        verbose: true
+        fail_ci_if_error: true
 
   rustfmt:
     runs-on: ubuntu-latest
