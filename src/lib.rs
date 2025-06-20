@@ -133,12 +133,16 @@ fn squared_diff_norm(
     sum
 }
 
-fn apply_accum_helper<const CROSS: bool>(
+fn apply_accum_helper<const CROSS: bool, F>(
     accum: &mut Mean,
     points_a: &PointProps,
     points_b: &PointProps,
     squared_bin_edges: &[f64],
-) {
+    pairwise_fn: F,
+) where
+    // using the trait Fn instead of just taking a closure lets the comiler specialize
+    F: Fn(&PointProps, &PointProps, usize, usize) -> f64,
+{
     for i_a in 0..points_a.n_points {
         let i_b_start = if CROSS { i_a + 1 } else { 0 };
         for i_b in i_b_start..points_b.n_points {
@@ -156,16 +160,7 @@ fn apply_accum_helper<const CROSS: bool>(
                 // get the value. This is hardcoded to correspond to the velocity structure
                 // function when accumulated with Mean
                 // TODO switch on pairwise op?
-                let val = squared_diff_norm(
-                    points_a.values,
-                    points_b.values,
-                    i_a,
-                    i_b,
-                    points_a.n_points,
-                    points_b.n_points,
-                    points_a.n_spatial_dims,
-                )
-                .sqrt();
+                let val = pairwise_fn(points_a, points_b, i_a, i_b);
 
                 // get the weight
                 let pair_weight = points_a.get_weight(i_a) * points_b.get_weight(i_b);
@@ -214,10 +209,23 @@ pub fn apply_accum(
     // I think this alloc is worth it? Could use a buffer?
     let squared_bin_edges: Vec<f64> = distance_bin_edges.iter().map(|x| x.powi(2)).collect();
 
+    let pairwise_fn =
+        |points_a: &PointProps, points_b: &PointProps, i_a: usize, i_b: usize| -> f64 {
+            squared_diff_norm(
+                points_a.values,
+                points_b.values,
+                i_a,
+                i_b,
+                points_a.n_points,
+                points_b.n_points,
+                points_a.n_spatial_dims,
+            )
+            .sqrt()
+        };
     if let Some(points_b) = points_b {
-        apply_accum_helper::<false>(accum, points_a, points_b, &squared_bin_edges)
+        apply_accum_helper::<false, _>(accum, points_a, points_b, &squared_bin_edges, &pairwise_fn)
     } else {
-        apply_accum_helper::<true>(accum, points_a, points_a, &squared_bin_edges)
+        apply_accum_helper::<true, _>(accum, points_a, points_a, &squared_bin_edges, &pairwise_fn)
     }
     Ok(())
 }
