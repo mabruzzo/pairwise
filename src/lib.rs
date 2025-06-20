@@ -18,9 +18,9 @@ impl Mean {
         }
     }
 
-    pub fn consume(&mut self, val: f64, weight: f64, partition_idx: usize) {
-        self.weight[partition_idx] += weight;
-        self.total[partition_idx] += val * weight;
+    pub fn consume(&mut self, val: f64, weight: f64, bin_idx: usize) {
+        self.weight[bin_idx] += weight;
+        self.total[bin_idx] += val * weight;
     }
 
     pub fn get_value(&self, out: &mut [f64], weights_out: &mut [f64]) {
@@ -144,15 +144,14 @@ pub fn apply_accum(
     accum: &mut Mean,
     points_a: &PointProps,
     points_b: Option<&PointProps>,
-    // TODO decide bin, partition, or something else, then unify the naming
-    // TODO should bin_edges should be a member of the AccumKernel Struct
-    bin_edges: &[f64],
+    // TODO should distance_bin_edges should be a member of the AccumKernel Struct
+    distance_bin_edges: &[f64],
     /* pairwise_op, */ // probably an Enum
 ) -> Result<(), String> {
     // TODO check size of output buffers
 
     // Check that bin_edges are monotonically increasing
-    if !bin_edges.is_sorted() {
+    if !distance_bin_edges.is_sorted() {
         return Err(String::from(
             "bin_edges must be sorted (monotonically increasing)",
         ));
@@ -169,7 +168,7 @@ pub fn apply_accum(
     }
 
     // I think this alloc is worth it? Could use a buffer?
-    let squared_bin_edges: Vec<f64> = bin_edges.iter().map(|x| x.powi(2)).collect();
+    let squared_bin_edges: Vec<f64> = distance_bin_edges.iter().map(|x| x.powi(2)).collect();
 
     // complicated case first: two arrays, we combine points with pairwise_op
     if let Some(points_b) = points_b {
@@ -193,12 +192,6 @@ pub fn apply_accum(
                 // get the value. This is hardcoded to correspont to the velocity structure
                 // function when accumulated with Mean
                 // TODO switch on pairwise op?
-                // TODO I want to talk this design through before we roll further with it
-                // I was imagining that there would be separate AccumKernels for, e.g.
-                // structure functions and correlations, rather than using Mean with
-                // different pairwise_ops. I think it might be possible to write some
-                // nice "AccumKernel combinators" to make this clean, but maybe it would
-                // require too much magic.
                 let val = squared_diff_norm(
                     &points_a.values,
                     &points_b.values,
