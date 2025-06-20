@@ -135,14 +135,14 @@ fn squared_diff_norm(
     sum
 }
 
-fn apply_accum_helper<const Cross: bool>(
+fn apply_accum_helper<const CROSS: bool>(
     accum: &mut Mean,
     points_a: &PointProps,
     points_b: &PointProps,
     squared_bin_edges: &[f64],
 ) {
     for i_a in 0..points_a.n_points {
-        let i_b_start = if Cross { i_a + 1 } else { 0 };
+        let i_b_start = if CROSS { i_a + 1 } else { 0 };
         for i_b in i_b_start..points_b.n_points {
             // compute the distance between the points, then the distance bin
             let distance_squared = squared_diff_norm(
@@ -205,6 +205,11 @@ pub fn apply_accum(
             return Err(String::from(
                 "points_a and points_b must have the same number of spatial dimensions",
             ));
+        } else if points_a.weights.is_some() != points_b.weights.is_some() {
+            return Err(String::from(
+                "points_a and points_b must both provide weights or neither \
+                should provide weights",
+            ));
         }
     }
 
@@ -222,6 +227,17 @@ pub fn apply_accum(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // eventually, we will break up the functionality between files and we
+    // will distribute tests appropriately
+
+    // Accumulator Tests
+    // -----------------
+
+    #[test]
+    fn accum_0len() {
+        assert!(Mean::new(0).is_err());
+    }
 
     #[test]
     fn consume_once() {
@@ -267,16 +283,7 @@ mod tests {
         assert_eq!(weight_vec[0], 4.0);
     }
 
-    #[test]
-    fn test_apply_accum() {
-        // this is based on some inputs from pyvsf:tests/test_vsf_props
-
-        // set up our separation bins (they must monotonically increase)
-        let bin_edges = vec![17.0, 21.0, 25.0];
-
-        // set up our accumulator
-        let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
-
+    fn _sample_pos_and_vals() -> (Vec<f64>, Vec<f64>) {
         #[rustfmt::skip]
         let positions = vec![
              6.,  7.,  8.,  9., 10., 11.,
@@ -285,32 +292,174 @@ mod tests {
         ];
 
         #[rustfmt::skip]
-        let velocities = vec![
+        let values = vec![
             -9., -8., -7., -6., -5., -4.,
             -3., -2., -1.,  0.,  1.,  2.,
              3.,  4.,  5.,  6.,  7.,  8.,
         ];
 
-        // output buffers
-        let mut mean_vec = vec![0.0; 3];
-        let mut weight_vec = vec![0.0; 3];
+        (positions, values)
+    }
 
-        let points = PointProps::new(&positions, &velocities, None, 3_usize).unwrap();
+    // apply_accum Tests
+    // -----------------
+
+    // based on numpy!
+    // https://numpy.org/doc/stable/reference/generated/numpy.isclose.html
+    //
+    // I suspect we'll use this a lot! If we may want to define
+    // a `assert_isclose!` macro to provide a nice error message (or an
+    // `assert_allclose!` macro to operate upon arrays)
+    fn _isclose(actual: f64, ref_val: f64, rtol: f64, atol: f64) -> bool {
+        let actual_nan = actual.is_nan();
+        let ref_nan = ref_val.is_nan();
+        if actual_nan || ref_nan {
+            actual_nan && ref_nan
+        } else {
+            (actual - ref_val).abs() <= (atol + rtol * ref_val.abs())
+        }
+    }
+
+    #[test]
+    fn apply_accum_errors() {
+        #[rustfmt::skip]
+        let positions = [
+             6.0,  7.0,
+            12.0, 13.0,
+            18.0, 19.0
+        ];
+
+        #[rustfmt::skip]
+        let values = [
+            -9., -8.,
+            -3., -2.,
+             3.,  4.
+        ];
+
+        let bin_edges = [10.0, 5.0, 3.0];
+        let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
+        let points = PointProps::new(&positions, &values, None, 3_usize).unwrap();
 
         let result = apply_accum(&mut accum, &points, None, &bin_edges);
-        assert_eq!(result, Ok(()));
-        // TODO check output
-
-        // should fail for non-monotonic bins
-        let unsorted_bin_edges = vec![25.0, 21.0, 17.0];
-        let result = apply_accum(&mut accum, &points, None, &unsorted_bin_edges);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("monotonic"));
 
+        let bin_edges = vec![3.0, 5.0, 0.0];
+        let result = apply_accum(&mut accum, &points, None, &bin_edges);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("monotonic"));
+
+        // TODO: this should be an error
+        // let bin_edges = vec![0.0, 3.0, 3.0];
+
         // should fail for mismatched spatial dimensions
-        let points_b = PointProps::new(&positions, &velocities, None, 2_usize).unwrap();
-        let result = apply_accum(&mut accum, &points, Some(&points_b), &bin_edges);
+        let points_b = PointProps::new(&positions, &values, None, 2_usize).unwrap();
+        let result = apply_accum(&mut accum, &points, Some(&points_b), &[0.0, 3.0, 5.0]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("spatial dimensions"));
+
+        // should fail if 1 points object provides weights an the other doesn't
+        let weights = [1.0, 0.0];
+        let points_b = PointProps::new(&positions, &values, Some(&weights), 3_usize).unwrap();
+        let result = apply_accum(&mut accum, &points, Some(&points_b), &[0.0, 3.0, 5.0]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("weights"));
+    }
+
+    #[test]
+    fn test_apply_accum_auto() {
+        // this is loosely based on some inputs from pyvsf:tests/test_vsf_props
+
+        // keep in mind that we interpret positions as a (3, ...) array
+        // so position 0 is [6,12,18]
+        let positions: Vec<f64> = (6..24).map(|x| x as f64).collect();
+        let values: Vec<f64> = (-9..9).map(|x| x as f64).collect();
+
+        // the bin edges are chosen so that some values don't fit
+        // inside the bottom bin
+        let bin_edges = [2., 6., 10., 15.];
+
+        // the expected results were printed by pyvsf
+        let expected_mean = [4.206409104095845, 7.505553499465134, std::f64::NAN];
+        let expected_weight = [7., 3., 0.];
+
+        // perform the calculation!
+        let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
+        let points = PointProps::new(&positions, &values, None, 3_usize).unwrap();
+        let result = apply_accum(&mut accum, &points, None, &bin_edges);
+        assert_eq!(result, Ok(()));
+
+        // output buffers
+        let mut mean = [0.0; 3];
+        let mut weight = [0.0; 3];
+        accum.get_value(&mut mean, &mut weight);
+
+        for i in 0..3 {
+            // we might need to adopt an actual rtol
+            assert!(
+                _isclose(mean[i], expected_mean[i], 0.0, 0.0),
+                "actual mean = {}, expected mean = {}",
+                mean[i],
+                expected_mean[i]
+            );
+            assert_eq!(weight[i], expected_weight[i], "unequal weights");
+        }
+    }
+
+    #[test]
+    fn test_apply_accum_cross() {
+        // this is loosely based on some inputs from pyvsf:tests/test_vsf_props
+
+        // keep in mind that we interpret positions as a (3, ...) array
+        // so position 0 is [6,12,18]
+        let positions_a: Vec<f64> = (6..24).map(|x| x as f64).collect();
+        let values_a: Vec<f64> = (-9..9).map(|x| x as f64).collect();
+
+        let points_a = PointProps::new(&positions_a, &values_a, None, 3_usize).unwrap();
+
+        // we intentionally padded positions_b with a point
+        // that is so far away from everything else that it can't
+        // fit inside a separation bin
+        #[rustfmt::skip]
+        let positions_b = [
+            0., 1., 1000.,
+            2., 3., 1000.,
+            4., 5., 1000.,
+        ];
+
+        #[rustfmt::skip]
+        let values_b = [
+            -3., -2., 1000.,
+            -1.,  0., 1000.,
+             1.,  2., 1000.,
+        ];
+
+        let points_b = PointProps::new(&positions_b, &values_b, None, 3_usize).unwrap();
+
+        let bin_edges = [17., 21., 25.];
+
+        // the expected results were printed by pyvsf
+        let expected_mean = [6.274664681905207, 6.068727871100932];
+        let expected_weight = [4., 6.];
+
+        // perform the calculation!
+        let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
+        let result = apply_accum(&mut accum, &points_a, Some(&points_b), &bin_edges);
+        assert_eq!(result, Ok(()));
+
+        // output buffers
+        let mut mean = [0.0; 2];
+        let mut weight = [0.0; 2];
+        accum.get_value(&mut mean, &mut weight);
+
+        for i in 0..2 {
+            assert!(
+                _isclose(mean[i], expected_mean[i], 3.0e-16, 0.0),
+                "actual mean = {}, expected mean = {}",
+                mean[i],
+                expected_mean[i]
+            );
+            assert_eq!(weight[i], expected_weight[i], "unequal weights");
+        }
     }
 }
