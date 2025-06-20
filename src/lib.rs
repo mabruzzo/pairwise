@@ -104,7 +104,7 @@ fn get_distance_bin(distance_squared: f64, squared_bin_edges: &[f64]) -> Option<
 }
 
 /// calculate the squared norm of the `i`th (mathematical) vector in a
-/// rust vec that encodes a list of vectors with dimension on the "slow axis"
+/// rust slices that encodes a list of vectors with dimension on the "slow axis"
 fn squared_norm(v: &[f64], i: usize, spatial_dim_stride: usize, n_spatial_dims: usize) -> f64 {
     let mut sum = 0.0;
     for k in 0..n_spatial_dims {
