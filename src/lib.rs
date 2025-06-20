@@ -46,6 +46,45 @@ impl Accumulator for Mean {
     }
 }
 
+pub struct Histogram {
+    hist_bin_edges: Vec<f64>,
+    n_hist_bins: usize,
+    // histogram bins are on the fast axis, distance bins are on the slow axis
+    weight: Vec<f64>,
+}
+
+impl Histogram {
+    pub fn new(n_distance_bins: usize, hist_bin_edges: &[f64]) -> Result<Histogram, &'static str> {
+        if n_distance_bins == 0 {
+            Err("n_distance_bins can't be zero")
+        } else {
+            Ok(Histogram {
+                weight: vec![0.0; n_distance_bins],
+                hist_bin_edges: hist_bin_edges.to_vec(),
+                n_hist_bins: hist_bin_edges.len() - 1,
+            })
+        }
+    }
+
+    pub fn get_values(&self, out: &mut [f64]) {
+        out.copy_from_slice(&self.weight);
+    }
+}
+
+impl Accumulator for Histogram {
+    fn consume(&mut self, val: f64, weight: f64, dist_bin_idx: usize) {
+        if let Some(hist_bin_idx) = get_bin_idx(val, &self.hist_bin_edges) {
+            self.weight[dist_bin_idx * self.n_hist_bins + hist_bin_idx] += weight;
+        }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        for i in 0..self.weight.len() {
+            self.weight[i] += other.weight[i];
+        }
+    }
+}
+
 /// assumes that different vector-components are indexed along the slow axis.
 /// In other words, the kth component of the ith point (for positions &
 /// values) is located at an index of `i + k*spatial_dim_stride`
@@ -102,7 +141,7 @@ impl<'a> PointProps<'a> {
 // TODO use binary search, and have specialized version for regularly spaced bins?
 /// Get the index of the bin that the squared distance falls into.
 /// Returns None if its out of bounds.
-fn get_distance_bin(distance_squared: f64, squared_bin_edges: &[f64]) -> Option<usize> {
+fn get_bin_idx(distance_squared: f64, squared_bin_edges: &[f64]) -> Option<usize> {
     // index of first element greater than distance_squared
     // (or squared_bin_edges.len() if none are greater)
     let mut first_greater = 0;
@@ -184,7 +223,7 @@ fn apply_accum_helper<const CROSS: bool>(
                 points_b.n_points,
                 points_a.n_spatial_dims,
             );
-            if let Some(distance_bin_idx) = get_distance_bin(distance_squared, squared_bin_edges) {
+            if let Some(distance_bin_idx) = get_bin_idx(distance_squared, squared_bin_edges) {
                 // get the value. This is hardcoded to correspond to the velocity structure
                 // function when accumulated with Mean
                 // TODO switch on pairwise op?
