@@ -230,7 +230,6 @@ pub fn apply_accum(
                 continue;
             };
 
-            println!("computing value norm");
             let val = squared_norm(
                 &points_a.values,
                 i,
