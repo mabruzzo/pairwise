@@ -1,3 +1,8 @@
+pub trait Accumulator {
+    fn consume(&mut self, val: f64, weight: f64, bin_idx: usize);
+    fn merge(&mut self, other: &Self);
+}
+
 pub struct Mean {
     weight: Vec<f64>,
     total: Vec<f64>,
@@ -16,11 +21,6 @@ impl Mean {
         }
     }
 
-    pub fn consume(&mut self, val: f64, weight: f64, bin_idx: usize) {
-        self.weight[bin_idx] += weight;
-        self.total[bin_idx] += val * weight;
-    }
-
     pub fn get_value(&self, out: &mut [f64], weights_out: &mut [f64]) {
         for i in 0..self.weight.len() {
             // TODO need to think about divide by 0
@@ -30,8 +30,15 @@ impl Mean {
             weights_out[i] = self.weight[i];
         }
     }
+}
 
-    pub fn merge(&mut self, other: &Mean) {
+impl Accumulator for Mean {
+    fn consume(&mut self, val: f64, weight: f64, bin_idx: usize) {
+        self.weight[bin_idx] += weight;
+        self.total[bin_idx] += val * weight;
+    }
+
+    fn merge(&mut self, other: &Mean) {
         for i in 0..self.weight.len() {
             self.total[i] += other.total[i];
             self.weight[i] += other.weight[i];
