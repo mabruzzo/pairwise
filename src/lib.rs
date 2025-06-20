@@ -153,7 +153,7 @@ fn apply_accum_helper<const CROSS: bool>(
                 points_a.n_spatial_dims,
             );
             if let Some(distance_bin_idx) = get_distance_bin(distance_squared, squared_bin_edges) {
-                // get the value. This is hardcoded to correspont to the velocity structure
+                // get the value. This is hardcoded to correspond to the velocity structure
                 // function when accumulated with Mean
                 // TODO switch on pairwise op?
                 let val = squared_diff_norm(
