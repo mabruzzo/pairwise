@@ -304,10 +304,12 @@ mod tests {
     // apply_accum Tests
     // -----------------
 
-    // based on numpy! (maybe look into a better approach)
+    // based on numpy!
     // https://numpy.org/doc/stable/reference/generated/numpy.isclose.html
     //
-    // maybe look into the approx crate?
+    // I suspect we'll use this a lot! If we may want to define
+    // a `assert_isclose!` macro to provide a nice error message (or an
+    // `assert_allclose!` macro to operate upon arrays)
     fn _isclose(actual: f64, ref_val: f64, rtol: f64, atol: f64) -> bool {
         let actual_nan = actual.is_nan();
         let ref_nan = ref_val.is_nan();
@@ -347,7 +349,7 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("monotonic"));
 
-        // should the following case be an error?
+        // TODO: this should be an error
         // let bin_edges = vec![0.0, 3.0, 3.0];
 
         // should fail for mismatched spatial dimensions
@@ -368,24 +370,10 @@ mod tests {
     fn test_apply_accum_auto() {
         // this is loosely based on some inputs from pyvsf:tests/test_vsf_props
 
-        // how much value is there to writing this out explicitly vs writing a
-        // shorthand such as:
-        //   let positions: Vec<f64> = (6..24).map(|x| x as f64).collect();
-        // I feel like the above is a little opaque. Can we come up with
-        // something a little more explicit?
-        #[rustfmt::skip]
-        let positions = [
-             6.,  7.,  8.,  9., 10., 11.,
-            12., 13., 14., 15., 16., 17.,
-            18., 19., 20., 21., 22., 23.,
-        ];
-
-        #[rustfmt::skip]
-        let values = [
-            -9., -8., -7., -6., -5., -4.,
-            -3., -2., -1.,  0.,  1.,  2.,
-             3.,  4.,  5.,  6.,  7.,  8.,
-        ];
+        // keep in mind that we interpret positions as a (3, ...) array
+        // so position 0 is [6,12,18]
+        let positions: Vec<f64> = (6..24).map(|x| x as f64).collect();
+        let values: Vec<f64> = (-9..9).map(|x| x as f64).collect();
 
         // the bin edges are chosen so that some values don't fit
         // inside the bottom bin
@@ -421,19 +409,11 @@ mod tests {
     #[test]
     fn test_apply_accum_cross() {
         // this is loosely based on some inputs from pyvsf:tests/test_vsf_props
-        #[rustfmt::skip]
-        let positions_a = [
-             6.,  7.,  8.,  9., 10., 11.,
-            12., 13., 14., 15., 16., 17.,
-            18., 19., 20., 21., 22., 23.,
-        ];
 
-        #[rustfmt::skip]
-        let values_a = [
-            -9., -8., -7., -6., -5., -4.,
-            -3., -2., -1.,  0.,  1.,  2.,
-             3.,  4.,  5.,  6.,  7.,  8.,
-        ];
+        // keep in mind that we interpret positions as a (3, ...) array
+        // so position 0 is [6,12,18]
+        let positions_a: Vec<f64> = (6..24).map(|x| x as f64).collect();
+        let values_a: Vec<f64> = (-9..9).map(|x| x as f64).collect();
 
         let points_a = PointProps::new(&positions_a, &values_a, None, 3_usize).unwrap();
 
