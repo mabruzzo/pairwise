@@ -3,5 +3,6 @@ name = "pairwise"
 version = "0.1.0"
 edition = "2021"
 authors = ["Matthew W. Abruzzo", "Adam J. Wheeler"]
+rust-version = "1.82"
 
 [dependencies]
