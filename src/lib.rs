@@ -133,6 +133,30 @@ fn squared_diff_norm(
     sum
 }
 
+// TODO come up with a better name
+pub fn diff_norm(points_a: &PointProps, points_b: &PointProps, i_a: usize, i_b: usize) -> f64 {
+    squared_diff_norm(
+        points_a.values,
+        points_b.values,
+        i_a,
+        i_b,
+        points_a.n_points,
+        points_b.n_points,
+        points_a.n_spatial_dims,
+    )
+    .sqrt()
+}
+
+pub fn dot_product(points_a: &PointProps, points_b: &PointProps, i_a: usize, i_b: usize) -> f64 {
+    let mut sum = 0.0;
+    for k in 0..points_a.n_spatial_dims {
+        let idx1 = i_a + k * points_a.n_points;
+        let idx2 = i_b + k * points_b.n_points;
+        sum += points_a.values[idx1] * points_b.values[idx2];
+    }
+    sum
+}
+
 fn apply_accum_helper<const CROSS: bool, F>(
     accum: &mut Mean,
     points_a: &PointProps,
@@ -174,14 +198,18 @@ fn apply_accum_helper<const CROSS: bool, F>(
 // maybe we want to make separate functions for auto-stats vs
 // cross-stats
 // TODO: generalize to allow faster calculations for regular spatial grids
-pub fn apply_accum(
+pub fn apply_accum<F>(
     accum: &mut Mean,
     points_a: &PointProps,
     points_b: Option<&PointProps>,
     // TODO should distance_bin_edges should be a member of the AccumKernel Struct
     distance_bin_edges: &[f64],
-    /* pairwise_op, */ // probably an Enum
-) -> Result<(), String> {
+    pairwise_fn: &F, // probably an Enum
+) -> Result<(), String>
+where
+    // using the trait Fn instead of just taking a closure lets the comiler specialize
+    F: Fn(&PointProps, &PointProps, usize, usize) -> f64,
+{
     // TODO check size of output buffers
 
     // Check that bin_edges are monotonically increasing
@@ -209,23 +237,10 @@ pub fn apply_accum(
     // I think this alloc is worth it? Could use a buffer?
     let squared_bin_edges: Vec<f64> = distance_bin_edges.iter().map(|x| x.powi(2)).collect();
 
-    let pairwise_fn =
-        |points_a: &PointProps, points_b: &PointProps, i_a: usize, i_b: usize| -> f64 {
-            squared_diff_norm(
-                points_a.values,
-                points_b.values,
-                i_a,
-                i_b,
-                points_a.n_points,
-                points_b.n_points,
-                points_a.n_spatial_dims,
-            )
-            .sqrt()
-        };
     if let Some(points_b) = points_b {
-        apply_accum_helper::<false, _>(accum, points_a, points_b, &squared_bin_edges, &pairwise_fn)
+        apply_accum_helper::<false, _>(accum, points_a, points_b, &squared_bin_edges, pairwise_fn)
     } else {
-        apply_accum_helper::<true, _>(accum, points_a, points_a, &squared_bin_edges, &pairwise_fn)
+        apply_accum_helper::<true, _>(accum, points_a, points_a, &squared_bin_edges, pairwise_fn)
     }
     Ok(())
 }
@@ -328,12 +343,12 @@ mod tests {
         let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
         let points = PointProps::new(&positions, &values, None, 3_usize).unwrap();
 
-        let result = apply_accum(&mut accum, &points, None, &bin_edges);
+        let result = apply_accum(&mut accum, &points, None, &bin_edges, &diff_norm);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("monotonic"));
 
         let bin_edges = vec![3.0, 5.0, 0.0];
-        let result = apply_accum(&mut accum, &points, None, &bin_edges);
+        let result = apply_accum(&mut accum, &points, None, &bin_edges, &diff_norm);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("monotonic"));
 
@@ -342,14 +357,26 @@ mod tests {
 
         // should fail for mismatched spatial dimensions
         let points_b = PointProps::new(&positions, &values, None, 2_usize).unwrap();
-        let result = apply_accum(&mut accum, &points, Some(&points_b), &[0.0, 3.0, 5.0]);
+        let result = apply_accum(
+            &mut accum,
+            &points,
+            Some(&points_b),
+            &[0.0, 3.0, 5.0],
+            &diff_norm,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("spatial dimensions"));
 
         // should fail if 1 points object provides weights an the other doesn't
         let weights = [1.0, 0.0];
         let points_b = PointProps::new(&positions, &values, Some(&weights), 3_usize).unwrap();
-        let result = apply_accum(&mut accum, &points, Some(&points_b), &[0.0, 3.0, 5.0]);
+        let result = apply_accum(
+            &mut accum,
+            &points,
+            Some(&points_b),
+            &[0.0, 3.0, 5.0],
+            &diff_norm,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("weights"));
     }
@@ -374,7 +401,7 @@ mod tests {
         // perform the calculation!
         let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
         let points = PointProps::new(&positions, &values, None, 3_usize).unwrap();
-        let result = apply_accum(&mut accum, &points, None, &bin_edges);
+        let result = apply_accum(&mut accum, &points, None, &bin_edges, &diff_norm);
         assert_eq!(result, Ok(()));
 
         // output buffers
@@ -432,7 +459,13 @@ mod tests {
 
         // perform the calculation!
         let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
-        let result = apply_accum(&mut accum, &points_a, Some(&points_b), &bin_edges);
+        let result = apply_accum(
+            &mut accum,
+            &points_a,
+            Some(&points_b),
+            &bin_edges,
+            &diff_norm,
+        );
         assert_eq!(result, Ok(()));
 
         // output buffers
