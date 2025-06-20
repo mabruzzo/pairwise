@@ -1,6 +1,5 @@
 use std::usize;
 
-// TODO undo pub?
 pub struct Mean {
     weight: Vec<f64>,
     total: Vec<f64>,
@@ -17,12 +16,6 @@ impl Mean {
                 total: vec![0.0; n],
             })
         }
-    }
-
-    // TODO this should potentially be merged with new
-    pub fn initialize(&mut self) {
-        self.weight.fill(0.0);
-        self.total.fill(0.0);
     }
 
     pub fn consume(&mut self, val: f64, weight: f64, partition_idx: usize) {
@@ -168,7 +161,6 @@ pub fn apply_accum(
         }
     }
 
-    accum.initialize();
     // I think this alloc is worth it? Could use a buffer?
     let squared_bin_edges: Vec<f64> = bin_edges.iter().map(|x| x.powi(2)).collect();
 
@@ -252,7 +244,6 @@ mod tests {
     #[test]
     fn consume_once() {
         let mut accum = Mean::new(1).unwrap();
-        accum.initialize();
         accum.consume(4.0, 1.0, 0_usize);
 
         let mut mean_vec = vec![0.0];
@@ -266,7 +257,6 @@ mod tests {
     #[test]
     fn consume_twice() {
         let mut accum = Mean::new(1).unwrap();
-        accum.initialize();
         accum.consume(4.0, 1.0, 0);
         accum.consume(8.0, 1.0, 0);
 
@@ -280,12 +270,10 @@ mod tests {
     #[test]
     fn merge() {
         let mut accum = Mean::new(1).unwrap();
-        accum.initialize();
         accum.consume(4.0, 1.0, 0);
         accum.consume(8.0, 1.0, 0);
 
         let mut accum_other = Mean::new(1).unwrap();
-        accum_other.initialize();
         accum_other.consume(1.0, 1.0, 0);
         accum_other.consume(3.0, 1.0, 0);
         accum.merge(&accum_other);
@@ -306,7 +294,6 @@ mod tests {
 
         // set up our accumulator
         let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
-        accum.initialize();
 
         #[rustfmt::skip]
         let positions = vec![
