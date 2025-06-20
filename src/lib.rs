@@ -135,12 +135,53 @@ fn squared_diff_norm(
     sum
 }
 
+fn apply_accum_helper<const Cross: bool>(
+    accum: &mut Mean,
+    points_a: &PointProps,
+    points_b: &PointProps,
+    squared_bin_edges: &[f64],
+) {
+    for i_a in 0..points_a.n_points {
+        let i_b_start = if Cross { i_a + 1 } else { 0 };
+        for i_b in i_b_start..points_b.n_points {
+            // compute the distance between the points, then the distance bin
+            let distance_squared = squared_diff_norm(
+                points_a.positions,
+                points_b.positions,
+                i_a,
+                i_b,
+                points_a.n_points,
+                points_b.n_points,
+                points_a.n_spatial_dims,
+            );
+            if let Some(distance_bin_idx) = get_distance_bin(distance_squared, &squared_bin_edges) {
+                // get the value. This is hardcoded to correspont to the velocity structure
+                // function when accumulated with Mean
+                // TODO switch on pairwise op?
+                let val = squared_diff_norm(
+                    &points_a.values,
+                    &points_b.values,
+                    i_a,
+                    i_b,
+                    points_a.n_points,
+                    points_b.n_points,
+                    points_a.n_spatial_dims,
+                )
+                .sqrt();
+
+                // get the weight
+                let pair_weight = points_a.get_weight(i_a) * points_b.get_weight(i_b);
+
+                accum.consume(val, pair_weight, distance_bin_idx);
+            }
+        }
+    }
+}
+
 // maybe we want to make separate functions for auto-stats vs
 // cross-stats
 // TODO: generalize to allow faster calculations for regular spatial grids
 pub fn apply_accum(
-    out: &mut Vec<f64>,
-    weights_out: &mut Vec<f64>,
     accum: &mut Mean,
     points_a: &PointProps,
     points_b: Option<&PointProps>,
@@ -170,79 +211,10 @@ pub fn apply_accum(
     // I think this alloc is worth it? Could use a buffer?
     let squared_bin_edges: Vec<f64> = distance_bin_edges.iter().map(|x| x.powi(2)).collect();
 
-    // complicated case first: two arrays, we combine points with pairwise_op
     if let Some(points_b) = points_b {
-        for i_a in 0..points_a.n_points {
-            for i_b in 0..points_b.n_points {
-                // compute the distance between the points, then the distance bin
-                let distance_squared = squared_diff_norm(
-                    points_a.positions,
-                    points_b.positions,
-                    i_a,
-                    i_b,
-                    points_a.n_points,
-                    points_b.n_points,
-                    points_a.n_spatial_dims,
-                );
-                let Some(distance_bin) = get_distance_bin(distance_squared, &squared_bin_edges)
-                else {
-                    continue;
-                };
-
-                // get the value. This is hardcoded to correspont to the velocity structure
-                // function when accumulated with Mean
-                // TODO switch on pairwise op?
-                let val = squared_diff_norm(
-                    &points_a.values,
-                    &points_b.values,
-                    i_a,
-                    i_b,
-                    points_a.n_points,
-                    points_b.n_points,
-                    points_a.n_spatial_dims,
-                )
-                .sqrt();
-
-                // get the weight
-                let pair_weight = points_a.get_weight(i_a) * points_b.get_weight(i_b);
-
-                accum.consume(val, pair_weight, distance_bin);
-            }
-            accum.get_value(out, weights_out);
-        }
+        apply_accum_helper::<false>(accum, &points_a, &points_b, &squared_bin_edges)
     } else {
-        // single array case TODO combine with two array case
-        for i in 0..points_a.n_points {
-            for j in (i + 1)..points_a.n_points {
-                let distance_squared = squared_diff_norm(
-                    points_a.positions,
-                    points_a.positions,
-                    i,
-                    j,
-                    points_a.n_points,
-                    points_a.n_points,
-                    points_a.n_spatial_dims,
-                );
-                let Some(distance_bin) = get_distance_bin(distance_squared, &squared_bin_edges)
-                else {
-                    continue;
-                };
-
-                let val = squared_diff_norm(
-                    &points_a.values,
-                    &points_a.values,
-                    i,
-                    j,
-                    points_a.n_points,
-                    points_a.n_points,
-                    points_a.n_spatial_dims,
-                )
-                .sqrt();
-
-                accum.consume(val, points_a.get_weight(i), distance_bin);
-            }
-        }
-        accum.get_value(out, weights_out);
+        apply_accum_helper::<true>(accum, &points_a, &points_a, &squared_bin_edges)
     }
     Ok(())
 }
@@ -325,40 +297,19 @@ mod tests {
 
         let points = PointProps::new(&positions, &velocities, None, 3_usize).unwrap();
 
-        let result = apply_accum(
-            &mut mean_vec,
-            &mut weight_vec,
-            &mut accum,
-            &points,
-            None,
-            &bin_edges,
-        );
+        let result = apply_accum(&mut accum, &points, None, &bin_edges);
         assert_eq!(result, Ok(()));
         // TODO check output
 
         // should fail for non-monotonic bins
         let unsorted_bin_edges = vec![25.0, 21.0, 17.0];
-        let result = apply_accum(
-            &mut mean_vec,
-            &mut weight_vec,
-            &mut accum,
-            &points,
-            None,
-            &unsorted_bin_edges,
-        );
+        let result = apply_accum(&mut accum, &points, None, &unsorted_bin_edges);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("monotonic"));
 
         // should fail for mismatched spatial dimensions
         let points_b = PointProps::new(&positions, &velocities, None, 2_usize).unwrap();
-        let result = apply_accum(
-            &mut mean_vec,
-            &mut weight_vec,
-            &mut accum,
-            &points,
-            Some(&points_b),
-            &bin_edges,
-        );
+        let result = apply_accum(&mut accum, &points, Some(&points_b), &bin_edges);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("spatial dimensions"));
     }
