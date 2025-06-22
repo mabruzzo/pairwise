@@ -59,16 +59,19 @@ impl Histogram {
     pub fn new(n_distance_bins: usize, hist_bin_edges: &[f64]) -> Result<Histogram, &'static str> {
         if n_distance_bins == 0 {
             Err("n_distance_bins can't be zero")
+        } else if !hist_bin_edges.is_sorted() {
+            return Err("hist_bin_edges must be sorted (monotonically increasing)");
         } else {
+            let n_hist_bins = hist_bin_edges.len() - 1;
             Ok(Histogram {
-                weight: vec![0.0; n_distance_bins],
+                weight: vec![0.0; n_distance_bins * n_hist_bins],
                 hist_bin_edges: hist_bin_edges.to_vec(),
-                n_hist_bins: hist_bin_edges.len() - 1,
+                n_hist_bins,
             })
         }
     }
 
-    pub fn get_values(&self, out: &mut [f64]) {
+    pub fn get_value(&self, out: &mut [f64]) {
         out.copy_from_slice(&self.weight);
     }
 }
@@ -288,12 +291,12 @@ mod tests {
     // -----------------
 
     #[test]
-    fn accum_0len() {
+    fn mean_0len() {
         assert!(Mean::new(0).is_err());
     }
 
     #[test]
-    fn consume_once() {
+    fn mean_consume_once() {
         let mut accum = Mean::new(1).unwrap();
         accum.consume(4.0, 1.0, 0_usize);
 
@@ -306,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_twice() {
+    fn mean_consume_twice() {
         let mut accum = Mean::new(1).unwrap();
         accum.consume(4.0, 1.0, 0);
         accum.consume(8.0, 1.0, 0);
@@ -336,8 +339,19 @@ mod tests {
         assert_eq!(weight_vec[0], 4.0);
     }
 
+    #[test]
+    fn hist_0len() {
+        assert!(Histogram::new(0, &[0.0, 1.0]).is_err());
+    }
+
+    #[test]
+    fn hist_nonmonotonic() {
+        assert!(Histogram::new(3, &[1.0, 0.0]).is_err());
+    }
+
     // apply_accum Tests
     // -----------------
+    // most of these tests could be considered integration-tests
 
     // based on numpy!
     // https://numpy.org/doc/stable/reference/generated/numpy.isclose.html
@@ -358,18 +372,18 @@ mod tests {
     #[test]
     fn apply_accum_errors() {
         #[rustfmt::skip]
-            let positions = [
-                 6.0,  7.0,
-                12.0, 13.0,
-                18.0, 19.0
-            ];
+        let positions = [
+             6.0,  7.0,
+            12.0, 13.0,
+            18.0, 19.0
+        ];
 
         #[rustfmt::skip]
-            let values = [
-                -9., -8.,
-                -3., -2.,
-                 3.,  4.
-            ];
+        let values = [
+            -9., -8.,
+            -3., -2.,
+             3.,  4.
+        ];
 
         let bin_edges = [10.0, 5.0, 3.0];
         let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
@@ -438,18 +452,16 @@ mod tests {
         // keep in mind that we interpret positions as a (3, ...) array
         // so position 0 is [6,12,18]
         let positions: Vec<f64> = (6..24).map(|x| x as f64).collect();
-        let values: Vec<f64> = (-9..9).map(|x| x as f64).collect();
+        let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
 
         // the bin edges are chosen so that some values don't fit
         // inside the bottom bin
         let bin_edges = [2., 6., 10., 15.];
 
-        // the expected results were printed by pyvsf
-        let expected_mean = [4.206409104095845, 7.505553499465134, f64::NAN];
+        // check the means (using results computed by pyvsf)
+        let expected_mean = [8.41281820819169, 15.01110699893027, f64::NAN];
         let expected_weight = [7., 3., 0.];
-
-        // perform the calculation!
-        let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
+        let mut mean_accum = Mean::new(bin_edges.len() - 1).unwrap();
         let points = PointProps::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
             ArrayView2::from_shape((3, 6), &values).unwrap(),
@@ -457,23 +469,45 @@ mod tests {
             3_usize,
         )
         .unwrap();
-        let result = apply_accum(&mut accum, &points, None, &bin_edges, &diff_norm);
+        let result = apply_accum(&mut mean_accum, &points, None, &bin_edges, &diff_norm);
         assert_eq!(result, Ok(()));
 
         // output buffers
         let mut mean = [0.0; 3];
         let mut weight = [0.0; 3];
-        accum.get_value(&mut mean, &mut weight);
+        mean_accum.get_value(&mut mean, &mut weight);
 
         for i in 0..3 {
             // we might need to adopt an actual rtol
             assert!(
-                _isclose(mean[i], expected_mean[i], 0.0, 0.0),
+                _isclose(mean[i], expected_mean[i], 3.0e-16, 0.0),
                 "actual mean = {}, expected mean = {}",
                 mean[i],
                 expected_mean[i]
             );
             assert_eq!(weight[i], expected_weight[i], "unequal weights");
+        }
+
+        // check the histograms (using results computed by pyvsf)
+
+        // the hist_bin_edges were picked such that:
+        // - the number of bins is unequal to the distance bin count
+        // - there would be a value smaller than the leftmost bin-edge
+        // - there would be a value larger than the leftmost bin-edge
+        let hist_bin_edges = [6.0, 10.0, 14.0];
+        #[rustfmt::skip]
+        let expected_hist_weights = [
+            4., 3.,
+            0., 2.,
+            0., 0.
+        ];
+        let mut hist_accum = Histogram::new(bin_edges.len() - 1, &hist_bin_edges).unwrap();
+        let result = apply_accum(&mut hist_accum, &points, None, &bin_edges, &diff_norm);
+        assert_eq!(result, Ok(()));
+        let mut hist_weights = [0.0; 6];
+        hist_accum.get_value(&mut hist_weights);
+        for i in 0..6 {
+            assert_eq!(hist_weights[i], expected_hist_weights[i]);
         }
     }
 
@@ -542,6 +576,48 @@ mod tests {
         accum.get_value(&mut mean, &mut weight);
 
         for i in 0..2 {
+            assert!(
+                _isclose(mean[i], expected_mean[i], 3.0e-16, 0.0),
+                "actual mean = {}, expected mean = {}",
+                mean[i],
+                expected_mean[i]
+            );
+            assert_eq!(weight[i], expected_weight[i], "unequal weights");
+        }
+    }
+
+    #[test]
+    fn test_apply_accum_auto_corr() {
+        // keep in mind that we interpret positions as a (3, ...) array
+        // so position 0 is [6,12,18]
+        let positions: Vec<f64> = (6..24).map(|x| x as f64).collect();
+        let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
+
+        // the bin edges are chosen so that some values don't fit
+        // inside the bottom bin
+        let bin_edges = [2., 6., 10., 15.];
+
+        // check the means (using results computed by pyvsf)
+        let expected_mean = [284.57142857142856, 236.0, f64::NAN];
+        let expected_weight = [7., 3., 0.];
+        let mut mean_accum = Mean::new(bin_edges.len() - 1).unwrap();
+        let points = PointProps::new(
+            ArrayView2::from_shape((3, 6), &positions).unwrap(),
+            ArrayView2::from_shape((3, 6), &values).unwrap(),
+            None,
+            3_usize,
+        )
+        .unwrap();
+        let result = apply_accum(&mut mean_accum, &points, None, &bin_edges, &dot_product);
+        assert_eq!(result, Ok(()));
+
+        // output buffers
+        let mut mean = [0.0; 3];
+        let mut weight = [0.0; 3];
+        mean_accum.get_value(&mut mean, &mut weight);
+
+        for i in 0..3 {
+            // we might need to adopt an actual rtol
             assert!(
                 _isclose(mean[i], expected_mean[i], 3.0e-16, 0.0),
                 "actual mean = {}, expected mean = {}",
