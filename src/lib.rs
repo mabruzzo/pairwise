@@ -90,16 +90,23 @@ impl Accumulator for Histogram {
     }
 }
 
-/// assumes that different vector-components are indexed along the slow axis.
-/// In other words, the kth component of the ith point (for positions &
-/// values) is located at an index of `i + k*spatial_dim_stride`
+/// Collection of point properties.
+///
+/// We place the following constraints on contained arrays:
+/// - axis 0 is the slow axis and it corresponds to different components of
+///   vector quantities (e.g. position, values).
+/// - axis 1 is the fast axis. The length along this axis coincides with
+///   the number of points. We require that it is contiguous (i.e. the stride
+///   is unity).
+/// - In other words the shape of one of these vectors is `(D, n_points)`,
+///   where `D` is the number of spatial dimensions and `n_points` is the
+///   number of points.
 pub struct PointProps<'a> {
     positions: ArrayView2<'a, f64>,
     // TODO allow values to have a difference dimensionality than positions
     values: ArrayView2<'a, f64>,
     weights: Option<&'a [f64]>,
     n_points: usize,
-    // we could potentially handle this separately
     n_spatial_dims: usize,
 }
 
@@ -109,20 +116,22 @@ impl<'a> PointProps<'a> {
         positions: ArrayView2<'a, f64>,
         values: ArrayView2<'a, f64>,
         weights: Option<&'a [f64]>,
-        n_spatial_dims: usize,
     ) -> Result<PointProps<'a>, &'static str> {
+        let n_spatial_dims = positions.shape()[0];
+        let n_points = positions.shape()[1];
+        // TODO: should we place a requirement on the number of spatial_dims?
         if positions.is_empty() {
-            return Err("positions must hold at least n_spatial_dims");
-        } else if positions.len() % n_spatial_dims != 0 {
-            return Err("the length of positions must be an integer multiple of n_spatial_dims");
-        }
-        let n_points = positions.len() / n_spatial_dims;
-
-        if weights.is_some_and(|w| w.len() != n_points) {
-            Err("weights must be have the same number of points as positions")
-        } else if values.len() != n_points && values.len() != positions.len() {
-            // assumes vector or scalar values
-            Err("values must be have the same number of points as positions")
+            Err("positions must hold at least n_spatial_dims")
+        } else if positions.strides()[1] != 1 {
+            Err("positions must be contiguous along the fast axis")
+        } else if values.shape()[0] != n_spatial_dims {
+            // TODO: in the future, we will allow values to be 1D (i.e. a scalar)
+            Err("values must currently have the same number of spatial \
+                dimensions as positions")
+        } else if values.shape()[1] != n_points {
+            Err("values must have the same number of points as positions")
+        } else if weights.is_some_and(|w| w.len() != n_points) {
+            Err("weights must have the same number of points as positions")
         } else {
             Ok(Self {
                 positions,
@@ -391,7 +400,6 @@ mod tests {
             ArrayView2::from_shape((3, 2), &positions).unwrap(),
             ArrayView2::from_shape((3, 2), &values).unwrap(),
             None,
-            3_usize,
         )
         .unwrap();
 
@@ -409,10 +417,9 @@ mod tests {
 
         // should fail for mismatched spatial dimensions
         let points_b = PointProps::new(
-            ArrayView2::from_shape((3, 2), &positions).unwrap(),
-            ArrayView2::from_shape((3, 2), &values).unwrap(),
+            ArrayView2::from_shape((2, 3), &positions).unwrap(),
+            ArrayView2::from_shape((2, 3), &values).unwrap(),
             None,
-            2_usize,
         )
         .unwrap();
         let result = apply_accum(
@@ -431,7 +438,6 @@ mod tests {
             ArrayView2::from_shape((3, 2), &positions).unwrap(),
             ArrayView2::from_shape((3, 2), &values).unwrap(),
             Some(&weights),
-            3_usize,
         )
         .unwrap();
         let result = apply_accum(
@@ -466,7 +472,6 @@ mod tests {
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
             ArrayView2::from_shape((3, 6), &values).unwrap(),
             None,
-            3_usize,
         )
         .unwrap();
         let result = apply_accum(&mut mean_accum, &points, None, &bin_edges, &diff_norm);
@@ -524,7 +529,6 @@ mod tests {
             ArrayView2::from_shape((3, 6), &positions_a).unwrap(),
             ArrayView2::from_shape((3, 6), &values_a).unwrap(),
             None,
-            3_usize,
         )
         .unwrap();
 
@@ -549,7 +553,6 @@ mod tests {
             ArrayView2::from_shape((3, 3), &positions_b).unwrap(),
             ArrayView2::from_shape((3, 3), &values_b).unwrap(),
             None,
-            3_usize,
         )
         .unwrap();
 
@@ -605,7 +608,6 @@ mod tests {
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
             ArrayView2::from_shape((3, 6), &values).unwrap(),
             None,
-            3_usize,
         )
         .unwrap();
         let result = apply_accum(&mut mean_accum, &points, None, &bin_edges, &dot_product);
