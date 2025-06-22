@@ -1,3 +1,5 @@
+use ndarray::ArrayView2;
+
 pub trait Accumulator {
     fn consume(&mut self, val: f64, weight: f64, bin_idx: usize);
     fn merge(&mut self, other: &Self);
@@ -89,9 +91,9 @@ impl Accumulator for Histogram {
 /// In other words, the kth component of the ith point (for positions &
 /// values) is located at an index of `i + k*spatial_dim_stride`
 pub struct PointProps<'a> {
-    positions: &'a [f64],
+    positions: ArrayView2<'a, f64>,
     // TODO allow values to have a difference dimensionality than positions
-    values: &'a [f64],
+    values: ArrayView2<'a, f64>,
     weights: Option<&'a [f64]>,
     n_points: usize,
     // we could potentially handle this separately
@@ -99,9 +101,10 @@ pub struct PointProps<'a> {
 }
 
 impl<'a> PointProps<'a> {
+    /// create a new instance
     pub fn new(
-        positions: &'a [f64],
-        values: &'a [f64],
+        positions: ArrayView2<'a, f64>,
+        values: ArrayView2<'a, f64>,
         weights: Option<&'a [f64]>,
         n_spatial_dims: usize,
     ) -> Result<PointProps<'a>, &'static str> {
@@ -162,19 +165,15 @@ fn get_bin_idx(distance_squared: f64, squared_bin_edges: &[f64]) -> Option<usize
 /// which are part of rust vecs that encodes a list of vectors with dimension on
 /// the "slow axis"
 fn squared_diff_norm(
-    v1: &[f64],
-    v2: &[f64],
+    v1: ArrayView2<f64>,
+    v2: ArrayView2<f64>,
     i1: usize,
     i2: usize,
-    spatial_dim_stride_1: usize,
-    spatial_dim_stride_2: usize,
     n_spatial_dims: usize,
 ) -> f64 {
     let mut sum = 0.0;
     for k in 0..n_spatial_dims {
-        let idx1 = i1 + k * spatial_dim_stride_1;
-        let idx2 = i2 + k * spatial_dim_stride_2;
-        sum += (v1[idx1] - v2[idx2]).powi(2);
+        sum += (v1[[k, i1]] - v2[[k, i2]]).powi(2);
     }
     sum
 }
@@ -186,8 +185,6 @@ pub fn diff_norm(points_a: &PointProps, points_b: &PointProps, i_a: usize, i_b: 
         points_b.values,
         i_a,
         i_b,
-        points_a.n_points,
-        points_b.n_points,
         points_a.n_spatial_dims,
     )
     .sqrt()
@@ -196,9 +193,7 @@ pub fn diff_norm(points_a: &PointProps, points_b: &PointProps, i_a: usize, i_b: 
 pub fn dot_product(points_a: &PointProps, points_b: &PointProps, i_a: usize, i_b: usize) -> f64 {
     let mut sum = 0.0;
     for k in 0..points_a.n_spatial_dims {
-        let idx1 = i_a + k * points_a.n_points;
-        let idx2 = i_b + k * points_b.n_points;
-        sum += points_a.values[idx1] * points_b.values[idx2];
+        sum += points_a.values[[k, i_a]] * points_b.values[[k, i_b]];
     }
     sum
 }
@@ -219,8 +214,6 @@ fn apply_accum_helper<const CROSS: bool>(
                 points_b.positions,
                 i_a,
                 i_b,
-                points_a.n_points,
-                points_b.n_points,
                 points_a.n_spatial_dims,
             );
             if let Some(distance_bin_idx) = get_bin_idx(distance_squared, squared_bin_edges) {
@@ -365,22 +358,28 @@ mod tests {
     #[test]
     fn apply_accum_errors() {
         #[rustfmt::skip]
-        let positions = [
-             6.0,  7.0,
-            12.0, 13.0,
-            18.0, 19.0
-        ];
+            let positions = [
+                 6.0,  7.0,
+                12.0, 13.0,
+                18.0, 19.0
+            ];
 
         #[rustfmt::skip]
-        let values = [
-            -9., -8.,
-            -3., -2.,
-             3.,  4.
-        ];
+            let values = [
+                -9., -8.,
+                -3., -2.,
+                 3.,  4.
+            ];
 
         let bin_edges = [10.0, 5.0, 3.0];
         let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
-        let points = PointProps::new(&positions, &values, None, 3_usize).unwrap();
+        let points = PointProps::new(
+            ArrayView2::from_shape((3, 2), &positions).unwrap(),
+            ArrayView2::from_shape((3, 2), &values).unwrap(),
+            None,
+            3_usize,
+        )
+        .unwrap();
 
         let result = apply_accum(&mut accum, &points, None, &bin_edges, &diff_norm);
         assert!(result.is_err());
@@ -395,7 +394,13 @@ mod tests {
         // let bin_edges = vec![0.0, 3.0, 3.0];
 
         // should fail for mismatched spatial dimensions
-        let points_b = PointProps::new(&positions, &values, None, 2_usize).unwrap();
+        let points_b = PointProps::new(
+            ArrayView2::from_shape((3, 2), &positions).unwrap(),
+            ArrayView2::from_shape((3, 2), &values).unwrap(),
+            None,
+            2_usize,
+        )
+        .unwrap();
         let result = apply_accum(
             &mut accum,
             &points,
@@ -408,7 +413,13 @@ mod tests {
 
         // should fail if 1 points object provides weights an the other doesn't
         let weights = [1.0, 0.0];
-        let points_b = PointProps::new(&positions, &values, Some(&weights), 3_usize).unwrap();
+        let points_b = PointProps::new(
+            ArrayView2::from_shape((3, 2), &positions).unwrap(),
+            ArrayView2::from_shape((3, 2), &values).unwrap(),
+            Some(&weights),
+            3_usize,
+        )
+        .unwrap();
         let result = apply_accum(
             &mut accum,
             &points,
@@ -439,7 +450,13 @@ mod tests {
 
         // perform the calculation!
         let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
-        let points = PointProps::new(&positions, &values, None, 3_usize).unwrap();
+        let points = PointProps::new(
+            ArrayView2::from_shape((3, 6), &positions).unwrap(),
+            ArrayView2::from_shape((3, 6), &values).unwrap(),
+            None,
+            3_usize,
+        )
+        .unwrap();
         let result = apply_accum(&mut accum, &points, None, &bin_edges, &diff_norm);
         assert_eq!(result, Ok(()));
 
@@ -469,7 +486,13 @@ mod tests {
         let positions_a: Vec<f64> = (6..24).map(|x| x as f64).collect();
         let values_a: Vec<f64> = (-9..9).map(|x| x as f64).collect();
 
-        let points_a = PointProps::new(&positions_a, &values_a, None, 3_usize).unwrap();
+        let points_a = PointProps::new(
+            ArrayView2::from_shape((3, 6), &positions_a).unwrap(),
+            ArrayView2::from_shape((3, 6), &values_a).unwrap(),
+            None,
+            3_usize,
+        )
+        .unwrap();
 
         // we intentionally padded positions_b with a point
         // that is so far away from everything else that it can't
@@ -488,7 +511,13 @@ mod tests {
              1.,  2., 1000.,
         ];
 
-        let points_b = PointProps::new(&positions_b, &values_b, None, 3_usize).unwrap();
+        let points_b = PointProps::new(
+            ArrayView2::from_shape((3, 3), &positions_b).unwrap(),
+            ArrayView2::from_shape((3, 3), &values_b).unwrap(),
+            None,
+            3_usize,
+        )
+        .unwrap();
 
         let bin_edges = [17., 21., 25.];
 
