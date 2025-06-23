@@ -1,3 +1,5 @@
+use ndarray::ArrayView2;
+
 pub trait Accumulator {
     fn consume(&mut self, val: f64, weight: f64, bin_idx: usize);
     fn merge(&mut self, other: &Self);
@@ -57,16 +59,19 @@ impl Histogram {
     pub fn new(n_distance_bins: usize, hist_bin_edges: &[f64]) -> Result<Histogram, &'static str> {
         if n_distance_bins == 0 {
             Err("n_distance_bins can't be zero")
+        } else if !hist_bin_edges.is_sorted() {
+            return Err("hist_bin_edges must be sorted (monotonically increasing)");
         } else {
+            let n_hist_bins = hist_bin_edges.len() - 1;
             Ok(Histogram {
-                weight: vec![0.0; n_distance_bins],
+                weight: vec![0.0; n_distance_bins * n_hist_bins],
                 hist_bin_edges: hist_bin_edges.to_vec(),
-                n_hist_bins: hist_bin_edges.len() - 1,
+                n_hist_bins,
             })
         }
     }
 
-    pub fn get_values(&self, out: &mut [f64]) {
+    pub fn get_value(&self, out: &mut [f64]) {
         out.copy_from_slice(&self.weight);
     }
 }
@@ -85,38 +90,48 @@ impl Accumulator for Histogram {
     }
 }
 
-/// assumes that different vector-components are indexed along the slow axis.
-/// In other words, the kth component of the ith point (for positions &
-/// values) is located at an index of `i + k*spatial_dim_stride`
+/// Collection of point properties.
+///
+/// We place the following constraints on contained arrays:
+/// - axis 0 is the slow axis and it corresponds to different components of
+///   vector quantities (e.g. position, values).
+/// - axis 1 is the fast axis. The length along this axis coincides with
+///   the number of points. We require that it is contiguous (i.e. the stride
+///   is unity).
+/// - In other words the shape of one of these vectors is `(D, n_points)`,
+///   where `D` is the number of spatial dimensions and `n_points` is the
+///   number of points.
 pub struct PointProps<'a> {
-    positions: &'a [f64],
+    positions: ArrayView2<'a, f64>,
     // TODO allow values to have a difference dimensionality than positions
-    values: &'a [f64],
+    values: ArrayView2<'a, f64>,
     weights: Option<&'a [f64]>,
     n_points: usize,
-    // we could potentially handle this separately
     n_spatial_dims: usize,
 }
 
 impl<'a> PointProps<'a> {
+    /// create a new instance
     pub fn new(
-        positions: &'a [f64],
-        values: &'a [f64],
+        positions: ArrayView2<'a, f64>,
+        values: ArrayView2<'a, f64>,
         weights: Option<&'a [f64]>,
-        n_spatial_dims: usize,
     ) -> Result<PointProps<'a>, &'static str> {
+        let n_spatial_dims = positions.shape()[0];
+        let n_points = positions.shape()[1];
+        // TODO: should we place a requirement on the number of spatial_dims?
         if positions.is_empty() {
-            return Err("positions must hold at least n_spatial_dims");
-        } else if positions.len() % n_spatial_dims != 0 {
-            return Err("the length of positions must be an integer multiple of n_spatial_dims");
-        }
-        let n_points = positions.len() / n_spatial_dims;
-
-        if weights.is_some_and(|w| w.len() != n_points) {
-            Err("weights must be have the same number of points as positions")
-        } else if values.len() != n_points && values.len() != positions.len() {
-            // assumes vector or scalar values
-            Err("values must be have the same number of points as positions")
+            Err("positions must hold at least n_spatial_dims")
+        } else if positions.strides()[1] != 1 {
+            Err("positions must be contiguous along the fast axis")
+        } else if values.shape()[0] != n_spatial_dims {
+            // TODO: in the future, we will allow values to be 1D (i.e. a scalar)
+            Err("values must currently have the same number of spatial \
+                dimensions as positions")
+        } else if values.shape()[1] != n_points {
+            Err("values must have the same number of points as positions")
+        } else if weights.is_some_and(|w| w.len() != n_points) {
+            Err("weights must have the same number of points as positions")
         } else {
             Ok(Self {
                 positions,
@@ -162,19 +177,15 @@ fn get_bin_idx(distance_squared: f64, squared_bin_edges: &[f64]) -> Option<usize
 /// which are part of rust vecs that encodes a list of vectors with dimension on
 /// the "slow axis"
 fn squared_diff_norm(
-    v1: &[f64],
-    v2: &[f64],
+    v1: ArrayView2<f64>,
+    v2: ArrayView2<f64>,
     i1: usize,
     i2: usize,
-    spatial_dim_stride_1: usize,
-    spatial_dim_stride_2: usize,
     n_spatial_dims: usize,
 ) -> f64 {
     let mut sum = 0.0;
     for k in 0..n_spatial_dims {
-        let idx1 = i1 + k * spatial_dim_stride_1;
-        let idx2 = i2 + k * spatial_dim_stride_2;
-        sum += (v1[idx1] - v2[idx2]).powi(2);
+        sum += (v1[[k, i1]] - v2[[k, i2]]).powi(2);
     }
     sum
 }
@@ -186,8 +197,6 @@ pub fn diff_norm(points_a: &PointProps, points_b: &PointProps, i_a: usize, i_b: 
         points_b.values,
         i_a,
         i_b,
-        points_a.n_points,
-        points_b.n_points,
         points_a.n_spatial_dims,
     )
     .sqrt()
@@ -196,9 +205,7 @@ pub fn diff_norm(points_a: &PointProps, points_b: &PointProps, i_a: usize, i_b: 
 pub fn dot_product(points_a: &PointProps, points_b: &PointProps, i_a: usize, i_b: usize) -> f64 {
     let mut sum = 0.0;
     for k in 0..points_a.n_spatial_dims {
-        let idx1 = i_a + k * points_a.n_points;
-        let idx2 = i_b + k * points_b.n_points;
-        sum += points_a.values[idx1] * points_b.values[idx2];
+        sum += points_a.values[[k, i_a]] * points_b.values[[k, i_b]];
     }
     sum
 }
@@ -219,8 +226,6 @@ fn apply_accum_helper<const CROSS: bool>(
                 points_b.positions,
                 i_a,
                 i_b,
-                points_a.n_points,
-                points_b.n_points,
                 points_a.n_spatial_dims,
             );
             if let Some(distance_bin_idx) = get_bin_idx(distance_squared, squared_bin_edges) {
@@ -295,12 +300,12 @@ mod tests {
     // -----------------
 
     #[test]
-    fn accum_0len() {
+    fn mean_0len() {
         assert!(Mean::new(0).is_err());
     }
 
     #[test]
-    fn consume_once() {
+    fn mean_consume_once() {
         let mut accum = Mean::new(1).unwrap();
         accum.consume(4.0, 1.0, 0_usize);
 
@@ -313,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_twice() {
+    fn mean_consume_twice() {
         let mut accum = Mean::new(1).unwrap();
         accum.consume(4.0, 1.0, 0);
         accum.consume(8.0, 1.0, 0);
@@ -343,8 +348,19 @@ mod tests {
         assert_eq!(weight_vec[0], 4.0);
     }
 
+    #[test]
+    fn hist_0len() {
+        assert!(Histogram::new(0, &[0.0, 1.0]).is_err());
+    }
+
+    #[test]
+    fn hist_nonmonotonic() {
+        assert!(Histogram::new(3, &[1.0, 0.0]).is_err());
+    }
+
     // apply_accum Tests
     // -----------------
+    // most of these tests could be considered integration-tests
 
     // based on numpy!
     // https://numpy.org/doc/stable/reference/generated/numpy.isclose.html
@@ -380,7 +396,12 @@ mod tests {
 
         let bin_edges = [10.0, 5.0, 3.0];
         let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
-        let points = PointProps::new(&positions, &values, None, 3_usize).unwrap();
+        let points = PointProps::new(
+            ArrayView2::from_shape((3, 2), &positions).unwrap(),
+            ArrayView2::from_shape((3, 2), &values).unwrap(),
+            None,
+        )
+        .unwrap();
 
         let result = apply_accum(&mut accum, &points, None, &bin_edges, &diff_norm);
         assert!(result.is_err());
@@ -395,7 +416,12 @@ mod tests {
         // let bin_edges = vec![0.0, 3.0, 3.0];
 
         // should fail for mismatched spatial dimensions
-        let points_b = PointProps::new(&positions, &values, None, 2_usize).unwrap();
+        let points_b = PointProps::new(
+            ArrayView2::from_shape((2, 3), &positions).unwrap(),
+            ArrayView2::from_shape((2, 3), &values).unwrap(),
+            None,
+        )
+        .unwrap();
         let result = apply_accum(
             &mut accum,
             &points,
@@ -408,7 +434,12 @@ mod tests {
 
         // should fail if 1 points object provides weights an the other doesn't
         let weights = [1.0, 0.0];
-        let points_b = PointProps::new(&positions, &values, Some(&weights), 3_usize).unwrap();
+        let points_b = PointProps::new(
+            ArrayView2::from_shape((3, 2), &positions).unwrap(),
+            ArrayView2::from_shape((3, 2), &values).unwrap(),
+            Some(&weights),
+        )
+        .unwrap();
         let result = apply_accum(
             &mut accum,
             &points,
@@ -427,36 +458,61 @@ mod tests {
         // keep in mind that we interpret positions as a (3, ...) array
         // so position 0 is [6,12,18]
         let positions: Vec<f64> = (6..24).map(|x| x as f64).collect();
-        let values: Vec<f64> = (-9..9).map(|x| x as f64).collect();
+        let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
 
         // the bin edges are chosen so that some values don't fit
         // inside the bottom bin
         let bin_edges = [2., 6., 10., 15.];
 
-        // the expected results were printed by pyvsf
-        let expected_mean = [4.206409104095845, 7.505553499465134, f64::NAN];
+        // check the means (using results computed by pyvsf)
+        let expected_mean = [8.41281820819169, 15.01110699893027, f64::NAN];
         let expected_weight = [7., 3., 0.];
-
-        // perform the calculation!
-        let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
-        let points = PointProps::new(&positions, &values, None, 3_usize).unwrap();
-        let result = apply_accum(&mut accum, &points, None, &bin_edges, &diff_norm);
+        let mut mean_accum = Mean::new(bin_edges.len() - 1).unwrap();
+        let points = PointProps::new(
+            ArrayView2::from_shape((3, 6), &positions).unwrap(),
+            ArrayView2::from_shape((3, 6), &values).unwrap(),
+            None,
+        )
+        .unwrap();
+        let result = apply_accum(&mut mean_accum, &points, None, &bin_edges, &diff_norm);
         assert_eq!(result, Ok(()));
 
         // output buffers
         let mut mean = [0.0; 3];
         let mut weight = [0.0; 3];
-        accum.get_value(&mut mean, &mut weight);
+        mean_accum.get_value(&mut mean, &mut weight);
 
         for i in 0..3 {
             // we might need to adopt an actual rtol
             assert!(
-                _isclose(mean[i], expected_mean[i], 0.0, 0.0),
+                _isclose(mean[i], expected_mean[i], 3.0e-16, 0.0),
                 "actual mean = {}, expected mean = {}",
                 mean[i],
                 expected_mean[i]
             );
             assert_eq!(weight[i], expected_weight[i], "unequal weights");
+        }
+
+        // check the histograms (using results computed by pyvsf)
+
+        // the hist_bin_edges were picked such that:
+        // - the number of bins is unequal to the distance bin count
+        // - there would be a value smaller than the leftmost bin-edge
+        // - there would be a value larger than the leftmost bin-edge
+        let hist_bin_edges = [6.0, 10.0, 14.0];
+        #[rustfmt::skip]
+        let expected_hist_weights = [
+            4., 3.,
+            0., 2.,
+            0., 0.
+        ];
+        let mut hist_accum = Histogram::new(bin_edges.len() - 1, &hist_bin_edges).unwrap();
+        let result = apply_accum(&mut hist_accum, &points, None, &bin_edges, &diff_norm);
+        assert_eq!(result, Ok(()));
+        let mut hist_weights = [0.0; 6];
+        hist_accum.get_value(&mut hist_weights);
+        for i in 0..6 {
+            assert_eq!(hist_weights[i], expected_hist_weights[i]);
         }
     }
 
@@ -469,7 +525,12 @@ mod tests {
         let positions_a: Vec<f64> = (6..24).map(|x| x as f64).collect();
         let values_a: Vec<f64> = (-9..9).map(|x| x as f64).collect();
 
-        let points_a = PointProps::new(&positions_a, &values_a, None, 3_usize).unwrap();
+        let points_a = PointProps::new(
+            ArrayView2::from_shape((3, 6), &positions_a).unwrap(),
+            ArrayView2::from_shape((3, 6), &values_a).unwrap(),
+            None,
+        )
+        .unwrap();
 
         // we intentionally padded positions_b with a point
         // that is so far away from everything else that it can't
@@ -488,7 +549,12 @@ mod tests {
              1.,  2., 1000.,
         ];
 
-        let points_b = PointProps::new(&positions_b, &values_b, None, 3_usize).unwrap();
+        let points_b = PointProps::new(
+            ArrayView2::from_shape((3, 3), &positions_b).unwrap(),
+            ArrayView2::from_shape((3, 3), &values_b).unwrap(),
+            None,
+        )
+        .unwrap();
 
         let bin_edges = [17., 21., 25.];
 
@@ -513,6 +579,47 @@ mod tests {
         accum.get_value(&mut mean, &mut weight);
 
         for i in 0..2 {
+            assert!(
+                _isclose(mean[i], expected_mean[i], 3.0e-16, 0.0),
+                "actual mean = {}, expected mean = {}",
+                mean[i],
+                expected_mean[i]
+            );
+            assert_eq!(weight[i], expected_weight[i], "unequal weights");
+        }
+    }
+
+    #[test]
+    fn test_apply_accum_auto_corr() {
+        // keep in mind that we interpret positions as a (3, ...) array
+        // so position 0 is [6,12,18]
+        let positions: Vec<f64> = (6..24).map(|x| x as f64).collect();
+        let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
+
+        // the bin edges are chosen so that some values don't fit
+        // inside the bottom bin
+        let bin_edges = [2., 6., 10., 15.];
+
+        // check the means (using results computed by pyvsf)
+        let expected_mean = [284.57142857142856, 236.0, f64::NAN];
+        let expected_weight = [7., 3., 0.];
+        let mut mean_accum = Mean::new(bin_edges.len() - 1).unwrap();
+        let points = PointProps::new(
+            ArrayView2::from_shape((3, 6), &positions).unwrap(),
+            ArrayView2::from_shape((3, 6), &values).unwrap(),
+            None,
+        )
+        .unwrap();
+        let result = apply_accum(&mut mean_accum, &points, None, &bin_edges, &dot_product);
+        assert_eq!(result, Ok(()));
+
+        // output buffers
+        let mut mean = [0.0; 3];
+        let mut weight = [0.0; 3];
+        mean_accum.get_value(&mut mean, &mut weight);
+
+        for i in 0..3 {
+            // we might need to adopt an actual rtol
             assert!(
                 _isclose(mean[i], expected_mean[i], 3.0e-16, 0.0),
                 "actual mean = {}, expected mean = {}",

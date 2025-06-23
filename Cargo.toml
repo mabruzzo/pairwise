@@ -6,3 +6,8 @@ authors = ["Matthew W. Abruzzo", "Adam J. Wheeler"]
 rust-version = "1.82"
 
 [dependencies]
+# ndarray brings in a lot more than we actually need. In the future, we may
+# want to simply implement the really small subset of functionality that we
+# actually need. In the short-term, we disable features relying upon the rust
+# library (this may make it easier to support GPUs)
+ndarray = {version = "0.16", default-features = false}
