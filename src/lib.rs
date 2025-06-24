@@ -1,4 +1,7 @@
 use ndarray::ArrayView2;
+mod vecpack;
+
+use vecpack::ScalarVecCompat;
 
 pub trait Accumulator {
     fn consume(&mut self, val: f64, weight: f64, bin_idx: usize);
