@@ -42,11 +42,14 @@ pub trait ScalarVecCompat<Other = Self, Output = Self>:
     + Mul<Other, Output = Output>
 {
     type T;
+    type Array;
     const NLANES: usize;
+
     fn sqrt(self) -> Self;
     fn copy_from(slice: &[Self::T], offset: usize) -> Self;
     fn zero() -> Self;
     fn shift_elements_left<const OFFSET: usize>(self, padding: Self::T) -> Self;
+    fn to_array(&self) -> Self::Array;
 }
 
 // make sure we don't let external code directly access the underlying array
@@ -159,6 +162,7 @@ fn has_alignment(slc: &[f64], align: usize) -> bool {
 
 impl ScalarVecCompat for f64 {
     type T = Self;
+    type Array = [f64; 1];
     const NLANES: usize = 1;
 
     fn sqrt(self) -> Self {
@@ -179,10 +183,15 @@ impl ScalarVecCompat for f64 {
             padding
         }
     }
+
+    fn to_array(&self) -> [Self::T; Self::NLANES] {
+        [self.clone()]
+    }
 }
 
 impl<const N: usize> ScalarVecCompat for VecPack<f64, N> {
     type T = f64;
+    type Array = [f64; N];
     const NLANES: usize = N;
 
     fn sqrt(self) -> Self {
@@ -208,6 +217,10 @@ impl<const N: usize> ScalarVecCompat for VecPack<f64, N> {
             out.0[n_copied..].fill(padding);
             out
         }
+    }
+
+    fn to_array(&self) -> Self::Array {
+        self.to_array()
     }
 }
 
