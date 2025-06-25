@@ -1,5 +1,10 @@
 use ndarray::ArrayView2;
 
+// below we declare that vecpack is part of the package (but we don't
+// currently use any features from it)
+mod cartesian_block;
+mod vecpack; // we need to use `mod` the first time we try to import
+
 pub trait Accumulator {
     fn consume(&mut self, val: f64, weight: f64, bin_idx: usize);
     fn merge(&mut self, other: &Self);
