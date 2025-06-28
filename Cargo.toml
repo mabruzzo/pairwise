@@ -1,9 +1,9 @@
 [package]
 name = "pairwise"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 authors = ["Matthew W. Abruzzo", "Adam J. Wheeler"]
-rust-version = "1.82"
+rust-version = "1.85"
 
 [dependencies]
 # ndarray brings in a lot more than we actually need. In the future, we may
