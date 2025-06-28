@@ -1,5 +1,5 @@
 use ndarray::ArrayView2;
-use pairwise::{apply_accum, diff_norm, dot_product, Histogram, Mean, PointProps};
+use pairwise::{Histogram, Mean, PointProps, apply_accum, diff_norm, dot_product};
 
 #[cfg(test)]
 mod tests {
