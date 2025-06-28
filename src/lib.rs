@@ -190,22 +190,38 @@ fn squared_diff_norm(
     sum
 }
 
-// TODO come up with a better name
-pub fn diff_norm(points_a: &PointProps, points_b: &PointProps, i_a: usize, i_b: usize) -> f64 {
-    squared_diff_norm(
-        points_a.values,
-        points_b.values,
-        i_a,
-        i_b,
-        points_a.n_spatial_dims,
-    )
-    .sqrt()
+/// computes the euclidean distance between 2 (mathematical) vectors taken from
+/// `values_a` and `values_b`.
+///
+/// # Assumptions
+/// This function assumes that spatial dimension varies along axis 0 of
+/// `values_a` and `values_b` (and that it is the same value for both arrays)
+pub fn diff_norm(
+    values_a: ArrayView2<f64>,
+    values_b: ArrayView2<f64>,
+    i_a: usize,
+    i_b: usize,
+) -> f64 {
+    // TODO come up with a better name for this function
+
+    squared_diff_norm(values_a, values_b, i_a, i_b, values_a.shape()[0]).sqrt()
 }
 
-pub fn dot_product(points_a: &PointProps, points_b: &PointProps, i_a: usize, i_b: usize) -> f64 {
+/// computes a dot product between a (mathematical) vectors taken from
+/// `values_a` and `values_b`.
+///
+/// # Assumptions
+/// This function assumes that spatial dimension varies along axis 0 of
+/// `values_a` and `values_b` (and that it is the same value for both arrays)
+pub fn dot_product(
+    values_a: ArrayView2<f64>,
+    values_b: ArrayView2<f64>,
+    i_a: usize,
+    i_b: usize,
+) -> f64 {
     let mut sum = 0.0;
-    for k in 0..points_a.n_spatial_dims {
-        sum += points_a.values[[k, i_a]] * points_b.values[[k, i_b]];
+    for k in 0..values_a.shape()[0] {
+        sum += values_a[[k, i_a]] * values_b[[k, i_b]];
     }
     sum
 }
@@ -215,7 +231,7 @@ fn apply_accum_helper<const CROSS: bool>(
     points_a: &PointProps,
     points_b: &PointProps,
     squared_bin_edges: &[f64],
-    pairwise_fn: impl Fn(&PointProps, &PointProps, usize, usize) -> f64,
+    pairwise_fn: impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
 ) {
     for i_a in 0..points_a.n_points {
         let i_b_start = if CROSS { i_a + 1 } else { 0 };
@@ -232,7 +248,7 @@ fn apply_accum_helper<const CROSS: bool>(
                 // get the value. This is hardcoded to correspond to the velocity structure
                 // function when accumulated with Mean
                 // TODO switch on pairwise op?
-                let val = pairwise_fn(points_a, points_b, i_a, i_b);
+                let val = pairwise_fn(points_a.values, points_b.values, i_a, i_b);
 
                 // get the weight
                 let pair_weight = points_a.get_weight(i_a) * points_b.get_weight(i_b);
@@ -252,7 +268,7 @@ pub fn apply_accum(
     points_b: Option<&PointProps>,
     // TODO should distance_bin_edges should be a member of the AccumKernel Struct
     distance_bin_edges: &[f64],
-    pairwise_fn: &impl Fn(&PointProps, &PointProps, usize, usize) -> f64,
+    pairwise_fn: &impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
 ) -> Result<(), String> {
     // TODO check size of output buffers
 
