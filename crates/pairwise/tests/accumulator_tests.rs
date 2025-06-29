@@ -1,5 +1,5 @@
-use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2, NewAxis, s};
-use pairwise::{Accumulator, Histogram, Mean, OutputDescr};
+use ndarray::{ArrayView1, ArrayViewMut1, NewAxis, s};
+use pairwise::{Accumulator, Histogram, Mean, get_output};
 use std::collections::HashMap;
 
 // this is inefficient, but it gets the job done for now
@@ -9,33 +9,11 @@ fn _get_output_single(
     accum: &impl Accumulator,
     stateprop: &ArrayView1<f64>,
 ) -> HashMap<&'static str, Vec<f64>> {
-    _get_output(accum, &stateprop.slice(s![.., NewAxis]))
+    get_output(accum, &stateprop.slice(s![.., NewAxis]))
 }
 
 // TODO: factor out this function and the get_output function from
 //       integration_tests.rs (they are identical)
-fn _get_output(
-    accum: &impl Accumulator,
-    stateprops: &ArrayView2<f64>,
-) -> HashMap<&'static str, Vec<f64>> {
-    let description = accum.output_descr();
-    let n_bins = stateprops.shape()[1];
-    let n_comps = description.n_per_statepack();
-
-    let mut buffer = Vec::new();
-    buffer.resize(n_comps * n_bins, 0.0);
-    let mut buffer_view = ArrayViewMut2::from_shape([n_comps, n_bins], &mut buffer).unwrap();
-    accum.values_from_statepacks(&mut buffer_view, stateprops);
-
-    match description {
-        OutputDescr::MultiScalarComp(names) => {
-            let _to_vec = |row: ArrayView1<f64>| row.iter().cloned().collect();
-            let row_iter = buffer_view.rows().into_iter().map(_to_vec);
-            HashMap::from_iter(names.iter().cloned().zip(row_iter))
-        }
-        OutputDescr::SingleVecComp { name, .. } => HashMap::from([(name, buffer)]),
-    }
-}
 
 #[cfg(test)]
 mod tests {
