@@ -1,5 +1,5 @@
 use crate::misc::{Accumulator, get_bin_idx, squared_diff_norm};
-use ndarray::ArrayView2;
+use ndarray::{ArrayView2, ArrayViewMut2, Axis};
 
 /// Collection of point properties.
 ///
@@ -65,7 +65,8 @@ impl<'a> PointProps<'a> {
 }
 
 fn apply_accum_helper<const CROSS: bool>(
-    accum: &mut impl Accumulator,
+    stateprops: &mut ArrayViewMut2<f64>,
+    accum: &impl Accumulator,
     points_a: &PointProps,
     points_b: &PointProps,
     squared_bin_edges: &[f64],
@@ -91,7 +92,11 @@ fn apply_accum_helper<const CROSS: bool>(
                 // get the weight
                 let pair_weight = points_a.get_weight(i_a) * points_b.get_weight(i_b);
 
-                accum.consume(val, pair_weight, distance_bin_idx);
+                accum.consume(
+                    &mut stateprops.index_axis_mut(Axis(1), distance_bin_idx),
+                    val,
+                    pair_weight,
+                );
             }
         }
     }
@@ -101,7 +106,8 @@ fn apply_accum_helper<const CROSS: bool>(
 // cross-stats
 // TODO: generalize to allow faster calculations for regular spatial grids
 pub fn apply_accum(
-    accum: &mut impl Accumulator,
+    stateprops: &mut ArrayViewMut2<f64>,
+    accum: &impl Accumulator,
     points_a: &PointProps,
     points_b: Option<&PointProps>,
     // TODO should distance_bin_edges should be a member of the AccumKernel Struct
@@ -136,9 +142,23 @@ pub fn apply_accum(
     let squared_bin_edges: Vec<f64> = distance_bin_edges.iter().map(|x| x.powi(2)).collect();
 
     if let Some(points_b) = points_b {
-        apply_accum_helper::<false>(accum, points_a, points_b, &squared_bin_edges, pairwise_fn)
+        apply_accum_helper::<false>(
+            stateprops,
+            accum,
+            points_a,
+            points_b,
+            &squared_bin_edges,
+            pairwise_fn,
+        )
     } else {
-        apply_accum_helper::<true>(accum, points_a, points_a, &squared_bin_edges, pairwise_fn)
+        apply_accum_helper::<true>(
+            stateprops,
+            accum,
+            points_a,
+            points_a,
+            &squared_bin_edges,
+            pairwise_fn,
+        )
     }
     Ok(())
 }
