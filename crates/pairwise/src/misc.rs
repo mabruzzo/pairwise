@@ -1,8 +1,43 @@
 //! Miscellaneous machinery used to implement the package
 
-use ndarray::{ArrayView1, ArrayViewMut1};
+use std::collections::HashMap;
+
+use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2};
 
 use pairwise_internal::{Accumulator, OutputDescr, get_bin_idx};
+
+/// compute the output quantities from an Accumulator's state properties and
+/// return the result in a HashMap.
+///
+/// # Notes
+/// This is primarily used for testing.
+///
+/// TODO: I'm not sure I really want this to be a part of the standard API.
+///       Before the 1.0 release, we should either move this to a private
+///       testing_helpers crate OR we should explicitly decide to make this
+///       part of the public API.
+pub fn get_output(
+    accum: &impl Accumulator,
+    stateprops: &ArrayView2<f64>,
+) -> HashMap<&'static str, Vec<f64>> {
+    let description = accum.output_descr();
+    let n_bins = stateprops.shape()[1];
+    let n_comps = description.n_per_statepack();
+
+    let mut buffer = Vec::new();
+    buffer.resize(n_comps * n_bins, 0.0);
+    let mut buffer_view = ArrayViewMut2::from_shape([n_comps, n_bins], &mut buffer).unwrap();
+    accum.values_from_statepacks(&mut buffer_view, stateprops);
+
+    match description {
+        OutputDescr::MultiScalarComp(names) => {
+            let _to_vec = |row: ArrayView1<f64>| row.iter().cloned().collect();
+            let row_iter = buffer_view.rows().into_iter().map(_to_vec);
+            HashMap::from_iter(names.iter().cloned().zip(row_iter))
+        }
+        OutputDescr::SingleVecComp { name, .. } => HashMap::from([(name, buffer)]),
+    }
+}
 
 // TODO: refactor so that Histogram doesn't hold a vector and move to
 //       pairwise_internal/accumulator.rs (to )
