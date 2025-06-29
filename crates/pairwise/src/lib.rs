@@ -4,4 +4,5 @@ mod misc;
 
 // pull in symbols that visible outside of the package
 pub use apply_points::{PointProps, apply_accum};
-pub use misc::{Accumulator, Histogram, Mean, OutputDescr, diff_norm, dot_product};
+pub use misc::{Histogram, diff_norm, dot_product};
+pub use pairwise_internal::{Accumulator, Mean, OutputDescr};

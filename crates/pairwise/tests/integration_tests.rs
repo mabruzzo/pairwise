@@ -16,7 +16,8 @@ fn prepare_statepacks(n_spatial_bins: usize, accum: &impl Accumulator) -> Array2
     statepacks
 }
 
-// it isn't good that we copy-and-pasted this function
+// TODO: factor out this function and the get_output function from
+//       accumulator_tests.rs
 fn get_output(
     accum: &impl Accumulator,
     stateprops: &ArrayView2<f64>,

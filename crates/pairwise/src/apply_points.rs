@@ -1,5 +1,6 @@
-use crate::misc::{Accumulator, get_bin_idx, squared_diff_norm};
+use crate::misc::{get_bin_idx, squared_diff_norm};
 use ndarray::{ArrayView2, ArrayViewMut2, Axis};
+use pairwise_internal::Accumulator;
 
 /// Collection of point properties.
 ///
