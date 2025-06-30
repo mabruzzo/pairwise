@@ -33,7 +33,7 @@
 //! - We refer to the current state of the accumulator as its state-pack.
 //! - The accumulation logic is encapsulated by the functions implemented by
 //!   the `Accumulator` trait. At the time of writing, an Accumulator
-//!   implements logic for modifyin a single state-pack.
+//!   implements logic for modifying a single state-pack.
 //!
 //! At a high-level, external code tracks separate state-packs for each bin,
 //! and invokes accumulators for separate state-packs. The external code needs

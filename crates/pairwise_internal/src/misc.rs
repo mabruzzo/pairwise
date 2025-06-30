@@ -40,26 +40,10 @@ pub fn squared_diff_norm(
 ) -> f64 {
     let mut sum = 0.0;
     for k in 0..n_spatial_dims {
-        sum += (v1[[k, i1]] - v2[[k, i2]]).powi(2);
+        let diff = v1[[k, i1]] - v2[[k, i2]];
+        sum += diff * diff; // NOTE: .powi can't be used in no_std crates
     }
     sum
-}
-
-/// computes the euclidean distance between 2 (mathematical) vectors taken from
-/// `values_a` and `values_b`.
-///
-/// # Assumptions
-/// This function assumes that spatial dimension varies along axis 0 of
-/// `values_a` and `values_b` (and that it is the same value for both arrays)
-pub fn diff_norm(
-    values_a: ArrayView2<f64>,
-    values_b: ArrayView2<f64>,
-    i_a: usize,
-    i_b: usize,
-) -> f64 {
-    // TODO come up with a better name for this function
-
-    squared_diff_norm(values_a, values_b, i_a, i_b, values_a.shape()[0]).sqrt()
 }
 
 /// computes a dot product between the (mathematical) vectors taken from
