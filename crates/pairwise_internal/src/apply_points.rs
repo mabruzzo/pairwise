@@ -1,5 +1,6 @@
+use crate::accumulator::Accumulator;
+use crate::misc::{get_bin_idx, squared_diff_norm};
 use ndarray::{ArrayView2, ArrayViewMut2, Axis};
-use pairwise_internal::{Accumulator, get_bin_idx, squared_diff_norm};
 
 /// Collection of point properties.
 ///
@@ -129,29 +130,25 @@ pub fn apply_accum(
     points_b: Option<&PointProps>,
     squared_distance_bin_edges: &[f64],
     pairwise_fn: &impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
-) -> Result<(), String> {
+) -> Result<(), &'static str> {
     // maybe we make separate functions for auto-stats vs cross-stats?
     // TODO: check size of output buffers
 
     // Check that bin_edges are monotonically increasing
     if !squared_distance_bin_edges.is_sorted() {
-        return Err(String::from(
-            "squared_distance_bin_edges must monotonically increase",
-        ));
+        return Err("squared_distance_bin_edges must monotonically increase");
     }
 
     //  if points_b is not None, make sure a and b have the same number of
     // spatial dimensions
     if let Some(points_b) = points_b {
         if points_a.n_spatial_dims != points_b.n_spatial_dims {
-            return Err(String::from(
-                "points_a and points_b must have the same number of spatial dimensions",
-            ));
+            return Err("points_a and points_b must have the same number of spatial dimensions");
         } else if points_a.weights.is_some() != points_b.weights.is_some() {
-            return Err(String::from(
+            return Err(
                 "points_a and points_b must both provide weights or neither \
                 should provide weights",
-            ));
+            );
         }
     }
 
