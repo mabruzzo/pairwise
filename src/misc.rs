@@ -153,7 +153,7 @@ pub fn diff_norm(
     squared_diff_norm(values_a, values_b, i_a, i_b, values_a.shape()[0]).sqrt()
 }
 
-/// computes a dot product between a (mathematical) vectors taken from
+/// computes a dot product between two (mathematical) vectors taken from
 /// `values_a` and `values_b`.
 ///
 /// # Assumptions
