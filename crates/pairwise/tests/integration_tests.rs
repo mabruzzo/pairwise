@@ -51,7 +51,9 @@ mod tests {
              3.,  4.
         ];
 
-        let bin_edges = [10.0, 5.0, 3.0];
+        let distance_bin_edges = [10.0_f64, 5.0, 3.0];
+        let squared_distance_bin_edges: Vec<f64> =
+            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
         let points = PointProps::new(
             ArrayView2::from_shape((3, 2), &positions).unwrap(),
             ArrayView2::from_shape((3, 2), &values).unwrap(),
@@ -60,7 +62,7 @@ mod tests {
         .unwrap();
 
         let accum = Mean;
-        let n_spatial_bins = bin_edges.len() - 1;
+        let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut statepacks = prepare_statepacks(n_spatial_bins, &accum);
 
         let result = apply_accum(
@@ -68,19 +70,21 @@ mod tests {
             &accum,
             &points,
             None,
-            &bin_edges,
+            &squared_distance_bin_edges,
             &diff_norm,
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("monotonic"));
 
-        let bin_edges = vec![3.0, 5.0, 0.0];
+        let distance_bin_edges: [f64; 3] = [3.0, 5.0, 0.0];
+        let squared_distance_bin_edges: Vec<f64> =
+            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
         let result = apply_accum(
             &mut statepacks.view_mut(),
             &accum,
             &points,
             None,
-            &bin_edges,
+            &squared_distance_bin_edges,
             &diff_norm,
         );
         assert!(result.is_err());
@@ -138,13 +142,15 @@ mod tests {
 
         // the bin edges are chosen so that some values don't fit
         // inside the bottom bin
-        let bin_edges = [2., 6., 10., 15.];
+        let distance_bin_edges: [f64; 4] = [2.0, 6., 10., 15.];
+        let squared_distance_bin_edges: Vec<f64> =
+            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
 
         // check the means (using results computed by pyvsf)
         let expected_mean = [8.41281820819169, 15.01110699893027, f64::NAN];
         let expected_weight = [7., 3., 0.];
         let mean_accum = Mean;
-        let n_spatial_bins = bin_edges.len() - 1;
+        let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut mean_statepacks = prepare_statepacks(n_spatial_bins, &mean_accum);
         let points = PointProps::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
@@ -157,7 +163,7 @@ mod tests {
             &mean_accum,
             &points,
             None,
-            &bin_edges,
+            &squared_distance_bin_edges,
             &diff_norm,
         );
         assert_eq!(result, Ok(()));
@@ -193,13 +199,13 @@ mod tests {
             3., 2., 0.,
         ];
         let hist_accum = Histogram::new(&hist_bin_edges).unwrap();
-        let mut hist_statepacks = prepare_statepacks(bin_edges.len() - 1, &hist_accum);
+        let mut hist_statepacks = prepare_statepacks(distance_bin_edges.len() - 1, &hist_accum);
         let result = apply_accum(
             &mut hist_statepacks.view_mut(),
             &hist_accum,
             &points,
             None,
-            &bin_edges,
+            &squared_distance_bin_edges,
             &diff_norm,
         );
         assert_eq!(result, Ok(()));
@@ -253,7 +259,9 @@ mod tests {
         )
         .unwrap();
 
-        let bin_edges = [17., 21., 25.];
+        let distance_bin_edges: [f64; 3] = [17., 21., 25.];
+        let squared_distance_bin_edges: Vec<f64> =
+            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
 
         // the expected results were printed by pyvsf
         let expected_mean = [6.274664681905207, 6.068727871100932];
@@ -261,7 +269,7 @@ mod tests {
 
         // perform the calculation!
         let accum = Mean;
-        let n_spatial_bins = bin_edges.len() - 1;
+        let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut statepacks = prepare_statepacks(n_spatial_bins, &accum);
 
         let result = apply_accum(
@@ -269,7 +277,7 @@ mod tests {
             &accum,
             &points_a,
             Some(&points_b),
-            &bin_edges,
+            &squared_distance_bin_edges,
             &diff_norm,
         );
         assert_eq!(result, Ok(()));
@@ -296,13 +304,15 @@ mod tests {
 
         // the bin edges are chosen so that some values don't fit
         // inside the bottom bin
-        let bin_edges = [2., 6., 10., 15.];
+        let distance_bin_edges: [f64; 4] = [2., 6., 10., 15.];
+        let squared_distance_bin_edges: Vec<f64> =
+            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
 
         // check the means (using results computed by pyvsf)
         let expected_mean = [284.57142857142856, 236.0, f64::NAN];
         let expected_weight = [7., 3., 0.];
         let mean_accum = Mean;
-        let n_spatial_bins = bin_edges.len() - 1;
+        let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut mean_statepacks = prepare_statepacks(n_spatial_bins, &mean_accum);
 
         let points = PointProps::new(
@@ -316,7 +326,7 @@ mod tests {
             &mean_accum,
             &points,
             None,
-            &bin_edges,
+            &squared_distance_bin_edges,
             &dot_product,
         );
         assert_eq!(result, Ok(()));

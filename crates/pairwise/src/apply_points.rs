@@ -102,24 +102,41 @@ fn apply_accum_helper<const CROSS: bool>(
     }
 }
 
-// maybe we want to make separate functions for auto-stats vs
-// cross-stats
-// TODO: generalize to allow faster calculations for regular spatial grids
+/// Computes contributions to binned statistics from values computed from the
+/// specified pairs of points.
+///
+/// When `points_b` is `None`, the function considers all unique pairs of
+/// points within `points_a`. Otherwise, all pairs of points between `points_a`
+/// and `points_b` are considered.
+///
+/// For each pair of points:
+/// - The value contributed by the pair is determined by `pairwise_fn`
+/// - The bin the value is contributed to is determined by the distance between
+///   the points and the `squared_distance_bin_edges` argument
+///
+/// Details about the considered statistics are encapsulated by `accum`.
+/// Statistical contributions (for all bins) are tracked within `stateprops`.
+///
+/// TODO: I don't love that we are directly accepting
+///       `squared_distance_bin_edges`. Frankly it seems like a recipe for
+///       disaster (I myself could imagine forgetting to square things). I
+///       think this is Ok while we get everything working, but we definitely
+///       should revisit!
 pub fn apply_accum(
     stateprops: &mut ArrayViewMut2<f64>,
     accum: &impl Accumulator,
     points_a: &PointProps,
     points_b: Option<&PointProps>,
-    // TODO should distance_bin_edges should be a member of the AccumKernel Struct
-    distance_bin_edges: &[f64],
+    squared_distance_bin_edges: &[f64],
     pairwise_fn: &impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
 ) -> Result<(), String> {
-    // TODO check size of output buffers
+    // maybe we make separate functions for auto-stats vs cross-stats?
+    // TODO: check size of output buffers
 
     // Check that bin_edges are monotonically increasing
-    if !distance_bin_edges.is_sorted() {
+    if !squared_distance_bin_edges.is_sorted() {
         return Err(String::from(
-            "bin_edges must be sorted (monotonically increasing)",
+            "squared_distance_bin_edges must monotonically increase",
         ));
     }
 
@@ -138,16 +155,13 @@ pub fn apply_accum(
         }
     }
 
-    // I think this alloc is worth it? Could use a buffer?
-    let squared_bin_edges: Vec<f64> = distance_bin_edges.iter().map(|x| x.powi(2)).collect();
-
     if let Some(points_b) = points_b {
         apply_accum_helper::<false>(
             stateprops,
             accum,
             points_a,
             points_b,
-            &squared_bin_edges,
+            squared_distance_bin_edges,
             pairwise_fn,
         )
     } else {
@@ -156,7 +170,7 @@ pub fn apply_accum(
             accum,
             points_a,
             points_a,
-            &squared_bin_edges,
+            squared_distance_bin_edges,
             pairwise_fn,
         )
     }
