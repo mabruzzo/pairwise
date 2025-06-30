@@ -1,0 +1,10 @@
+[package]
+name = "pairwise_internal"
+version = "0.1.0"
+edition = "2024"
+authors = ["Matthew W. Abruzzo", "Adam J. Wheeler"]
+rust-version = "1.85"
+
+[dependencies]
+# we disable default-features since this crate is no-std
+ndarray = { version = "0.16", default-features = false }

@@ -1,5 +1,19 @@
-use ndarray::ArrayView2;
-use pairwise::{Histogram, Mean, PointProps, apply_accum, diff_norm, dot_product};
+use ndarray::{Array2, ArrayView2};
+use pairwise::{
+    Accumulator, Histogram, Mean, PointProps, apply_accum, diff_norm, dot_product, get_output,
+};
+
+// Things are a little unergonomic!
+
+// helper function!
+fn prepare_statepacks(n_spatial_bins: usize, accum: &impl Accumulator) -> Array2<f64> {
+    assert!(n_spatial_bins > 0);
+    let mut statepacks = Array2::<f64>::zeros((accum.statepack_size(), n_spatial_bins));
+    for mut col in statepacks.columns_mut() {
+        accum.reset_statepack(&mut col);
+    }
+    statepacks
+}
 
 #[cfg(test)]
 mod tests {
@@ -38,7 +52,6 @@ mod tests {
         ];
 
         let bin_edges = [10.0, 5.0, 3.0];
-        let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
         let points = PointProps::new(
             ArrayView2::from_shape((3, 2), &positions).unwrap(),
             ArrayView2::from_shape((3, 2), &values).unwrap(),
@@ -46,12 +59,30 @@ mod tests {
         )
         .unwrap();
 
-        let result = apply_accum(&mut accum, &points, None, &bin_edges, &diff_norm);
+        let accum = Mean;
+        let n_spatial_bins = bin_edges.len() - 1;
+        let mut statepacks = prepare_statepacks(n_spatial_bins, &accum);
+
+        let result = apply_accum(
+            &mut statepacks.view_mut(),
+            &accum,
+            &points,
+            None,
+            &bin_edges,
+            &diff_norm,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("monotonic"));
 
         let bin_edges = vec![3.0, 5.0, 0.0];
-        let result = apply_accum(&mut accum, &points, None, &bin_edges, &diff_norm);
+        let result = apply_accum(
+            &mut statepacks.view_mut(),
+            &accum,
+            &points,
+            None,
+            &bin_edges,
+            &diff_norm,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("monotonic"));
 
@@ -66,7 +97,8 @@ mod tests {
         )
         .unwrap();
         let result = apply_accum(
-            &mut accum,
+            &mut statepacks.view_mut(),
+            &accum,
             &points,
             Some(&points_b),
             &[0.0, 3.0, 5.0],
@@ -84,7 +116,8 @@ mod tests {
         )
         .unwrap();
         let result = apply_accum(
-            &mut accum,
+            &mut statepacks.view_mut(),
+            &accum,
             &points,
             Some(&points_b),
             &[0.0, 3.0, 5.0],
@@ -110,30 +143,40 @@ mod tests {
         // check the means (using results computed by pyvsf)
         let expected_mean = [8.41281820819169, 15.01110699893027, f64::NAN];
         let expected_weight = [7., 3., 0.];
-        let mut mean_accum = Mean::new(bin_edges.len() - 1).unwrap();
+        let mean_accum = Mean;
+        let n_spatial_bins = bin_edges.len() - 1;
+        let mut mean_statepacks = prepare_statepacks(n_spatial_bins, &mean_accum);
         let points = PointProps::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
             ArrayView2::from_shape((3, 6), &values).unwrap(),
             None,
         )
         .unwrap();
-        let result = apply_accum(&mut mean_accum, &points, None, &bin_edges, &diff_norm);
+        let result = apply_accum(
+            &mut mean_statepacks.view_mut(),
+            &mean_accum,
+            &points,
+            None,
+            &bin_edges,
+            &diff_norm,
+        );
         assert_eq!(result, Ok(()));
 
         // output buffers
-        let mut mean = [0.0; 3];
-        let mut weight = [0.0; 3];
-        mean_accum.get_value(&mut mean, &mut weight);
+        let mean_result_map = get_output(&mean_accum, &mean_statepacks.view());
 
-        for i in 0..3 {
+        for i in 0..n_spatial_bins {
             // we might need to adopt an actual rtol
             assert!(
-                _isclose(mean[i], expected_mean[i], 3.0e-16, 0.0),
+                _isclose(mean_result_map["mean"][i], expected_mean[i], 3.0e-16, 0.0),
                 "actual mean = {}, expected mean = {}",
-                mean[i],
+                mean_result_map["mean"][i],
                 expected_mean[i]
             );
-            assert_eq!(weight[i], expected_weight[i], "unequal weights");
+            assert_eq!(
+                mean_result_map["weight"][i], expected_weight[i],
+                "unequal weights"
+            );
         }
 
         // check the histograms (using results computed by pyvsf)
@@ -146,17 +189,27 @@ mod tests {
 
         #[rustfmt::skip]
         let expected_hist_weights = [
-            4., 3.,
-            0., 2.,
-            0., 0.
+            4., 0., 0.,
+            3., 2., 0.,
         ];
-        let mut hist_accum = Histogram::new(bin_edges.len() - 1, &hist_bin_edges).unwrap();
-        let result = apply_accum(&mut hist_accum, &points, None, &bin_edges, &diff_norm);
+        let hist_accum = Histogram::new(&hist_bin_edges).unwrap();
+        let mut hist_statepacks = prepare_statepacks(bin_edges.len() - 1, &hist_accum);
+        let result = apply_accum(
+            &mut hist_statepacks.view_mut(),
+            &hist_accum,
+            &points,
+            None,
+            &bin_edges,
+            &diff_norm,
+        );
         assert_eq!(result, Ok(()));
-        let mut hist_weights = [0.0; 6];
-        hist_accum.get_value(&mut hist_weights);
-        for i in 0..6 {
-            assert_eq!(hist_weights[i], expected_hist_weights[i]);
+        let hist_result_map = get_output(&hist_accum, &hist_statepacks.view());
+        for (i, expected) in expected_hist_weights.iter().enumerate() {
+            assert_eq!(
+                hist_result_map["weight"][i], *expected,
+                "problem at index {}",
+                i
+            );
         }
     }
 
@@ -207,9 +260,13 @@ mod tests {
         let expected_weight = [4., 6.];
 
         // perform the calculation!
-        let mut accum = Mean::new(bin_edges.len() - 1).unwrap();
+        let accum = Mean;
+        let n_spatial_bins = bin_edges.len() - 1;
+        let mut statepacks = prepare_statepacks(n_spatial_bins, &accum);
+
         let result = apply_accum(
-            &mut accum,
+            &mut statepacks.view_mut(),
+            &accum,
             &points_a,
             Some(&points_b),
             &bin_edges,
@@ -217,19 +274,16 @@ mod tests {
         );
         assert_eq!(result, Ok(()));
 
-        // output buffers
-        let mut mean = [0.0; 2];
-        let mut weight = [0.0; 2];
-        accum.get_value(&mut mean, &mut weight);
+        let output = get_output(&accum, &statepacks.view());
 
-        for i in 0..2 {
+        for i in 0..n_spatial_bins {
             assert!(
-                _isclose(mean[i], expected_mean[i], 3.0e-16, 0.0),
+                _isclose(output["mean"][i], expected_mean[i], 3.0e-16, 0.0),
                 "actual mean = {}, expected mean = {}",
-                mean[i],
+                output["mean"][i],
                 expected_mean[i]
             );
-            assert_eq!(weight[i], expected_weight[i], "unequal weights");
+            assert_eq!(output["weight"][i], expected_weight[i], "unequal weights");
         }
     }
 
@@ -247,30 +301,37 @@ mod tests {
         // check the means (using results computed by pyvsf)
         let expected_mean = [284.57142857142856, 236.0, f64::NAN];
         let expected_weight = [7., 3., 0.];
-        let mut mean_accum = Mean::new(bin_edges.len() - 1).unwrap();
+        let mean_accum = Mean;
+        let n_spatial_bins = bin_edges.len() - 1;
+        let mut mean_statepacks = prepare_statepacks(n_spatial_bins, &mean_accum);
+
         let points = PointProps::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
             ArrayView2::from_shape((3, 6), &values).unwrap(),
             None,
         )
         .unwrap();
-        let result = apply_accum(&mut mean_accum, &points, None, &bin_edges, &dot_product);
+        let result = apply_accum(
+            &mut mean_statepacks.view_mut(),
+            &mean_accum,
+            &points,
+            None,
+            &bin_edges,
+            &dot_product,
+        );
         assert_eq!(result, Ok(()));
 
-        // output buffers
-        let mut mean = [0.0; 3];
-        let mut weight = [0.0; 3];
-        mean_accum.get_value(&mut mean, &mut weight);
+        let output = get_output(&mean_accum, &mean_statepacks.view());
 
         for i in 0..3 {
             // we might need to adopt an actual rtol
             assert!(
-                _isclose(mean[i], expected_mean[i], 3.0e-16, 0.0),
+                _isclose(output["mean"][i], expected_mean[i], 3.0e-16, 0.0),
                 "actual mean = {}, expected mean = {}",
-                mean[i],
+                output["mean"][i],
                 expected_mean[i]
             );
-            assert_eq!(weight[i], expected_weight[i], "unequal weights");
+            assert_eq!(output["weight"][i], expected_weight[i], "unequal weights");
         }
     }
 }

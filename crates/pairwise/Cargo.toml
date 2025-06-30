@@ -1,0 +1,18 @@
+[package]
+name = "pairwise"
+version = "0.1.0"
+edition = "2024"
+authors = ["Matthew W. Abruzzo", "Adam J. Wheeler"]
+rust-version = "1.85"
+
+[dependencies]
+pairwise_internal = { path = "../pairwise_internal" }
+
+# ndarray brings in a lot more than we actually need. In the future, we may
+# want to simply implement the really small subset of functionality that we
+# actually need. In the short-term, we disable features relying upon the rust
+# library (this may make it easier to support GPUs)
+ndarray = { version = "0.16", default-features = false }
+
+[dev-dependencies]
+ndarray = { version = "0.16", default-features = true }
