@@ -1,6 +1,7 @@
 use crate::accumulator::Accumulator;
+use crate::misc::get_bin_idx;
 use core::cmp;
-use ndarray::{ArrayViewMut1, Axis};
+use ndarray::{ArrayViewMut1, ArrayViewMut2, Axis};
 
 fn _check_shape(shape_zyx: &[usize; 3]) -> Result<(), &'static str> {
     if shape_zyx.contains(&0) {
@@ -78,15 +79,32 @@ impl View3DProps {
     }
 }
 
+// it might make more sense to provide this in a separate format that reduces
+// round-off error (e.g, global_domain_width and global_domain_shape)
+pub struct CellWidth {
+    widths_zyx: [f64; 3],
+}
+
+impl CellWidth {
+    pub fn new(widths_zyx: [f64; 3]) -> Result<CellWidth, &'static str> {
+        if widths_zyx.iter().any(|elem| elem <= &0.0) {
+            Err("each cell width must be positive")
+        } else {
+            Ok(CellWidth { widths_zyx })
+        }
+    }
+}
+
 pub struct CartesianBlock<'a> {
     value_components_zyx: [&'a [f64]; 3],
     weights: &'a [f64],
     /// the layout information
     idx_props: View3DProps,
-    /// the offset from the left edge of the domain in cells
-    left_edge_global_offset: [usize; 3],
-    /// it might be more accurate to provide block_width than cell_width
-    cell_width: [f64; 3],
+    /// the index offset from the left edge of the domain in cells
+    start_idx_global_offset: [usize; 3],
+    // if we ever choose to support an AMR context, we may want to hold a
+    // multiple for how wide the cells are compared to some either the
+    // coarsest cell-widths or the finest cell-widths
 }
 
 impl<'a> CartesianBlock<'a> {
@@ -95,8 +113,7 @@ impl<'a> CartesianBlock<'a> {
         value_components_zyx: [&'a [f64]; 3],
         weights: &'a [f64],
         idx_props: View3DProps,
-        left_edge_global_offset: [usize; 3],
-        cell_width: [f64; 3],
+        start_idx_global_offset: [usize; 3],
     ) -> Result<CartesianBlock<'a>, &'static str> {
         if weights.len() < idx_props.contiguous_length() {
             Err("length of weights is inconsistent with strides and shape")
@@ -105,79 +122,114 @@ impl<'a> CartesianBlock<'a> {
             .any(|x| x.len() != weights.len())
         {
             Err("the length of each value component must be the same as weights")
-        } else if cell_width.iter().any(|elem| elem <= &0.0) {
-            Err("the length of each cell width must be positive")
         } else {
             Ok(Self {
                 value_components_zyx,
                 weights,
                 idx_props,
-                left_edge_global_offset,
-                cell_width,
+                start_idx_global_offset,
             })
         }
     }
 }
 
-/// encapsulates the displacement ray whose head and tail are located at the
-/// center of cells. This vector spans 2 separate Blocks and the bounding
-/// points in terms of the local index
+/// <div class="warning">
 ///
-/// TODO: I'm thinking that this should really just encapsulate the quantity
-///       that is returned by `local_displacement_vec` (we don't really care
-///       about the ray's start & end ponts, we just care about the
-///       displacement vector)
-struct IndexDisplacementRay {
-    /// head of the ray
-    block_a_idx: [usize; 3],
-    /// tail of the ray
-    block_b_idx: [usize; 3],
+/// We probably want to avoid exposing this type publicly. If we decide to
+/// publicly expose it, we may want to re-draft the documentation for the
+/// type and its methods (we need to disentangle what the type represents
+/// and what is an implementation detail)
+///
+/// The language here could also be improved.
+///
+/// </div>
+///
+/// This type is only meaningful when you have 2 `CartesianBlock` references,
+/// block_a and block_b; (they may reference the same block or 2 distinct
+/// blocks). In this context, the type represents a displacement (mathematical)
+/// vector, in units of indices, between a point in block_a and a point in
+/// block_b (we sometimes call this a separation vector).
+///
+/// At a high-level, if you have a pair of points from block_a and block_b
+/// separated by a displacement vector, then adding the displacement vector to
+/// the position of the point in block_a gives the position of the point in
+/// block_b. This description glosses over a few thorny details related to
+/// coordinate systems, which we sort out down below.
+///
+/// # Coordinate Systems
+///
+/// Coordinate systems become relevant when block_a and block_b describe
+/// different regions of space. 3D indices used to access local values or
+/// weights normally use coordinate-systems defined locally to the block. We
+/// can also consider a "global index space." In other words, imagine that
+/// blocks a and b are concatenated with other blocks to make a single global
+/// block.
+///
+/// Let's define the "global displacement vec" as describing the displacement
+/// between 2 points in the "global index space." We define the
+/// "local_displacement_vec" as the vector you can add to the position of the
+/// from block_a, in block_a's local coordinate system, to get the position of
+/// the point in block_b, in block_b's local coordinate system.
+///
+/// These `i`th component of these quantities are related by:
+/// ```text
+/// total_displacement_vec[i] =
+///   local_displacement_vec[i] +
+///   (block_b.start_idx_global_offset[i] - block_a.start_idx_global_offset[i])
+/// ```
+///
+/// As you can see, when block_a and block_b reference the same block, there is
+/// no difference between these quantities.
+///
+/// # Ideas for Improvement:
+/// - can we come up with a better name than local_displacement_vec?
+/// - maybe we introduce this idea of local-vs-global coordinate systems
+///   elsewhere? In the documentation of [`CartesianBlock`] or maybe we add
+///   some higher-level narrative docs (maybe at the module-level) to
+///   introduce the concept?
+struct IndexDisplacementVec {
+    local_displacement_vec_zyx: [isize; 3],
 }
 
-impl IndexDisplacementRay {
-    /// computes the "local-part" of the displacement vector in terms of local
-    /// indices. The result is a mathematical vector with 3-components (1 per
-    /// spatial dimension)
-    ///
-    /// To better define what this means, let's consider the total
-    /// displacement vector that describes the ray.
-    /// - for the sake of discussion, consider a "global index space." In other
-    ///   words, imagine we concatenated all of the blocks together into a
-    ///   single giant cartesian grid.
-    /// - The ith component of the ray's tail index and head index, in this
-    ///   "global index space", are defined as:
-    ///   - `tail[i] = block_a_idx[i] + block_a.left_edge_global_offset[i]`
-    ///   - `head[i] = block_b_idx[i] + block_b.left_edge_global_offset[i]`
-    /// - The ith component of the total displacement vector is:
-    ///   `total_displacement_vec[i] = head[i] - tail[i]`
-    /// - We can rewrite this as:
-    ///   ```text
-    ///   total_displacement_vec[i] =
-    ///      local_displacement[i] + global_displacement_vec[i]
-    ///   ```
-    ///   where `local_displacement[i] = block_b_idx[i] - block_a_idx[i]`
-    pub fn local_displacement_vec(&self) -> [isize; 3] {
-        // todo: can we come up with a shorter description
-        // todo:
-        [
-            (self.block_b_idx[0] as isize) - (self.block_a_idx[0] as isize),
-            (self.block_b_idx[1] as isize) - (self.block_a_idx[1] as isize),
-            (self.block_b_idx[2] as isize) - (self.block_a_idx[2] as isize),
-        ]
+impl IndexDisplacementVec {
+    /// computes the "local index displacement vector." The core documentation
+    /// [for the IndexDisplacementVec type](IndexDisplacementVec) provides more
+    /// context.
+    pub fn local_displacement_vec(&self) -> &[isize; 3] {
+        &self.local_displacement_vec_zyx
     }
 
-    /// calculates the (mathematical) displacement vector
-    pub fn calc_displacement_vec(
+    /// computes the "global index displacement vector." The core documentation
+    /// [for the IndexDisplacementVec type](IndexDisplacementVec) provides more
+    /// context.
+    ///
+    /// This method primarily exists for self-documenting purposes
+    pub fn global_displacement_vec(
         &self,
-        block_a: CartesianBlock,
-        block_b: CartesianBlock,
-    ) -> [f64; 3] {
-        assert!(block_a.cell_width == block_b.cell_width);
-        let mut out = [0.0; 3];
+        block_a: &CartesianBlock,
+        block_b: &CartesianBlock,
+    ) -> [isize; 3] {
+        let mut out = [0_isize; 3];
         for i in 0..3 {
-            let start = block_a.left_edge_global_offset[i] + self.block_a_idx[i];
-            let end = block_b.left_edge_global_offset[i] + self.block_b_idx[i];
-            out[i] = (end - start) as f64 * block_a.cell_width[i];
+            let off_a = block_a.start_idx_global_offset[i] as isize;
+            let off_b = block_b.start_idx_global_offset[i] as isize;
+            out[i] = (off_b - off_a) + self.local_displacement_vec_zyx[i];
+        }
+        out
+    }
+
+    /// calculates squared distance represented by the displacement vector
+    pub fn distance_squared(
+        &self,
+        block_a: &CartesianBlock,
+        block_b: &CartesianBlock,
+        cell_widths: &CellWidth,
+    ) -> f64 {
+        let d_index_units = self.global_displacement_vec(block_a, block_b);
+        let mut out = 0.0;
+        for i in 0..3 {
+            let comp = (d_index_units[i] as f64) * cell_widths.widths_zyx[i];
+            out += comp * comp;
         }
         out
     }
@@ -195,66 +247,73 @@ impl IndexDisplacementRay {
 // "indexable" so we can efficiently partition out the work (to be distributed
 // among "threadgroups")
 
-/*
-enum BlockBOriginOffset {
-    NoOffset,
-    NoOffsetZY(usize),
-    NoOffsetZ(usize, usize),
-    Offset(usize, usize, usize),
-    Exhausted,
+// for the moment, this won't know anything about the min/max separation bins
+struct IndexDisplacementVecItr {
+    start_offsets_zyx: [isize; 3], // inclusive
+    stop_offsets_zyx: [isize; 3],  // inclusive
+    next_offset_zyx: [isize; 3],
 }
 
-
-struct DisplacementRayItr {
-    block_shape_a: [usize; 3],
-    block_shape_b: [usize; 3],
-    global_index_offset: [usize; 3],
-    cell_width: [f64; 3],
-    min_squared_length: f64,
-    max_squared_length: f64,
-    next_block_b_idx: BlockBOriginOffset,
-}
-
-impl DisplacementRayItr {
-    fn new(
+impl IndexDisplacementVecItr {
+    pub fn new_cross_iter(
         block_a: &CartesianBlock,
         block_b: &CartesianBlock,
-        squared_bin_edges: &[f64],
-    ) -> DisplacementRayItr {
-        let max_idx_b = [1_usize; 3]; // <- a placeholder
+    ) -> IndexDisplacementVecItr {
+        todo!("not implemented yet!");
+    }
 
-        let next_block_b_idx = if squared_bin_edges[0] == 0.0
-            && block_a.left_edge_global_offset == block_b.left_edge_global_offset
-        {
-            BlockBOriginOffset::NoOffset
-        } else {
-            panic!("I don't think this is always correct!");
-            Some([0_usize, 0_usize, min_nonzero_idx_b[2]])
+    fn _update_to_next_offset(&mut self) {
+        self.next_offset_zyx[2] += 1;
+        if self.next_offset_zyx[2] == self.stop_offsets_zyx[2] {
+            self.next_offset_zyx[2] = self.start_offsets_zyx[2];
+            self.next_offset_zyx[1] += 1;
+            if self.next_offset_zyx[1] == self.stop_offsets_zyx[1] {
+                self.next_offset_zyx[1] = self.start_offsets_zyx[1];
+                self.next_offset_zyx[0] += 1;
+            }
+        }
+    }
+
+    pub fn new_auto_iter(block: &CartesianBlock) -> IndexDisplacementVecItr {
+        let stop_offsets_zyx = block.idx_props.shape_zyx;
+        let start_offsets_zyx = [
+            0, // <- we never have a negative z
+            -(stop_offsets_zyx[1] - 1),
+            -(stop_offsets_zyx[2] - 1),
+        ];
+
+        let mut out = Self {
+            stop_offsets_zyx,
+            start_offsets_zyx,
+            next_offset_zyx: [0, 0, 0],
         };
+        out._update_to_next_offset();
+        out
+    }
+}
 
-        Self {
-            min_nonzero_idx_b,
-            max_idx_b,
-            next_block_b_idx,
+impl Iterator for IndexDisplacementVecItr {
+    type Item = IndexDisplacementVec;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.stop_offsets_zyx == self.next_offset_zyx {
+            None
+        } else {
+            let out = Some(IndexDisplacementVec {
+                local_displacement_vec_zyx: self.next_offset_zyx,
+            });
+            self._update_to_next_offset();
+            out
         }
     }
 }
-
-impl Iterator for DisplacementRayItr {
-    type Item = IndexDisplacementRay;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        todo!("implement me!");
-    }
-}
-*/
 
 fn apply_cartesian_fixed_separation(
     statepack: &mut ArrayViewMut1<f64>,
     accum: &impl Accumulator,
     block_a: &CartesianBlock,
     block_b: &CartesianBlock,
-    separation_vec: IndexDisplacementRay,
+    separation_vec: IndexDisplacementVec,
     // todo: accept pairwise_fn (we'll need to change the interface)
 ) {
     // index_offset holds the offset you add to an index of block_a to get the
@@ -316,17 +375,55 @@ fn apply_cartesian_fixed_separation(
     }
 }
 
-/*
-fn apply_cartesian(
-    statepack: &mut ArrayViewMut1<f64>,
+pub fn apply_cartesian(
+    statepacks: &mut ArrayViewMut2<f64>,
     accum: &impl Accumulator,
     block_a: &CartesianBlock,
-    block_b: &CartesianBlock,
-    separation_vec: IndexDisplacementRay,
-    // todo: accept pairwise_fn (we'll need to change the interface)
-) {
+    block_b: Option<&CartesianBlock>,
+    squared_distance_bin_edges: &[f64],
+    cell_width: &CellWidth, // maybe recombine cell_width and CartesianBlock?
+                            // todo: accept pairwise_fn (we'll need to change the interface)
+) -> Result<(), &'static str> {
+    // TODO: check size of output buffers
+
+    // Check that bin_edges are monotonically increasing
+    if !squared_distance_bin_edges.is_sorted() {
+        return Err("squared_distance_bin_edges must monotonically increase");
+    }
+
+    if let Some(block_b) = block_b {
+        IndexDisplacementVecItr::new_cross_iter(block_a, block_b).for_each(
+            |displacement_vec: IndexDisplacementVec| {
+                let distance2 = displacement_vec.distance_squared(block_a, block_b, cell_width);
+                if let Some(distance_bin_idx) = get_bin_idx(distance2, squared_distance_bin_edges) {
+                    apply_cartesian_fixed_separation(
+                        &mut statepacks.index_axis_mut(Axis(1), distance_bin_idx),
+                        accum,
+                        block_a,
+                        block_b,
+                        displacement_vec,
+                    );
+                }
+            },
+        );
+    } else {
+        IndexDisplacementVecItr::new_auto_iter(block_a).for_each(
+            |displacement_vec: IndexDisplacementVec| {
+                let distance2 = displacement_vec.distance_squared(block_a, block_a, cell_width);
+                if let Some(distance_bin_idx) = get_bin_idx(distance2, squared_distance_bin_edges) {
+                    apply_cartesian_fixed_separation(
+                        &mut statepacks.index_axis_mut(Axis(1), distance_bin_idx),
+                        accum,
+                        block_a,
+                        block_a,
+                        displacement_vec,
+                    );
+                }
+            },
+        );
+    }
+    Ok(())
 }
-*/
 
 #[cfg(test)]
 mod tests {
@@ -361,5 +458,21 @@ mod tests {
         assert!(View3DProps::from_shape_strides([2, 3, 4], [18, 3, 1]).is_err());
         assert!(View3DProps::from_shape_strides([2, 3, 4], [18, 20, 1]).is_err());
         assert!(View3DProps::from_shape_strides([2, 3, 4], [11, 4, 1]).is_err());
+    }
+
+    #[test]
+    fn cartesian_block() {
+        let velocity_x = [0.0; 4];
+        let velocity_y = [0.0; 4];
+        let velocity_z = [4.0, 1.0, 2.0, -3.0];
+        let weights = [1.0; 4];
+
+        let block = CartesianBlock::new(
+            [&velocity_z, &velocity_y, &velocity_x],
+            &weights,
+            View3DProps::from_shape_contiguous([1, 1, 4]).unwrap(),
+            [0, 0, 0],
+        );
+        assert!(block.is_ok());
     }
 }

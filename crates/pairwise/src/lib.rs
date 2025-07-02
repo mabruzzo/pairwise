@@ -6,5 +6,6 @@ mod misc;
 pub use accumulator::{Histogram, get_output};
 pub use misc::diff_norm;
 pub use pairwise_nostd_internal::{
-    Accumulator, Mean, OutputDescr, PointProps, apply_accum, dot_product,
+    Accumulator, CartesianBlock, CellWidth, Mean, OutputDescr, PointProps, View3DProps,
+    apply_accum, apply_cartesian, dot_product,
 };
