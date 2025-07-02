@@ -6,7 +6,7 @@ authors = ["Matthew W. Abruzzo", "Adam J. Wheeler"]
 rust-version = "1.85"
 
 [dependencies]
-pairwise_internal = { path = "../pairwise_internal" }
+pairwise_nostd_internal = { path = "../pairwise_nostd_internal" }
 
 # ndarray brings in a lot more than we actually need. In the future, we may
 # want to simply implement the really small subset of functionality that we

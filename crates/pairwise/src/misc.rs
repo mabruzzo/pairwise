@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2};
 
-use pairwise_internal::{Accumulator, OutputDescr, get_bin_idx, squared_diff_norm};
+use pairwise_nostd_internal::{Accumulator, OutputDescr, get_bin_idx, squared_diff_norm};
 
 /// compute the output quantities from an Accumulator's state properties and
 /// return the result in a HashMap.

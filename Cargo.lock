@@ -65,11 +65,11 @@ name = "pairwise"
 version = "0.1.0"
 dependencies = [
  "ndarray",
- "pairwise_internal",
+ "pairwise_nostd_internal",
 ]
 
 [[package]]
-name = "pairwise_internal"
+name = "pairwise_nostd_internal"
 version = "0.1.0"
 dependencies = [
  "ndarray",
