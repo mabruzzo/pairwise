@@ -10,12 +10,12 @@ use ndarray::{ArrayView2, ArrayViewMut2, Axis};
 /// - axis 1 is the fast axis. The length along this axis coincides with
 ///   the number of points. We require that it is contiguous (i.e. the stride
 ///   is unity).
-/// - In other words the shape of one of these vectors is `(D, n_points)`,
+/// - In other words the shape of one of these arrays is `(D, n_points)`,
 ///   where `D` is the number of spatial dimensions and `n_points` is the
 ///   number of points.
 pub struct PointProps<'a> {
     positions: ArrayView2<'a, f64>,
-    // TODO allow values to have a difference dimensionality than positions
+    // TODO allow values to have a different dimensionality than positions
     values: ArrayView2<'a, f64>,
     weights: Option<&'a [f64]>,
     n_points: usize,

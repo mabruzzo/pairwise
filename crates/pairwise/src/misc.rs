@@ -101,7 +101,7 @@ impl Accumulator for Histogram {
     /// `statepack` accordingly
     fn merge(&self, statepack: &mut ArrayViewMut1<f64>, other: ArrayView1<f64>) {
         for i in 0..self.n_hist_bins {
-            statepack[[i]] = other[[i]];
+            statepack[[i]] += other[[i]];
         }
     }
 
