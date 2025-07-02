@@ -1,8 +1,10 @@
 // inform build-system of the crates in this package
-mod apply_points;
+mod accumulator;
 mod misc;
 
 // pull in symbols that visible outside of the package
-pub use apply_points::{PointProps, apply_accum};
-pub use misc::{Histogram, diff_norm, get_output};
-pub use pairwise_internal::{Accumulator, Mean, OutputDescr, dot_product};
+pub use accumulator::{Histogram, get_output};
+pub use misc::diff_norm;
+pub use pairwise_nostd_internal::{
+    Accumulator, Mean, OutputDescr, PointProps, apply_accum, dot_product,
+};

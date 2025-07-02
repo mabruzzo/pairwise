@@ -1,5 +1,6 @@
+use crate::accumulator::Accumulator;
+use crate::misc::{get_bin_idx, squared_diff_norm};
 use ndarray::{ArrayView2, ArrayViewMut2, Axis};
-use pairwise_internal::{Accumulator, get_bin_idx, squared_diff_norm};
 
 /// Collection of point properties.
 ///
@@ -9,12 +10,12 @@ use pairwise_internal::{Accumulator, get_bin_idx, squared_diff_norm};
 /// - axis 1 is the fast axis. The length along this axis coincides with
 ///   the number of points. We require that it is contiguous (i.e. the stride
 ///   is unity).
-/// - In other words the shape of one of these vectors is `(D, n_points)`,
+/// - In other words the shape of one of these arrays is `(D, n_points)`,
 ///   where `D` is the number of spatial dimensions and `n_points` is the
 ///   number of points.
 pub struct PointProps<'a> {
     positions: ArrayView2<'a, f64>,
-    // TODO allow values to have a difference dimensionality than positions
+    // TODO allow values to have a different dimensionality than positions
     values: ArrayView2<'a, f64>,
     weights: Option<&'a [f64]>,
     n_points: usize,
@@ -102,44 +103,54 @@ fn apply_accum_helper<const CROSS: bool>(
     }
 }
 
-// maybe we want to make separate functions for auto-stats vs
-// cross-stats
-// TODO: generalize to allow faster calculations for regular spatial grids
+/// Computes contributions to binned statistics from values computed from the
+/// specified pairs of points.
+///
+/// When `points_b` is `None`, the function considers all unique pairs of
+/// points within `points_a`. Otherwise, all pairs of points between `points_a`
+/// and `points_b` are considered.
+///
+/// For each pair of points:
+/// - The value contributed by the pair is determined by `pairwise_fn`
+/// - The bin the value is contributed to is determined by the distance between
+///   the points and the `squared_distance_bin_edges` argument
+///
+/// Details about the considered statistics are encapsulated by `accum`.
+/// Statistical contributions (for all bins) are tracked within `stateprops`.
+///
+/// TODO: I don't love that we are directly accepting
+///       `squared_distance_bin_edges`. Frankly it seems like a recipe for
+///       disaster (I myself could imagine forgetting to square things). I
+///       think this is Ok while we get everything working, but we definitely
+///       should revisit!
 pub fn apply_accum(
     stateprops: &mut ArrayViewMut2<f64>,
     accum: &impl Accumulator,
     points_a: &PointProps,
     points_b: Option<&PointProps>,
-    // TODO should distance_bin_edges should be a member of the AccumKernel Struct
-    distance_bin_edges: &[f64],
+    squared_distance_bin_edges: &[f64],
     pairwise_fn: &impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
-) -> Result<(), String> {
-    // TODO check size of output buffers
+) -> Result<(), &'static str> {
+    // maybe we make separate functions for auto-stats vs cross-stats?
+    // TODO: check size of output buffers
 
     // Check that bin_edges are monotonically increasing
-    if !distance_bin_edges.is_sorted() {
-        return Err(String::from(
-            "bin_edges must be sorted (monotonically increasing)",
-        ));
+    if !squared_distance_bin_edges.is_sorted() {
+        return Err("squared_distance_bin_edges must monotonically increase");
     }
 
     //  if points_b is not None, make sure a and b have the same number of
     // spatial dimensions
     if let Some(points_b) = points_b {
         if points_a.n_spatial_dims != points_b.n_spatial_dims {
-            return Err(String::from(
-                "points_a and points_b must have the same number of spatial dimensions",
-            ));
+            return Err("points_a and points_b must have the same number of spatial dimensions");
         } else if points_a.weights.is_some() != points_b.weights.is_some() {
-            return Err(String::from(
+            return Err(
                 "points_a and points_b must both provide weights or neither \
                 should provide weights",
-            ));
+            );
         }
     }
-
-    // I think this alloc is worth it? Could use a buffer?
-    let squared_bin_edges: Vec<f64> = distance_bin_edges.iter().map(|x| x.powi(2)).collect();
 
     if let Some(points_b) = points_b {
         apply_accum_helper::<false>(
@@ -147,7 +158,7 @@ pub fn apply_accum(
             accum,
             points_a,
             points_b,
-            &squared_bin_edges,
+            squared_distance_bin_edges,
             pairwise_fn,
         )
     } else {
@@ -156,7 +167,7 @@ pub fn apply_accum(
             accum,
             points_a,
             points_a,
-            &squared_bin_edges,
+            squared_distance_bin_edges,
             pairwise_fn,
         )
     }

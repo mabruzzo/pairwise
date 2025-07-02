@@ -28,8 +28,8 @@
 //!
 //! Now, the actual binning is taken care of separately. The accumulation
 //! machinery is responsible for computing the statistic within a single bin.
-//! We draw a distinction the current state of the accumulator between the
-//! actual accumulation logic.
+//! We draw a distinction between the current state of the accumulator between
+//! the actual accumulation logic.
 //! - We refer to the current state of the accumulator as its state-pack.
 //! - The accumulation logic is encapsulated by the functions implemented by
 //!   the `Accumulator` trait. At the time of writing, an Accumulator
