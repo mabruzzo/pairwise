@@ -3,7 +3,8 @@ use crate::misc::get_bin_idx;
 use core::cmp;
 use ndarray::{ArrayViewMut1, ArrayViewMut2, Axis};
 
-fn _check_shape(shape_zyx: &[usize; 3]) -> Result<(), &'static str> {
+/// Check if a 3D array shape (for a View3DProps) is valid
+fn check_shape(shape_zyx: &[usize; 3]) -> Result<(), &'static str> {
     if shape_zyx.contains(&0) {
         Err("shape_zyx must not hold 0")
     } else {
@@ -11,15 +12,22 @@ fn _check_shape(shape_zyx: &[usize; 3]) -> Result<(), &'static str> {
     }
 }
 
-#[derive(Clone, Copy)]
+/// View3DProps specifies how a "3D" array is laid out in memory
+/// It _must_ be contiguous along the fast axis, which is axis 2.
+///
+///
+#[derive(Clone)]
 pub struct View3DProps {
+    // these are signed ints because we do a lot of math with negative offsets
+    // and want to avoid excessive casts
     shape_zyx: [isize; 3],
     strides_zyx: [isize; 3],
 }
 
 impl View3DProps {
+    /// Create a contiguous-in-memory View3DProps from shape_zyx alone
     pub fn from_shape_contiguous(shape_zyx: [usize; 3]) -> Result<View3DProps, &'static str> {
-        _check_shape(&shape_zyx)?;
+        check_shape(&shape_zyx)?;
         Ok(Self {
             shape_zyx: [
                 shape_zyx[0] as isize,
@@ -34,18 +42,19 @@ impl View3DProps {
         })
     }
 
+    /// Create a View3DProps from shape_zyx and strides_zyx
     pub fn from_shape_strides(
         shape_zyx: [usize; 3],
         strides_zyx: [usize; 3],
     ) -> Result<View3DProps, &'static str> {
-        _check_shape(&shape_zyx)?;
+        check_shape(&shape_zyx)?;
 
         if strides_zyx[2] != 1 {
             Err("the blocks must be contiguous along the fast axis")
         } else if strides_zyx[1] < shape_zyx[2] * strides_zyx[2] {
             Err("the length of the contiguous axis can't exceed strides_zyx[1]")
         } else if strides_zyx[0] < shape_zyx[1] * strides_zyx[1] {
-            Err("the stride along axis 0 is too small")
+            Err("the length of axis 1 can't exceed strides_zyx[0]")
         } else if strides_zyx[0] < strides_zyx[1] {
             Err("strides_zyx[1] must not exceed strides_zyx[0]")
         } else {
@@ -64,7 +73,8 @@ impl View3DProps {
         }
     }
 
-    /// returns the number of elements in a slice described by self
+    /// returns the number of elements that a slice must have to be described
+    /// by self
     pub fn contiguous_length(&self) -> usize {
         (self.shape_zyx[0] * self.strides_zyx[0]) as usize
     }
@@ -178,6 +188,7 @@ impl<'a> CartesianBlock<'a> {
 ///   (block_b.start_idx_global_offset[i] - block_a.start_idx_global_offset[i])
 /// ```
 ///
+///
 /// As you can see, when block_a and block_b reference the same block, there is
 /// no difference between these quantities.
 ///
@@ -256,8 +267,8 @@ struct IndexDisplacementVecItr {
 
 impl IndexDisplacementVecItr {
     pub fn new_cross_iter(
-        block_a: &CartesianBlock,
-        block_b: &CartesianBlock,
+        _block_a: &CartesianBlock,
+        _block_b: &CartesianBlock,
     ) -> IndexDisplacementVecItr {
         todo!("not implemented yet!");
     }
@@ -345,7 +356,7 @@ fn apply_cartesian_fixed_separation(
     let [k_stop, j_stop, i_stop] = idx_a_stop;
     let [k_offset, j_offset, i_offset] = index_offset;
 
-    let step = 1_usize; // this should change if using vectors or are on a GPU
+    let _step = 1_usize; // this should change if using vectors or are on a GPU
     // we are going to need to do a bunch of work here to
     // any other step-size
 

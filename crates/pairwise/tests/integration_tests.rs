@@ -1,39 +1,15 @@
-use ndarray::{Array2, ArrayView2};
-use pairwise::{
-    Accumulator, Histogram, Mean, PointProps, apply_accum, diff_norm, dot_product, get_output,
-};
+mod common;
+
+use ndarray::ArrayView2;
+use pairwise::{Histogram, Mean, PointProps, apply_accum, diff_norm, dot_product, get_output};
 
 // Things are a little unergonomic!
 
 // helper function!
-fn prepare_statepacks(n_spatial_bins: usize, accum: &impl Accumulator) -> Array2<f64> {
-    assert!(n_spatial_bins > 0);
-    let mut statepacks = Array2::<f64>::zeros((accum.statepack_size(), n_spatial_bins));
-    for mut col in statepacks.columns_mut() {
-        accum.reset_statepack(&mut col);
-    }
-    statepacks
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // based on numpy!
-    // https://numpy.org/doc/stable/reference/generated/numpy.isclose.html
-    //
-    // I suspect we'll use this a lot! If we may want to define
-    // a `assert_isclose!` macro to provide a nice error message (or an
-    // `assert_allclose!` macro to operate upon arrays)
-    fn _isclose(actual: f64, ref_val: f64, rtol: f64, atol: f64) -> bool {
-        let actual_nan = actual.is_nan();
-        let ref_nan = ref_val.is_nan();
-        if actual_nan || ref_nan {
-            actual_nan && ref_nan
-        } else {
-            (actual - ref_val).abs() <= (atol + rtol * ref_val.abs())
-        }
-    }
 
     #[test]
     fn apply_accum_errors() {
@@ -63,7 +39,7 @@ mod tests {
 
         let accum = Mean;
         let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut statepacks = prepare_statepacks(n_spatial_bins, &accum);
+        let mut statepacks = common::prepare_statepacks(n_spatial_bins, &accum);
 
         let result = apply_accum(
             &mut statepacks.view_mut(),
@@ -151,7 +127,7 @@ mod tests {
         let expected_weight = [7., 3., 0.];
         let mean_accum = Mean;
         let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut mean_statepacks = prepare_statepacks(n_spatial_bins, &mean_accum);
+        let mut mean_statepacks = common::prepare_statepacks(n_spatial_bins, &mean_accum);
         let points = PointProps::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
             ArrayView2::from_shape((3, 6), &values).unwrap(),
@@ -174,7 +150,7 @@ mod tests {
         for i in 0..n_spatial_bins {
             // we might need to adopt an actual rtol
             assert!(
-                _isclose(mean_result_map["mean"][i], expected_mean[i], 3.0e-16, 0.0),
+                common::isclose(mean_result_map["mean"][i], expected_mean[i], 3.0e-16, 0.0),
                 "actual mean = {}, expected mean = {}",
                 mean_result_map["mean"][i],
                 expected_mean[i]
@@ -199,7 +175,8 @@ mod tests {
             3., 2., 0.,
         ];
         let hist_accum = Histogram::new(&hist_bin_edges).unwrap();
-        let mut hist_statepacks = prepare_statepacks(distance_bin_edges.len() - 1, &hist_accum);
+        let mut hist_statepacks =
+            common::prepare_statepacks(distance_bin_edges.len() - 1, &hist_accum);
         let result = apply_accum(
             &mut hist_statepacks.view_mut(),
             &hist_accum,
@@ -270,7 +247,7 @@ mod tests {
         // perform the calculation!
         let accum = Mean;
         let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut statepacks = prepare_statepacks(n_spatial_bins, &accum);
+        let mut statepacks = common::prepare_statepacks(n_spatial_bins, &accum);
 
         let result = apply_accum(
             &mut statepacks.view_mut(),
@@ -286,7 +263,7 @@ mod tests {
 
         for i in 0..n_spatial_bins {
             assert!(
-                _isclose(output["mean"][i], expected_mean[i], 3.0e-16, 0.0),
+                common::isclose(output["mean"][i], expected_mean[i], 3.0e-16, 0.0),
                 "actual mean = {}, expected mean = {}",
                 output["mean"][i],
                 expected_mean[i]
@@ -313,7 +290,7 @@ mod tests {
         let expected_weight = [7., 3., 0.];
         let mean_accum = Mean;
         let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut mean_statepacks = prepare_statepacks(n_spatial_bins, &mean_accum);
+        let mut mean_statepacks = common::prepare_statepacks(n_spatial_bins, &mean_accum);
 
         let points = PointProps::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
@@ -336,7 +313,7 @@ mod tests {
         for i in 0..3 {
             // we might need to adopt an actual rtol
             assert!(
-                _isclose(output["mean"][i], expected_mean[i], 3.0e-16, 0.0),
+                common::isclose(output["mean"][i], expected_mean[i], 3.0e-16, 0.0),
                 "actual mean = {}, expected mean = {}",
                 output["mean"][i],
                 expected_mean[i]
