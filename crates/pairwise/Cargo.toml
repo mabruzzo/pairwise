@@ -16,3 +16,5 @@ ndarray = { version = "0.16", default-features = false }
 
 [dev-dependencies]
 ndarray = { version = "0.16", default-features = true }
+rand.version = "0.9.1"
+rand_xoshiro = { version = "0.7.0" }

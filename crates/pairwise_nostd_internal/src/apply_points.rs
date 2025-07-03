@@ -65,7 +65,7 @@ impl<'a> PointProps<'a> {
     }
 }
 
-fn apply_accum_helper<const CROSS: bool>(
+fn apply_points_helper<const CROSS: bool>(
     stateprops: &mut ArrayViewMut2<f64>,
     accum: &impl Accumulator,
     points_a: &PointProps,
@@ -153,7 +153,7 @@ pub fn apply_accum(
     }
 
     if let Some(points_b) = points_b {
-        apply_accum_helper::<false>(
+        apply_points_helper::<false>(
             stateprops,
             accum,
             points_a,
@@ -162,7 +162,7 @@ pub fn apply_accum(
             pairwise_fn,
         )
     } else {
-        apply_accum_helper::<true>(
+        apply_points_helper::<true>(
             stateprops,
             accum,
             points_a,
