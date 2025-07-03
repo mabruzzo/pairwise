@@ -256,7 +256,8 @@ impl IndexDisplacementVec {
 // At the moment, this is implemented like an iterator. In practice, this isn't
 // the appropriate abstraction. Instead, we probably want to make this
 // "indexable" so we can efficiently partition out the work (to be distributed
-// among "threadgroups")
+// among "threadgroups"). I think we instead want to produce something like a
+// range object (i.e. that is indexable)
 
 // for the moment, this won't know anything about the min/max separation bins
 struct IndexDisplacementVecItr {
@@ -267,10 +268,29 @@ struct IndexDisplacementVecItr {
 
 impl IndexDisplacementVecItr {
     pub fn new_cross_iter(
-        _block_a: &CartesianBlock,
-        _block_b: &CartesianBlock,
+        block_a: &CartesianBlock,
+        block_b: &CartesianBlock,
     ) -> IndexDisplacementVecItr {
-        todo!("not implemented yet!");
+        let is_bad = (block_b.start_idx_global_offset[0] < block_a.start_idx_global_offset[0])
+            || ((block_b.start_idx_global_offset[0] == block_a.start_idx_global_offset[0])
+                && (block_b.start_idx_global_offset[1] < block_a.start_idx_global_offset[1]))
+            || ((block_b.start_idx_global_offset[0] == block_a.start_idx_global_offset[0])
+                && (block_b.start_idx_global_offset[1] == block_a.start_idx_global_offset[1])
+                && (block_b.start_idx_global_offset[2] <= block_a.start_idx_global_offset[2]));
+        if is_bad {
+            //  produce an empty iterator
+            panic!(
+                "something is wrong. Either reverse the argument order OR try to use new_auto_iter!"
+            );
+        } else {
+            // so we need to be careful here
+            // -> for example, if block_b.start_idx_global_offset[0] > block_a.start_idx_global_offset[0])
+            //    && (block_b.start_idx_global_offset[1] > block_a.start_idx_global_offset[1])
+            //    && (block_b.start_idx_global_offset[2] > block_a.start_idx_global_offset[2]),
+            //    I'm not sure we want any negative indices
+            // -> on second thought, maybe we do (since the total offset is still positive)
+            todo!("not implemented yet!");
+        }
     }
 
     fn _update_to_next_offset(&mut self) {
@@ -402,36 +422,27 @@ pub fn apply_cartesian(
         return Err("squared_distance_bin_edges must monotonically increase");
     }
 
-    if let Some(block_b) = block_b {
-        IndexDisplacementVecItr::new_cross_iter(block_a, block_b).for_each(
-            |displacement_vec: IndexDisplacementVec| {
-                let distance2 = displacement_vec.distance_squared(block_a, block_b, cell_width);
-                if let Some(distance_bin_idx) = get_bin_idx(distance2, squared_distance_bin_edges) {
-                    apply_cartesian_fixed_separation(
-                        &mut statepacks.index_axis_mut(Axis(1), distance_bin_idx),
-                        accum,
-                        block_a,
-                        block_b,
-                        displacement_vec,
-                    );
-                }
-            },
-        );
-    } else {
-        IndexDisplacementVecItr::new_auto_iter(block_a).for_each(
-            |displacement_vec: IndexDisplacementVec| {
-                let distance2 = displacement_vec.distance_squared(block_a, block_a, cell_width);
-                if let Some(distance_bin_idx) = get_bin_idx(distance2, squared_distance_bin_edges) {
-                    apply_cartesian_fixed_separation(
-                        &mut statepacks.index_axis_mut(Axis(1), distance_bin_idx),
-                        accum,
-                        block_a,
-                        block_a,
-                        displacement_vec,
-                    );
-                }
-            },
-        );
+    // todo: we want to move away from using this iterable. Instead we want to
+    //       map an index to a displacement vector (to enable GPU support)
+    let (itr, other_block_ref) = match block_b {
+        Some(block_b) => (
+            IndexDisplacementVecItr::new_cross_iter(block_a, block_b),
+            block_b,
+        ),
+        None => (IndexDisplacementVecItr::new_auto_iter(block_a), block_a),
+    };
+
+    for displacement_vec in itr {
+        let distance2 = displacement_vec.distance_squared(block_a, other_block_ref, cell_width);
+        if let Some(distance_bin_idx) = get_bin_idx(distance2, squared_distance_bin_edges) {
+            apply_cartesian_fixed_separation(
+                &mut statepacks.index_axis_mut(Axis(1), distance_bin_idx),
+                accum,
+                block_a,
+                other_block_ref,
+                displacement_vec,
+            );
+        }
     }
     Ok(())
 }
