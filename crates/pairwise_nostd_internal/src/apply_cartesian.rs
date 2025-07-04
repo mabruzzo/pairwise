@@ -270,7 +270,7 @@ impl IndexDisplacementVecItr {
     pub fn new_cross_iter(
         block_a: &CartesianBlock,
         block_b: &CartesianBlock,
-    ) -> IndexDisplacementVecItr {
+    ) -> Result<IndexDisplacementVecItr, &'static str> {
         let is_bad = (block_b.start_idx_global_offset[0] < block_a.start_idx_global_offset[0])
             || ((block_b.start_idx_global_offset[0] == block_a.start_idx_global_offset[0])
                 && (block_b.start_idx_global_offset[1] < block_a.start_idx_global_offset[1]))
@@ -279,17 +279,28 @@ impl IndexDisplacementVecItr {
                 && (block_b.start_idx_global_offset[2] <= block_a.start_idx_global_offset[2]));
         if is_bad {
             //  produce an empty iterator
-            panic!(
-                "something is wrong. Either reverse the argument order OR try to use new_auto_iter!"
-            );
+            Err("reverse the argument order OR try to use new_auto_iter")
         } else {
-            // so we need to be careful here
-            // -> for example, if block_b.start_idx_global_offset[0] > block_a.start_idx_global_offset[0])
-            //    && (block_b.start_idx_global_offset[1] > block_a.start_idx_global_offset[1])
-            //    && (block_b.start_idx_global_offset[2] > block_a.start_idx_global_offset[2]),
-            //    I'm not sure we want any negative indices
-            // -> on second thought, maybe we do (since the total offset is still positive)
-            todo!("not implemented yet!");
+            // I **think** this using block_b's shape for the stop-offsets
+            // and block_a's shape for inferring the start-offsets is the
+            // correct thing to do...
+            // -> this also makes sense on a deeper level
+            // -> suppose we were executing this branch where block_a & block_b
+            //    referred to the same block
+            // -> that means we would end up iterating over 2N+1 entries where
+            //    N is the number of entries we would encounter with
+            //    new_auto_itere
+            let stop_offsets_zyx = block_b.idx_props.shape_zyx;
+            let start_offsets_zyx = [
+                -(block_a.idx_props.shape_zyx[0] - 1),
+                -(block_a.idx_props.shape_zyx[1] - 1),
+                -(block_a.idx_props.shape_zyx[2] - 1),
+            ];
+            Ok(Self {
+                stop_offsets_zyx,
+                start_offsets_zyx,
+                next_offset_zyx: start_offsets_zyx,
+            })
         }
     }
 
@@ -305,10 +316,10 @@ impl IndexDisplacementVecItr {
         }
     }
 
-    pub fn new_auto_iter(block: &CartesianBlock) -> IndexDisplacementVecItr {
+    pub fn new_auto_iter(block: &CartesianBlock) -> Result<IndexDisplacementVecItr, &'static str> {
         let stop_offsets_zyx = block.idx_props.shape_zyx;
         let start_offsets_zyx = [
-            0, // <- we never have a negative z
+            0, // <- we never have a negative z in "auto" pairs
             -(stop_offsets_zyx[1] - 1),
             -(stop_offsets_zyx[2] - 1),
         ];
@@ -319,7 +330,7 @@ impl IndexDisplacementVecItr {
             next_offset_zyx: [0, 0, 0],
         };
         out._update_to_next_offset();
-        out
+        Ok(out)
     }
 }
 
@@ -426,10 +437,10 @@ pub fn apply_cartesian(
     //       map an index to a displacement vector (to enable GPU support)
     let (itr, other_block_ref) = match block_b {
         Some(block_b) => (
-            IndexDisplacementVecItr::new_cross_iter(block_a, block_b),
+            IndexDisplacementVecItr::new_cross_iter(block_a, block_b)?,
             block_b,
         ),
-        None => (IndexDisplacementVecItr::new_auto_iter(block_a), block_a),
+        None => (IndexDisplacementVecItr::new_auto_iter(block_a)?, block_a),
     };
 
     for displacement_vec in itr {
