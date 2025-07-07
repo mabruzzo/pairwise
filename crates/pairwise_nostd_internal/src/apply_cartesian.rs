@@ -1,93 +1,7 @@
 use crate::accumulator::Accumulator;
-use crate::misc::get_bin_idx;
+use crate::misc::{View3DProps, get_bin_idx};
 use core::cmp;
 use ndarray::{ArrayViewMut1, ArrayViewMut2, Axis};
-
-/// Check if a 3D array shape (for a View3DProps) is valid
-fn check_shape(shape_zyx: &[usize; 3]) -> Result<(), &'static str> {
-    if shape_zyx.contains(&0) {
-        Err("shape_zyx must not hold 0")
-    } else {
-        Ok(())
-    }
-}
-
-/// View3DProps specifies how a "3D" array is laid out in memory
-/// It _must_ be contiguous along the fast axis, which is axis 2.
-///
-///
-#[derive(Clone)]
-pub struct View3DProps {
-    // these are signed ints because we do a lot of math with negative offsets
-    // and want to avoid excessive casts
-    shape_zyx: [isize; 3],
-    strides_zyx: [isize; 3],
-}
-
-impl View3DProps {
-    /// Create a contiguous-in-memory View3DProps from shape_zyx alone
-    pub fn from_shape_contiguous(shape_zyx: [usize; 3]) -> Result<View3DProps, &'static str> {
-        check_shape(&shape_zyx)?;
-        Ok(Self {
-            shape_zyx: [
-                shape_zyx[0] as isize,
-                shape_zyx[1] as isize,
-                shape_zyx[2] as isize,
-            ],
-            strides_zyx: [
-                (shape_zyx[1] * shape_zyx[2]) as isize,
-                shape_zyx[2] as isize,
-                1_isize,
-            ],
-        })
-    }
-
-    /// Create a View3DProps from shape_zyx and strides_zyx
-    pub fn from_shape_strides(
-        shape_zyx: [usize; 3],
-        strides_zyx: [usize; 3],
-    ) -> Result<View3DProps, &'static str> {
-        check_shape(&shape_zyx)?;
-
-        if strides_zyx[2] != 1 {
-            Err("the blocks must be contiguous along the fast axis")
-        } else if strides_zyx[1] < shape_zyx[2] * strides_zyx[2] {
-            Err("the length of the contiguous axis can't exceed strides_zyx[1]")
-        } else if strides_zyx[0] < shape_zyx[1] * strides_zyx[1] {
-            Err("the length of axis 1 can't exceed strides_zyx[0]")
-        } else if strides_zyx[0] < strides_zyx[1] {
-            Err("strides_zyx[1] must not exceed strides_zyx[0]")
-        } else {
-            Ok(Self {
-                shape_zyx: [
-                    shape_zyx[0] as isize,
-                    shape_zyx[1] as isize,
-                    shape_zyx[2] as isize,
-                ],
-                strides_zyx: [
-                    strides_zyx[0] as isize,
-                    strides_zyx[1] as isize,
-                    strides_zyx[2] as isize,
-                ],
-            })
-        }
-    }
-
-    /// returns the number of elements that a slice must have to be described
-    /// by self
-    pub fn contiguous_length(&self) -> usize {
-        (self.shape_zyx[0] * self.strides_zyx[0]) as usize
-    }
-
-    pub fn shape(&self) -> &[isize; 3] {
-        &self.shape_zyx
-    }
-
-    /// map a 3D index to 1D
-    pub fn map_idx(&self, iz: isize, iy: isize, ix: isize) -> isize {
-        iz * self.strides_zyx[0] + iy * self.strides_zyx[1] + ix
-    }
-}
 
 // it might make more sense to provide this in a separate format that reduces
 // round-off error (e.g, global_domain_width and global_domain_shape)
@@ -143,144 +57,288 @@ impl<'a> CartesianBlock<'a> {
     }
 }
 
-/// <div class="warning">
-///
-/// We probably want to avoid exposing this type publicly. If we decide to
-/// publicly expose it, we may want to re-draft the documentation for the
-/// type and its methods (we need to disentangle what the type represents
-/// and what is an implementation detail)
-///
-/// The language here could also be improved.
-///
-/// </div>
-///
-/// This type is only meaningful when you have 2 `CartesianBlock` references,
-/// block_a and block_b; (they may reference the same block or 2 distinct
-/// blocks). In this context, the type represents a displacement (mathematical)
-/// vector, in units of indices, between a point in block_a and a point in
-/// block_b (we sometimes call this a separation vector).
-///
-/// At a high-level, if you have a pair of points from block_a and block_b
-/// separated by a displacement vector, then adding the displacement vector to
-/// the position of the point in block_a gives the position of the point in
-/// block_b. This description glosses over a few thorny details related to
-/// coordinate systems, which we sort out down below.
-///
-/// # Coordinate Systems
-///
-/// Coordinate systems become relevant when block_a and block_b describe
-/// different regions of space. 3D indices used to access local values or
-/// weights normally use coordinate-systems defined locally to the block. We
-/// can also consider a "global index space." In other words, imagine that
-/// blocks a and b are concatenated with other blocks to make a single global
-/// block.
-///
-/// Let's define the "global displacement vec" as describing the displacement
-/// between 2 points in the "global index space." We define the
-/// "local_displacement_vec" as the vector you can add to the position of the
-/// from block_a, in block_a's local coordinate system, to get the position of
-/// the point in block_b, in block_b's local coordinate system.
-///
-/// These `i`th component of these quantities are related by:
-/// ```text
-/// total_displacement_vec[i] =
-///   local_displacement_vec[i] +
-///   (block_b.start_idx_global_offset[i] - block_a.start_idx_global_offset[i])
-/// ```
-///
-///
-/// As you can see, when block_a and block_b reference the same block, there is
-/// no difference between these quantities.
-///
-/// # Ideas for Improvement:
-/// - can we come up with a better name than local_displacement_vec?
-/// - maybe we introduce this idea of local-vs-global coordinate systems
-///   elsewhere? In the documentation of [`CartesianBlock`] or maybe we add
-///   some higher-level narrative docs (maybe at the module-level) to
-///   introduce the concept?
-struct IndexDisplacementVec {
-    local_displacement_vec_zyx: [isize; 3],
-}
+mod displacement_vec {
+    // todo: stop importing everything from super
+    use super::*;
+    use core::iter::IntoIterator;
 
-impl IndexDisplacementVec {
-    /// computes the "local index displacement vector." The core documentation
-    /// [for the IndexDisplacementVec type](IndexDisplacementVec) provides more
-    /// context.
-    pub fn local_displacement_vec(&self) -> &[isize; 3] {
-        &self.local_displacement_vec_zyx
-    }
-
-    /// computes the "global index displacement vector." The core documentation
-    /// [for the IndexDisplacementVec type](IndexDisplacementVec) provides more
-    /// context.
+    /// <div class="warning">
     ///
-    /// This method primarily exists for self-documenting purposes
-    pub fn global_displacement_vec(
-        &self,
-        block_a: &CartesianBlock,
-        block_b: &CartesianBlock,
-    ) -> [isize; 3] {
-        let mut out = [0_isize; 3];
-        for i in 0..3 {
-            let off_a = block_a.start_idx_global_offset[i] as isize;
-            let off_b = block_b.start_idx_global_offset[i] as isize;
-            out[i] = (off_b - off_a) + self.local_displacement_vec_zyx[i];
-        }
-        out
+    /// We probably want to avoid exposing this type publicly. If we decide to
+    /// publicly expose it, we may want to re-draft the documentation for the
+    /// type and its methods (we need to disentangle what the type represents
+    /// and what is an implementation detail)
+    ///
+    /// The language here could also be improved.
+    ///
+    /// </div>
+    ///
+    /// This type is only meaningful when you have 2 `CartesianBlock` references,
+    /// block_a and block_b; (they may reference the same block or 2 distinct
+    /// blocks). In this context, the type represents a displacement (mathematical)
+    /// vector, in units of indices, between a point in block_a and a point in
+    /// block_b (we sometimes call this a separation vector).
+    ///
+    /// At a high-level, if you have a pair of points from block_a and block_b
+    /// separated by a displacement vector, then adding the displacement vector to
+    /// the position of the point in block_a gives the position of the point in
+    /// block_b. This description glosses over a few thorny details related to
+    /// coordinate systems, which we sort out down below.
+    ///
+    /// # Coordinate Systems
+    ///
+    /// Coordinate systems become relevant when block_a and block_b describe
+    /// different regions of space. 3D indices used to access local values or
+    /// weights normally use coordinate-systems defined locally to the block. We
+    /// can also consider a "global index space." In other words, imagine that
+    /// blocks a and b are concatenated with other blocks to make a single global
+    /// block.
+    ///
+    /// Let's define the "global displacement vec" as describing the displacement
+    /// between 2 points in the "global index space." We define the
+    /// "local_displacement_vec" as the vector you can add to the position of the
+    /// from block_a, in block_a's local coordinate system, to get the position of
+    /// the point in block_b, in block_b's local coordinate system.
+    ///
+    /// These `i`th component of these quantities are related by:
+    /// ```text
+    /// total_displacement_vec[i] =
+    ///   local_displacement_vec[i] +
+    ///   (block_b.start_idx_global_offset[i] - block_a.start_idx_global_offset[i])
+    /// ```
+    ///
+    ///
+    /// As you can see, when block_a and block_b reference the same block, there is
+    /// no difference between these quantities.
+    ///
+    /// # Ideas for Improvement:
+    /// - can we come up with a better name than local_displacement_vec?
+    /// - maybe we introduce this idea of local-vs-global coordinate systems
+    ///   elsewhere? In the documentation of [`CartesianBlock`] or maybe we add
+    ///   some higher-level narrative docs (maybe at the module-level) to
+    ///   introduce the concept?
+    pub struct IndexDisplacementVec {
+        local_displacement_vec_zyx: [isize; 3],
     }
 
-    /// calculates squared distance represented by the displacement vector
-    pub fn distance_squared(
-        &self,
-        block_a: &CartesianBlock,
-        block_b: &CartesianBlock,
-        cell_widths: &CellWidth,
-    ) -> f64 {
-        let d_index_units = self.global_displacement_vec(block_a, block_b);
-        let mut out = 0.0;
-        for i in 0..3 {
-            let comp = (d_index_units[i] as f64) * cell_widths.widths_zyx[i];
-            out += comp * comp;
+    impl IndexDisplacementVec {
+        /// computes the "local index displacement vector." The core documentation
+        /// [for the IndexDisplacementVec type](IndexDisplacementVec) provides more
+        /// context.
+        pub fn local_displacement_vec(&self) -> &[isize; 3] {
+            &self.local_displacement_vec_zyx
         }
-        out
+
+        /// computes the "global index displacement vector." The core documentation
+        /// [for the IndexDisplacementVec type](IndexDisplacementVec) provides more
+        /// context.
+        ///
+        /// This method primarily exists for self-documenting purposes
+        pub fn global_displacement_vec(
+            &self,
+            block_a: &CartesianBlock,
+            block_b: &CartesianBlock,
+        ) -> [isize; 3] {
+            let mut out = [0_isize; 3];
+            for i in 0..3 {
+                let off_a = block_a.start_idx_global_offset[i] as isize;
+                let off_b = block_b.start_idx_global_offset[i] as isize;
+                out[i] = (off_b - off_a) + self.local_displacement_vec_zyx[i];
+            }
+            out
+        }
+
+        /// calculates squared distance represented by the displacement vector
+        pub fn distance_squared(
+            &self,
+            block_a: &CartesianBlock,
+            block_b: &CartesianBlock,
+            cell_widths: &CellWidth,
+        ) -> f64 {
+            let d_index_units = self.global_displacement_vec(block_a, block_b);
+            let mut out = 0.0;
+            for i in 0..3 {
+                let comp = (d_index_units[i] as f64) * cell_widths.widths_zyx[i];
+                out += comp * comp;
+            }
+            out
+        }
     }
-}
 
-// define the logic for iterating over DisplacementRays
-// ----------------------------------------------------
-// the following probably belongs in its own file. We will want to expose
-// something like this to help with the tiling pattern when people are using
-// MPI (in practice, we may expose this logic with a separate construct and
-// just reuse the shared logic)
-//
-// At the moment, this is implemented like an iterator. In practice, this isn't
-// the appropriate abstraction. Instead, we probably want to make this
-// "indexable" so we can efficiently partition out the work (to be distributed
-// among "threadgroups"). I think we instead want to produce something like a
-// range object (i.e. that is indexable)
+    // define the logic for iterating over DisplacementRays
+    // ----------------------------------------------------
+    // the following probably belongs in its own file. We will want to expose
+    // something like this to help with the tiling pattern when people are using
+    // MPI (in practice, we may expose this logic with a separate construct and
+    // just reuse the shared logic)
+    //
+    // At the moment, this is implemented like an iterator. In practice, this isn't
+    // the appropriate abstraction. Instead, we probably want to make this
+    // "indexable" so we can efficiently partition out the work (to be distributed
+    // among "threadgroups"). I think we instead want to produce something like a
+    // range object (i.e. that is indexable)
+    #[derive(Clone)]
+    struct Bounds {
+        start_offsets_zyx: [isize; 3], // inclusive
+        stop_offsets_zyx: [isize; 3],  // inclusive
+    }
 
-// for the moment, this won't know anything about the min/max separation bins
-struct IndexDisplacementVecItr {
-    start_offsets_zyx: [isize; 3], // inclusive
-    stop_offsets_zyx: [isize; 3],  // inclusive
-    next_offset_zyx: [isize; 3],
-}
+    /// this is used in the context of iterating over "'local' index
+    /// displacement vectors".
+    ///
+    /// `cur_offset` holds the internals of a displacement vector. This
+    /// function returns the next displacement vector ("next" in the sense
+    /// of the sequence or iteration order).
+    ///
+    /// If `cur_offset` is equal to
+    /// ```text
+    /// [
+    ///     bounds.stop_offsets_zyx[0] - 1,
+    ///     bounds.stop_offsets_zyx[1] - 1,
+    ///     bounds.stop_offsets_zyx[2] - 1,
+    /// ]
+    /// ```
+    /// then the returned value won't correspond to a valid output
+    /// displacement vector.
+    ///
+    /// # TODO
+    /// We should consider whether there is a performance benefit to avoiding
+    /// a copy and just mutating the cur_offset argument directly.
+    fn get_next_offset(mut offset_zyx: [isize; 3], bounds: &Bounds) -> [isize; 3] {
+        offset_zyx[2] += 1;
+        if offset_zyx[2] == bounds.stop_offsets_zyx[2] {
+            offset_zyx[2] = bounds.start_offsets_zyx[2];
+            offset_zyx[1] += 1;
+            if offset_zyx[1] == bounds.stop_offsets_zyx[1] {
+                offset_zyx[1] = bounds.start_offsets_zyx[1];
+                offset_zyx[0] += 1;
+            }
+        }
+        offset_zyx
+    }
 
-impl IndexDisplacementVecItr {
-    pub fn new_cross_iter(
-        block_a: &CartesianBlock,
-        block_b: &CartesianBlock,
-    ) -> Result<IndexDisplacementVecItr, &'static str> {
-        let is_bad = (block_b.start_idx_global_offset[0] < block_a.start_idx_global_offset[0])
-            || ((block_b.start_idx_global_offset[0] == block_a.start_idx_global_offset[0])
-                && (block_b.start_idx_global_offset[1] < block_a.start_idx_global_offset[1]))
-            || ((block_b.start_idx_global_offset[0] == block_a.start_idx_global_offset[0])
-                && (block_b.start_idx_global_offset[1] == block_a.start_idx_global_offset[1])
-                && (block_b.start_idx_global_offset[2] <= block_a.start_idx_global_offset[2]));
-        if is_bad {
-            //  produce an empty iterator
-            Err("reverse the argument order OR try to use new_auto_iter")
-        } else {
+    /// for the moment, this won't know anything about the min/max separation
+    /// bins
+    ///
+    /// # Note
+    /// At the moment, the iterator steps through displacement vectors. But, I
+    /// think that it would make more sense to attach an iterator to
+    /// View3DProps and simply perform the transformation
+    pub struct Iter {
+        bounds: Bounds,
+        next_offset_zyx: [isize; 3],
+    }
+
+    impl Iterator for Iter {
+        type Item = IndexDisplacementVec;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.bounds.stop_offsets_zyx == self.next_offset_zyx {
+                None
+            } else {
+                let out = Some(IndexDisplacementVec {
+                    local_displacement_vec_zyx: self.next_offset_zyx,
+                });
+                self.next_offset_zyx = get_next_offset(self.next_offset_zyx, &self.bounds);
+                out
+            }
+        }
+    }
+
+    /// the idea is for this to be an indexable "range" object that contains all
+    /// relevant `IndexDisplacementVec` instances
+    ///
+    /// # Important
+    /// We are using "range" in the Python and Julia sense (i.e. the range
+    /// object is more like a collection, that is iterable, but isn't itself an
+    /// iterator). This contrasts with Rust's ranges, which are iterators. The
+    /// design of rust's ranges is widely regarded to be a mistake.
+    ///
+    /// # ToDo
+    /// When documenting this have type, frame the description in terms of
+    /// "cross" statistics.
+    /// - we can enumerate all `Idx3DOffset` values
+    /// - It’s convenient to think of this list of `Idx3DOffset` instances as
+    ///   a 3D array (there is a straight-forward mapping from index to
+    ///   `Idx3DOffset).
+    /// - At the corners of this 3D array, you have the largest displacements
+    ///   (only a small subset of pairs are separated by this amount)
+    /// - the smallest displacements describe the offsets between the most
+    ///   pairs of points.
+    /// - Auto-correlation is just a special case.
+    ///   - For equal sized blocks, I think this is 1 less than half of the
+    ///     blocks
+    pub struct DisplacementSeq {
+        bounds: Bounds,
+        mapping_props: View3DProps,
+        // Can we just get rid of this now that we have internal_offset? I
+        // think so, but it also seems plausible that there could be a special
+        // case where we need
+        // -> this case would come up in a scenario where one of the blocks
+        //    holds 0 elements and we are adjusting the bounds based on the
+        //    minimum and maximum bin edges.
+        // -> In that scenario can internal_offset be 0 for auto correlation?
+        //    If so, then I think that means we can't tell the difference from
+        //    cross-correlation.
+        // -> I guess the followup question will be: does it actually matter?
+        //    As I write it out, I don't think it does. I think the **only**
+        //    reason we draw a distinction between auto and cross is for
+        //    getting the starting index. And I don't think it will matter!
+        is_auto: bool,
+        // this is 0 for cross-operations and positive for auto-operations
+        internal_offset: isize,
+    }
+
+    impl DisplacementSeq {
+        pub fn new_auto(block: &CartesianBlock) -> Result<Self, &'static str> {
+            let stop_offsets_zyx = *block.idx_props.shape();
+            let bounds = Bounds {
+                start_offsets_zyx: [
+                    0, // <- we never have a negative z in "auto" pairs
+                    -(stop_offsets_zyx[1] - 1),
+                    -(stop_offsets_zyx[2] - 1),
+                ],
+                stop_offsets_zyx,
+            };
+
+            let mapping_props = View3DProps::from_shape_contiguous([
+                (bounds.stop_offsets_zyx[0] - bounds.start_offsets_zyx[0]) as usize,
+                (bounds.stop_offsets_zyx[1] - bounds.start_offsets_zyx[1]) as usize,
+                (bounds.stop_offsets_zyx[2] - bounds.start_offsets_zyx[2]) as usize,
+            ])?;
+
+            let first_displacement_vec = get_next_offset([0, 0, 0], &bounds);
+            // convert the first displacement vector to a 3D index
+            let [iz, iy, ix] = [
+                first_displacement_vec[0] - bounds.start_offsets_zyx[0],
+                first_displacement_vec[1] - bounds.start_offsets_zyx[1],
+                first_displacement_vec[2] - bounds.start_offsets_zyx[2],
+            ];
+            // convert the 3D index to a 1D offset
+            let internal_offset = mapping_props.map_idx(iz, iy, ix);
+
+            Ok(Self {
+                bounds,
+                mapping_props,
+                is_auto: true,
+                internal_offset,
+            })
+        }
+
+        pub fn new_cross(
+            block_a: &CartesianBlock,
+            block_b: &CartesianBlock,
+        ) -> Result<Self, &'static str> {
+            let is_bad = (block_b.start_idx_global_offset[0] < block_a.start_idx_global_offset[0])
+                || ((block_b.start_idx_global_offset[0] == block_a.start_idx_global_offset[0])
+                    && (block_b.start_idx_global_offset[1] < block_a.start_idx_global_offset[1]))
+                || ((block_b.start_idx_global_offset[0] == block_a.start_idx_global_offset[0])
+                    && (block_b.start_idx_global_offset[1] == block_a.start_idx_global_offset[1])
+                    && (block_b.start_idx_global_offset[2] <= block_a.start_idx_global_offset[2]));
+            if is_bad {
+                //  produce an empty iterator
+                return Err("reverse the argument order OR try to use new_auto_iter");
+            }
             // I **think** this using block_b's shape for the stop-offsets
             // and block_a's shape for inferring the start-offsets is the
             // correct thing to do...
@@ -290,72 +348,98 @@ impl IndexDisplacementVecItr {
             // -> that means we would end up iterating over 2N+1 entries where
             //    N is the number of entries we would encounter with
             //    new_auto_itere
-            let stop_offsets_zyx = block_b.idx_props.shape_zyx;
+            let stop_offsets_zyx = *block_b.idx_props.shape();
             let start_offsets_zyx = [
-                -(block_a.idx_props.shape_zyx[0] - 1),
-                -(block_a.idx_props.shape_zyx[1] - 1),
-                -(block_a.idx_props.shape_zyx[2] - 1),
+                -(block_a.idx_props.shape()[0] - 1),
+                -(block_a.idx_props.shape()[1] - 1),
+                -(block_a.idx_props.shape()[2] - 1),
             ];
-            Ok(Self {
-                stop_offsets_zyx,
+            let bounds = Bounds {
                 start_offsets_zyx,
-                next_offset_zyx: start_offsets_zyx,
+                stop_offsets_zyx,
+            };
+
+            let mapping_props = View3DProps::from_shape_contiguous([
+                (bounds.stop_offsets_zyx[0] - bounds.start_offsets_zyx[0]) as usize,
+                (bounds.stop_offsets_zyx[1] - bounds.start_offsets_zyx[1]) as usize,
+                (bounds.stop_offsets_zyx[2] - bounds.start_offsets_zyx[2]) as usize,
+            ])?;
+            Ok(Self {
+                bounds,
+                mapping_props,
+                is_auto: false,
+                internal_offset: 0,
             })
         }
-    }
 
-    fn _update_to_next_offset(&mut self) {
-        self.next_offset_zyx[2] += 1;
-        if self.next_offset_zyx[2] == self.stop_offsets_zyx[2] {
-            self.next_offset_zyx[2] = self.start_offsets_zyx[2];
-            self.next_offset_zyx[1] += 1;
-            if self.next_offset_zyx[1] == self.stop_offsets_zyx[1] {
-                self.next_offset_zyx[1] = self.start_offsets_zyx[1];
-                self.next_offset_zyx[0] += 1;
+        fn _num_items_per_axis(&self) -> [isize; 3] {
+            [
+                self.bounds.stop_offsets_zyx[0] - self.bounds.start_offsets_zyx[0],
+                self.bounds.stop_offsets_zyx[1] - self.bounds.start_offsets_zyx[1],
+                self.bounds.stop_offsets_zyx[2] - self.bounds.start_offsets_zyx[2],
+            ]
+        }
+
+        /// get the number of elements in the sequence
+        pub fn len(&self) -> usize {
+            // should we precompute this?
+            let [nz, ny, nx] = self._num_items_per_axis();
+            (nz * ny * nx - self.internal_offset) as usize
+        }
+
+        /// get the ith displacement vector
+        ///
+        /// # Note
+        /// Unfortunately, we can't get indexing syntax to work (e.g.
+        /// `obj[idx]`). The function used for indexing expects must return a
+        /// reference. While this makes a lot of sense for a container, it
+        /// doesn't make a ton of sense for a range-like object
+        pub fn get(&self, index: usize) -> IndexDisplacementVec {
+            let [iz, iy, ix] = self
+                .mapping_props
+                .reverse_map_idx((index as isize) + self.internal_offset);
+
+            IndexDisplacementVec {
+                local_displacement_vec_zyx: [
+                    iz + self.bounds.start_offsets_zyx[0],
+                    iy + self.bounds.start_offsets_zyx[1],
+                    ix + self.bounds.start_offsets_zyx[2],
+                ],
             }
         }
     }
 
-    pub fn new_auto_iter(block: &CartesianBlock) -> Result<IndexDisplacementVecItr, &'static str> {
-        let stop_offsets_zyx = block.idx_props.shape_zyx;
-        let start_offsets_zyx = [
-            0, // <- we never have a negative z in "auto" pairs
-            -(stop_offsets_zyx[1] - 1),
-            -(stop_offsets_zyx[2] - 1),
-        ];
+    // I suspect the thing we actually want to do is have the ability to create
+    // `n` iterators and to access the ith iterator
 
-        let mut out = Self {
-            stop_offsets_zyx,
-            start_offsets_zyx,
-            next_offset_zyx: [0, 0, 0],
-        };
-        out._update_to_next_offset();
-        Ok(out)
-    }
-}
+    impl IntoIterator for DisplacementSeq {
+        type Item = IndexDisplacementVec;
+        type IntoIter = Iter;
 
-impl Iterator for IndexDisplacementVecItr {
-    type Item = IndexDisplacementVec;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.stop_offsets_zyx == self.next_offset_zyx {
-            None
-        } else {
-            let out = Some(IndexDisplacementVec {
-                local_displacement_vec_zyx: self.next_offset_zyx,
-            });
-            self._update_to_next_offset();
-            out
+        fn into_iter(self) -> Self::IntoIter {
+            if self.is_auto {
+                let mut out = Iter {
+                    bounds: self.bounds.clone(),
+                    next_offset_zyx: [0, 0, 0],
+                };
+                out.next();
+                out
+            } else {
+                Iter {
+                    bounds: self.bounds.clone(),
+                    next_offset_zyx: self.bounds.start_offsets_zyx,
+                }
+            }
         }
     }
-}
+} // mod Displacement
 
 fn apply_cartesian_fixed_separation(
     statepack: &mut ArrayViewMut1<f64>,
     accum: &impl Accumulator,
     block_a: &CartesianBlock,
     block_b: &CartesianBlock,
-    separation_vec: IndexDisplacementVec,
+    separation_vec: displacement_vec::IndexDisplacementVec,
     // todo: accept pairwise_fn (we'll need to change the interface)
 ) {
     // index_offset holds the offset you add to an index of block_a to get the
@@ -435,15 +519,18 @@ pub fn apply_cartesian(
 
     // todo: we want to move away from using this iterable. Instead we want to
     //       map an index to a displacement vector (to enable GPU support)
-    let (itr, other_block_ref) = match block_b {
+    let (seq, other_block_ref) = match block_b {
         Some(block_b) => (
-            IndexDisplacementVecItr::new_cross_iter(block_a, block_b)?,
+            displacement_vec::DisplacementSeq::new_cross(block_a, block_b)?,
             block_b,
         ),
-        None => (IndexDisplacementVecItr::new_auto_iter(block_a)?, block_a),
+        None => (
+            displacement_vec::DisplacementSeq::new_auto(block_a)?,
+            block_a,
+        ),
     };
 
-    for displacement_vec in itr {
+    for displacement_vec in seq {
         let distance2 = displacement_vec.distance_squared(block_a, other_block_ref, cell_width);
         if let Some(distance_bin_idx) = get_bin_idx(distance2, squared_distance_bin_edges) {
             apply_cartesian_fixed_separation(
@@ -462,36 +549,6 @@ pub fn apply_cartesian(
 mod tests {
 
     use super::*;
-
-    #[test]
-    fn idx_props_simple() {
-        let idx_props = View3DProps::from_shape_strides([2, 3, 4], [18, 6, 1]).unwrap();
-        assert_eq!(idx_props.map_idx(0, 0, 0), 0);
-        assert_eq!(idx_props.map_idx(0, 0, 3), 3);
-        assert_eq!(idx_props.map_idx(0, 1, 0), 6);
-        assert_eq!(idx_props.map_idx(1, 1, 0), 24);
-    }
-
-    #[test]
-    fn idx_props_contig() {
-        let idx_props = View3DProps::from_shape_contiguous([2, 3, 4]).unwrap();
-        assert_eq!(idx_props.map_idx(0, 0, 0), 0);
-        assert_eq!(idx_props.map_idx(0, 0, 3), 3);
-        assert_eq!(idx_props.map_idx(0, 1, 0), 4);
-        assert_eq!(idx_props.map_idx(1, 1, 0), 16);
-    }
-
-    #[test]
-    fn idx_props_errs() {
-        assert!(View3DProps::from_shape_contiguous([2, 3, 0]).is_err());
-        assert!(View3DProps::from_shape_contiguous([2, 0, 4]).is_err());
-        assert!(View3DProps::from_shape_contiguous([0, 3, 4]).is_err());
-
-        assert!(View3DProps::from_shape_strides([2, 3, 4], [18, 6, 0]).is_err());
-        assert!(View3DProps::from_shape_strides([2, 3, 4], [18, 3, 1]).is_err());
-        assert!(View3DProps::from_shape_strides([2, 3, 4], [18, 20, 1]).is_err());
-        assert!(View3DProps::from_shape_strides([2, 3, 4], [11, 4, 1]).is_err());
-    }
 
     #[test]
     fn cartesian_block() {
