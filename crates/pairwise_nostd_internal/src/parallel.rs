@@ -80,8 +80,6 @@ pub trait ReductionSpec {
 }
 
 pub trait Executor {
-    type TeamPropType: TeamProps;
-
     // I suspect that we may want to set up team_size & league_size elsewhere
     fn drive_reduce(
         out: &mut ArrayViewMut2<f64>,

@@ -1,20 +1,21 @@
 //! Implements the "serial" backend for running thread teams
 
+use core::num::NonZeroU32;
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis, iter::Axes};
-use pairwise_nostd_internal::{Accumulator, TeamProps, TeamRank};
+use pairwise_nostd_internal::{Executor, ReductionSpec, TeamProps, TeamRank};
 
-pub struct SerialTeam {
+pub struct SerialTeam<'a> {
     // we probably want accum to be a reference
     team_size: u32,
     league_rank: u32,
     league_size: u32,
     // used to accumulate local contributions
-    scratch_per_rank: &mut ArrayViewMut2<f64>,
+    scratch_per_rank: &'a mut ArrayViewMut2<'a, f64>,
     // we have 1 statepack per spatial bin
-    team_statepacks: &mut ArrayViewMut2<f64>,
+    team_statepacks: &'a mut ArrayViewMut2<'a, f64>,
 }
 
-impl TeamProps for SerialTeam {
+impl<'a> TeamProps for SerialTeam<'a> {
     fn team_size(&self) -> u32 {
         self.team_size
     }
@@ -39,8 +40,8 @@ impl TeamProps for SerialTeam {
         // synchronization.
         //
         // In this serial-backend, a single thread calls this function, and
-        for (i, reduce_buf) in statepack_vec.iter().enumerate() {
-            prep_buf_fn(reduce_buf, TeamRank(i));
+        for (i, reduce_buf) in statepack_vec.iter_mut().enumerate() {
+            prep_buf_fn(&mut reduce_buf, TeamRank::new(i as u32));
         }
 
         // at this point, we would probably have a memory fence on
@@ -72,8 +73,6 @@ impl TeamProps for SerialTeam {
 pub struct SerialExecutor;
 
 impl Executor for SerialExecutor {
-    type TeamPropType = SerialTeam;
-
     fn drive_reduce(
         out: &mut ArrayViewMut2<f64>,
         reduction_spec: &impl ReductionSpec,
@@ -88,11 +87,11 @@ impl Executor for SerialExecutor {
         let [statepack_size, n_bins] = out_shape;
         let out_size = statepack_size * n_bins;
 
-        let mut team_statepacks = vec![0.0; out_packs * league_size.get()];
-        //let mut team_statepacks_slice: [f64] = ;
-        let mut vec_of_statepacks: Vec<ArrayViewMut2<f64>> = (&team_statepacks_slice)
-            .chunks_exact_mut(out_shape)
-            .map(|buf| ArrayViewMut2::from_shape(out_shape, buf))
+        let mut team_statepacks = vec![0.0; out_size * (league_size.get() as usize)];
+        let mut tmp_slice: &[f64] = &team_statepacks[..];
+        let mut vec_of_statepacks: Vec<ArrayViewMut2<f64>> = tmp_slice
+            .chunks_exact_mut(out_size)
+            .map(|buf: &mut [f64]| ArrayViewMut2::from_shape(*out_shape, buf))
             .collect();
 
         // fill up the statepacks for each team in the league

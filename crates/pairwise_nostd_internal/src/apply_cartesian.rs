@@ -120,6 +120,7 @@ mod displacement_vec {
     ///   elsewhere? In the documentation of [`CartesianBlock`] or maybe we add
     ///   some higher-level narrative docs (maybe at the module-level) to
     ///   introduce the concept?
+    #[derive(Clone)]
     pub struct IndexDisplacementVec {
         local_displacement_vec_zyx: [isize; 3],
     }
@@ -581,9 +582,8 @@ impl<'a, T: Accumulator> ReductionSpec for CartesianCalcContext<'a, T> {
         };
 
         // set up the reduction function
-        let accum = self.accum;
-        let reduce_buf_fn = |reduce_buf: &mut ArrayViewMut1<f64>, other_buf: ArrayView1<f64>| {
-            accum.merge(reduce_buf, other_buf);
+        let reduce_buf_fn = |reduce_buf: &mut ArrayViewMut1<f64>, other_buf: &ArrayView1<f64>| {
+            self.accum.merge(reduce_buf, other_buf.view());
         };
 
         // iterate over the displacement_vec (the displacement-vectors that a
@@ -610,7 +610,7 @@ impl<'a, T: Accumulator> ReductionSpec for CartesianCalcContext<'a, T> {
                         &self.accum,
                         &self.block_a,
                         &self.block_b,
-                        displacement_vec,
+                        displacement_vec.clone(),
                         team_rank.get() as usize, // offset
                         team_size,
                     );

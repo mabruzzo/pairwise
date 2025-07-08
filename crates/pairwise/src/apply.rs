@@ -2,7 +2,9 @@ use std::num::NonZeroU32;
 
 use crate::parallel_serial::SerialExecutor;
 use ndarray::ArrayViewMut2;
-use pairwise_nostd_internal::{Accumulator, CartesianBlock, CartesianCalcContext, CellWidth};
+use pairwise_nostd_internal::{
+    Accumulator, CartesianBlock, CartesianCalcContext, CellWidth, Executor,
+};
 
 pub fn apply_cartesian<T: Accumulator + Clone>(
     statepacks: &mut ArrayViewMut2<f64>,
