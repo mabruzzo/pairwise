@@ -82,6 +82,7 @@ pub trait ReductionSpec {
 pub trait Executor {
     // I suspect that we may want to set up team_size & league_size elsewhere
     fn drive_reduce(
+        &mut self,
         out: &mut ArrayViewMut2<f64>,
         reduction_spec: &impl ReductionSpec,
         team_size: NonZeroU32,

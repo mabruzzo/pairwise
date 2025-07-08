@@ -24,7 +24,12 @@ pub fn apply_cartesian<T: Accumulator + Clone>(
     )?;
 
     // todo: make this customizable
-    let executor = SerialExecutor;
-    executor.drive_reduce(statepacks, &context, NonZeroU32::new(1), NonZeroU32::new(1));
+    let mut executor = SerialExecutor;
+    executor.drive_reduce(
+        statepacks,
+        &context,
+        NonZeroU32::new(1).unwrap(),
+        NonZeroU32::new(1).unwrap(),
+    )?;
     Ok(())
 }
