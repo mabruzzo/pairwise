@@ -1,10 +1,12 @@
 use crate::accumulator::Accumulator;
 use crate::misc::{View3DProps, get_bin_idx};
+use crate::parallel::{ReductionSpec, TeamProps, TeamRank};
 use core::cmp;
-use ndarray::{ArrayViewMut1, ArrayViewMut2, Axis};
+use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
 
 // it might make more sense to provide this in a separate format that reduces
 // round-off error (e.g, global_domain_width and global_domain_shape)
+#[derive(Clone, Copy)]
 pub struct CellWidth {
     widths_zyx: [f64; 3],
 }
@@ -19,6 +21,7 @@ impl CellWidth {
     }
 }
 
+#[derive(Clone)]
 pub struct CartesianBlock<'a> {
     value_components_zyx: [&'a [f64]; 3],
     weights: &'a [f64],
@@ -440,6 +443,8 @@ fn apply_cartesian_fixed_separation(
     block_a: &CartesianBlock,
     block_b: &CartesianBlock,
     separation_vec: displacement_vec::IndexDisplacementVec,
+    offset: usize,
+    stride: usize,
     // todo: accept pairwise_fn (we'll need to change the interface)
 ) {
     // index_offset holds the offset you add to an index of block_a to get the
@@ -475,9 +480,12 @@ fn apply_cartesian_fixed_separation(
     // we are going to need to do a bunch of work here to
     // any other step-size
 
+    let my_offset = offset as isize;
+    let get_i_itr = || ((i_start + my_offset)..i_stop).step_by(stride);
+
     for k in k_start..k_stop {
         for j in j_start..j_stop {
-            for i in i_start..i_stop {
+            for i in get_i_itr() {
                 let i_a = block_a.idx_props.map_idx(k, j, i) as usize;
                 let va_x = block_a.value_components_zyx[2][i_a];
                 let va_y = block_a.value_components_zyx[1][i_a];
@@ -501,48 +509,147 @@ fn apply_cartesian_fixed_separation(
     }
 }
 
-pub fn apply_cartesian(
-    statepacks: &mut ArrayViewMut2<f64>,
-    accum: &impl Accumulator,
-    block_a: &CartesianBlock,
-    block_b: Option<&CartesianBlock>,
-    squared_distance_bin_edges: &[f64],
-    cell_width: &CellWidth, // maybe recombine cell_width and CartesianBlock?
-                            // todo: accept pairwise_fn (we'll need to change the interface)
-) -> Result<(), &'static str> {
-    // TODO: check size of output buffers
+pub struct CartesianCalcContext<'a, T: Accumulator> {
+    accum: T,
+    block_a: CartesianBlock<'a>,
+    block_b: CartesianBlock<'a>,
+    displacement_seq: displacement_vec::DisplacementSeq,
+    squared_distance_bin_edges: &'a [f64],
+    cell_width: CellWidth, // maybe recombine cell_width and CartesianBlock?
+                           // todo: accept pairwise_fn (we'll need to change the interface)
+}
 
-    // Check that bin_edges are monotonically increasing
-    if !squared_distance_bin_edges.is_sorted() {
-        return Err("squared_distance_bin_edges must monotonically increase");
+impl<'a, T: Accumulator> CartesianCalcContext<'a, T> {
+    pub fn new(
+        accum: T,
+        block_a: &CartesianBlock<'a>,
+        block_b: Option<&CartesianBlock<'a>>,
+        squared_distance_bin_edges: &'a [f64],
+        cell_width: &CellWidth, // maybe recombine cell_width and CartesianBlock?
+                                // todo: accept pairwise_fn (we'll need to change the interface)
+    ) -> Result<Self, &'static str> {
+        // Check that bin_edges are monotonically increasing
+        if !squared_distance_bin_edges.is_sorted() {
+            return Err("squared_distance_bin_edges must monotonically increase");
+        }
+
+        // todo: we want to move away from using this iterable. Instead we want to
+        //       map an index to a displacement vector (to enable GPU support)
+        let (seq, other_block_ref) = match block_b {
+            Some(block_b) => (
+                displacement_vec::DisplacementSeq::new_cross(block_a, block_b)?,
+                block_b,
+            ),
+            None => (
+                displacement_vec::DisplacementSeq::new_auto(block_a)?,
+                block_a,
+            ),
+        };
+
+        Ok(Self {
+            accum,
+            block_a: block_a.clone(),
+            block_b: other_block_ref.clone(),
+            displacement_seq: seq,
+            squared_distance_bin_edges,
+            cell_width: *cell_width,
+        })
     }
 
-    // todo: we want to move away from using this iterable. Instead we want to
-    //       map an index to a displacement vector (to enable GPU support)
-    let (seq, other_block_ref) = match block_b {
-        Some(block_b) => (
-            displacement_vec::DisplacementSeq::new_cross(block_a, block_b)?,
-            block_b,
-        ),
-        None => (
-            displacement_vec::DisplacementSeq::new_auto(block_a)?,
-            block_a,
-        ),
-    };
+    fn n_spatial_bins(&self) -> usize {
+        self.squared_distance_bin_edges.len() - 1
+    }
+}
 
-    for displacement_vec in seq {
-        let distance2 = displacement_vec.distance_squared(block_a, other_block_ref, cell_width);
-        if let Some(distance_bin_idx) = get_bin_idx(distance2, squared_distance_bin_edges) {
-            apply_cartesian_fixed_separation(
-                &mut statepacks.index_axis_mut(Axis(1), distance_bin_idx),
-                accum,
-                block_a,
-                other_block_ref,
-                displacement_vec,
+impl<'a, T: Accumulator> ReductionSpec for CartesianCalcContext<'a, T> {
+    fn statepacks_shape(&self) -> [usize; 2] {
+        [self.accum.statepack_size(), self.n_spatial_bins()]
+    }
+
+    fn collect_team_contrib(&self, team_props: &mut impl TeamProps) {
+        let team_size = team_props.team_size() as usize;
+        let league_rank = team_props.league_rank() as usize;
+        let league_size = team_props.league_size() as usize;
+        let nominal_chunk_size = self.displacement_seq.len() / league_size;
+        // TODO: distribute the remainder of the work more evenly
+        // let remainder = self.displacement_seq.len() % league_size;
+        let start = nominal_chunk_size * league_rank;
+        let displacement_vec_indices = if (league_rank + 1) == league_size {
+            start..self.displacement_seq.len()
+        } else {
+            start..(start + nominal_chunk_size)
+        };
+
+        // set up the reduction function
+        let accum = self.accum;
+        let reduce_buf_fn = |reduce_buf: &mut ArrayViewMut1<f64>, other_buf: ArrayView1<f64>| {
+            accum.merge(reduce_buf, other_buf);
+        };
+
+        // iterate over the displacement_vec (the displacement-vectors that a
+        // thread-team considers is determined by the league_rank)
+        for index in displacement_vec_indices {
+            let displacement_vec = self.displacement_seq.get(index);
+
+            // compute the squared distance that corresponds to the thread-length
+            let distance2 =
+                displacement_vec.distance_squared(&self.block_a, &self.block_b, &self.cell_width);
+            let Some(distance_bin_idx) = get_bin_idx(distance2, self.squared_distance_bin_edges)
+            else {
+                continue; /* skip over the rest of this loop */
+            };
+
+            // add up constributions for all pais separated by displacement_vec
+            // and perform a reduction so that they are all held in a single
+            // buffer
+            team_props.team_reduce(
+                &|reduce_buf: &mut ArrayViewMut1<f64>, team_rank: TeamRank| {
+                    self.accum.reset_statepack(reduce_buf);
+                    apply_cartesian_fixed_separation(
+                        reduce_buf,
+                        &self.accum,
+                        &self.block_a,
+                        &self.block_b,
+                        displacement_vec,
+                        team_rank.get() as usize, // offset
+                        team_size,
+                    );
+                },
+                &reduce_buf_fn,
+            );
+
+            // now at this point, we update the output buffer
+            team_props.update_teambuf_if_root(
+                &|statepacks: &mut ArrayViewMut2<f64>, bufs: &ArrayView2<f64>| {
+                    // since we already did the reduction, the only part of
+                    // bufs that we care about is:
+                    let contrib = bufs.index_axis(Axis(1), 0);
+                    self.accum.merge(
+                        &mut statepacks.index_axis_mut(Axis(1), distance_bin_idx),
+                        contrib,
+                    );
+                },
             );
         }
     }
-    Ok(())
+
+    fn init_team_statepacks(&self, buf: &mut ArrayViewMut2<f64>) {
+        // this is going to be very slow!
+        for distance_bin_idx in 0..self.n_spatial_bins() {
+            self.accum
+                .reset_statepack(&mut buf.index_axis_mut(Axis(1), distance_bin_idx));
+        }
+    }
+
+    fn league_reduce(&self, primary: &mut ArrayViewMut2<f64>, other: ArrayView2<f64>) {
+        // this is going to be very slow!
+        for distance_bin_idx in 0..self.n_spatial_bins() {
+            self.accum.merge(
+                &mut primary.index_axis_mut(Axis(1), distance_bin_idx),
+                other.index_axis(Axis(1), distance_bin_idx),
+            );
+        }
+    }
 }
 
 #[cfg(test)]
