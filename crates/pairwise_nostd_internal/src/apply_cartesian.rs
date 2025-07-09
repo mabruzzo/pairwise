@@ -599,7 +599,7 @@ impl<'a, T: Accumulator> ReductionSpec for CartesianCalcContext<'a, T> {
                 continue; /* skip over the rest of this loop */
             };
 
-            // add up constributions for all pais separated by displacement_vec
+            // add up contributions for all pais separated by displacement_vec
             // and perform a reduction so that they are all held in a single
             // buffer
             team_props.team_reduce(

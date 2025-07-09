@@ -26,7 +26,7 @@ pub trait TeamProps {
     // for now, we explicitly choose not to provide a method to directly access
     // team_rank. The current approach for accessing team_rank (i.e. only as
     // part of `team_reduce`) generally encourages a design where the serial
-    // implementation can support arbirary team sizes (and is capable of
+    // implementation can support arbitrary team sizes (and is capable of
     // returning the exact same result as parallel implementations). If we
     // make team_rank accessible, implementations can generally only support
     // a team_size of 1.
