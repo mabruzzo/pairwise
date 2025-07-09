@@ -6,6 +6,7 @@
 
 use ndarray::Array2;
 use pairwise::Accumulator;
+use std::collections::HashMap;
 
 // based on numpy!
 // https://numpy.org/doc/stable/reference/generated/numpy.isclose.html
@@ -21,6 +22,75 @@ pub fn isclose(actual: f64, ref_val: f64, rtol: f64, atol: f64) -> bool {
     } else {
         (actual - ref_val).abs() <= (atol + rtol * ref_val.abs())
     }
+}
+
+enum ArgDesignation {
+    Actual,
+    Expected,
+}
+
+// I think this should really be a macro
+pub fn assert_consistent_results(
+    actual: &HashMap<&'static str, Vec<f64>>,
+    expected: &HashMap<&'static str, Vec<f64>>,
+    rtol_atol_vals: &HashMap<&'static str, [f64; 2]>,
+) {
+    // it would be nice to handle the following more gracefully
+    // (and provide a better error message!)
+    let mut key_problem: Option<ArgDesignation> = None;
+    if rtol_atol_vals.len() != actual.len() {
+        key_problem = Some(ArgDesignation::Actual);
+    } else if rtol_atol_vals.len() != expected.len() {
+        key_problem = Some(ArgDesignation::Expected);
+    } else {
+        for k in rtol_atol_vals.keys() {
+            if !actual.contains_key(k) {
+                key_problem = Some(ArgDesignation::Actual);
+                break;
+            } else if !expected.contains_key(k) {
+                key_problem = Some(ArgDesignation::Expected);
+            }
+        }
+    }
+
+    match key_problem {
+        Some(ArgDesignation::Actual) => {
+            panic!("`actual` & `rtol_atol_vals` don't have matching keys")
+        }
+        Some(ArgDesignation::Expected) => {
+            panic!("`expected` & `rtol_atol_vals` don't have matching keys")
+        }
+        None => (),
+    }
+
+    for (key, [rtol, atol]) in rtol_atol_vals {
+        let len = expected[key].len();
+        assert_eq!(
+            actual[key].len(),
+            len,
+            "the lengths of the '{}' entry in actual and ref are unequal",
+            key,
+        );
+
+        for i in 0..len {
+            let actual_val = actual[key][i];
+            let ref_val = expected[key][i];
+            assert!(
+                isclose(actual_val, ref_val, *rtol, *atol),
+                "map[\"{}\"][{}] values aren't to within rtol={}, atol={}\
+            \n  actual   = {}\
+            \n  expected = {}",
+                key,
+                i,
+                rtol,
+                atol,
+                actual_val,
+                ref_val
+            );
+        }
+    }
+
+    // now move onto the actual comparison
 }
 
 pub fn prepare_statepacks(n_spatial_bins: usize, accum: &impl Accumulator) -> Array2<f64> {

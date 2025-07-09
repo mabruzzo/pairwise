@@ -1,11 +1,9 @@
 mod common;
 
 use ndarray::ArrayView2;
-use pairwise::{Histogram, Mean, PointProps, apply_accum, diff_norm, dot_product, get_output};
+use pairwise::{Histogram, Mean, PointProps, apply_accum, diff_norm, get_output};
 
 // Things are a little unergonomic!
-
-// helper function!
 
 #[cfg(test)]
 mod tests {
@@ -262,56 +260,6 @@ mod tests {
         let output = get_output(&accum, &statepacks.view());
 
         for i in 0..n_spatial_bins {
-            assert!(
-                common::isclose(output["mean"][i], expected_mean[i], 3.0e-16, 0.0),
-                "actual mean = {}, expected mean = {}",
-                output["mean"][i],
-                expected_mean[i]
-            );
-            assert_eq!(output["weight"][i], expected_weight[i], "unequal weights");
-        }
-    }
-
-    #[test]
-    fn test_apply_accum_auto_corr() {
-        // keep in mind that we interpret positions as a (3, ...) array
-        // so position 0 is [6,12,18]
-        let positions: Vec<f64> = (6..24).map(|x| x as f64).collect();
-        let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
-
-        // the bin edges are chosen so that some values don't fit
-        // inside the bottom bin
-        let distance_bin_edges: [f64; 4] = [2., 6., 10., 15.];
-        let squared_distance_bin_edges: Vec<f64> =
-            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
-
-        // check the means (using results computed by pyvsf)
-        let expected_mean = [284.57142857142856, 236.0, f64::NAN];
-        let expected_weight = [7., 3., 0.];
-        let mean_accum = Mean;
-        let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut mean_statepacks = common::prepare_statepacks(n_spatial_bins, &mean_accum);
-
-        let points = PointProps::new(
-            ArrayView2::from_shape((3, 6), &positions).unwrap(),
-            ArrayView2::from_shape((3, 6), &values).unwrap(),
-            None,
-        )
-        .unwrap();
-        let result = apply_accum(
-            &mut mean_statepacks.view_mut(),
-            &mean_accum,
-            &points,
-            None,
-            &squared_distance_bin_edges,
-            &dot_product,
-        );
-        assert_eq!(result, Ok(()));
-
-        let output = get_output(&mean_accum, &mean_statepacks.view());
-
-        for i in 0..3 {
-            // we might need to adopt an actual rtol
             assert!(
                 common::isclose(output["mean"][i], expected_mean[i], 3.0e-16, 0.0),
                 "actual mean = {}, expected mean = {}",

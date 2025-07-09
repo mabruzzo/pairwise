@@ -1,8 +1,9 @@
-use ndarray::{Array2, indices};
+use ndarray::{Array2, ArrayView2, Axis, indices};
 use pairwise::{
     Accumulator, CartesianBlock, CellWidth, Mean, PointProps, View3DProps, apply_accum,
     dot_product, get_output,
 };
+use std::collections::HashMap;
 
 use rand::distr::{Distribution, Uniform};
 use rand_xoshiro::Xoshiro256PlusPlus;
@@ -11,6 +12,10 @@ use rand_xoshiro::rand_core::SeedableRng;
 mod common;
 
 // Things are a little unergonomic!
+
+// it may be better to specify things in terms of CartesianBlocks and then
+// to generate PointProp instances from CartesianBlocks. (In fact, we may wish
+// to consider adding that to the main API -- there are some clear use-cases)
 
 // this is to be used to compare operations with CartesianBlock and
 // PointProps
@@ -29,6 +34,12 @@ pub struct TestScenario {
 impl TestScenario {
     // in the future, I think we want to be able to pass in grid properties
     // rather than rely upon hardcoded examples
+    //
+    // The use of rng in this scenario isn't really accomplishing much of
+    // anything... At this point, its mostly a proof of concept to help us
+    // later if we want to generate gaussian random fields from
+    // power-spectra (the power-spectrum itself specifies the magnitude of
+    // wavenumbers, and we will need to randomly generate phases)
     pub fn setup(seed: u64, shape_zyx: [usize; 3]) -> TestScenario {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
         let idx_props = View3DProps::from_shape_contiguous(shape_zyx).unwrap();
@@ -88,6 +99,73 @@ impl TestScenario {
         }
     }
 
+    /// constructs an instance using a set of points with integer positions
+    fn from_integer_position_points(
+        positions: ArrayView2<i32>,
+        values: ArrayView2<f64>,
+        weights: Option<&[f64]>,
+    ) -> TestScenario {
+        assert!(positions.shape() == values.shape());
+        assert_eq!(positions.len_of(Axis(0)), 3);
+        let n_points = positions.len_of(Axis(1));
+
+        let weight_list = if let Some(weight_slice) = weights {
+            assert_eq!(weight_slice.len(), n_points);
+            Vec::from(weight_slice)
+        } else {
+            vec![1.0; n_points]
+        };
+
+        // determine the minimum and maximum values
+        // (there's probably a more efficient way to do this)
+        let mut min_pos = [i32::MAX; 3];
+        let mut max_pos = [i32::MIN; 3];
+        for dim in 0..3 {
+            min_pos[dim] = *positions.index_axis(Axis(0), dim).iter().min().unwrap();
+            max_pos[dim] = *positions.index_axis(Axis(0), dim).iter().max().unwrap();
+        }
+
+        let shape = [
+            (max_pos[0] + 1 - min_pos[0]) as usize,
+            (max_pos[1] + 1 - min_pos[1]) as usize,
+            (max_pos[2] + 1 - min_pos[2]) as usize,
+        ];
+
+        let idx_props = View3DProps::from_shape_contiguous(shape).unwrap();
+        let cartesian_size = idx_props.contiguous_length();
+
+        let mut cartesian_values_zyx = [
+            vec![0.0; cartesian_size],
+            vec![0.0; cartesian_size],
+            vec![0.0; cartesian_size],
+        ];
+        let mut cartesian_weights = vec![0.0; cartesian_size];
+
+        for i in 0..n_points {
+            let cartesian_idx = idx_props.map_idx(
+                (positions[[0, i]] - min_pos[0]) as isize,
+                (positions[[1, i]] - min_pos[1]) as isize,
+                (positions[[2, i]] - min_pos[2]) as isize,
+            ) as usize;
+            cartesian_values_zyx[0][cartesian_idx] = values[[0, i]];
+            cartesian_values_zyx[1][cartesian_idx] = values[[1, i]];
+            cartesian_values_zyx[2][cartesian_idx] = values[[2, i]];
+            cartesian_weights[cartesian_idx] = weight_list[i];
+        }
+
+        TestScenario {
+            // for use with Cartesian_Grid
+            cartesian_values_zyx,
+            cartesian_weights,
+            idx_props,
+            cell_widths: [1.0, 1.0, 1.0],
+            // for use with PointProps
+            position_list: positions.mapv(f64::from),
+            value_list: values.to_owned(),
+            weight_list,
+        }
+    }
+
     pub fn point_props<'a>(&'a self) -> PointProps<'a> {
         PointProps::new(
             self.position_list.view(),
@@ -117,10 +195,74 @@ impl TestScenario {
 }
 
 mod tests {
+    use pairwise::apply_cartesian;
+
     use super::*;
 
     #[test]
-    fn test_stuff() {
+    fn test_apply_accum_auto_corr() {
+        // keep in mind that we interpret positions as a (3, ...) array
+        // so position 0 is [6,12,18]
+        let positions: Vec<i32> = (6_i32..24_i32).collect();
+        let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
+
+        let scenario = TestScenario::from_integer_position_points(
+            ArrayView2::from_shape((3, 6), &positions).unwrap(),
+            ArrayView2::from_shape((3, 6), &values).unwrap(),
+            None,
+        );
+
+        // the bin edges are chosen so that some values don't fit
+        // inside the bottom bin
+        let distance_bin_edges: [f64; 4] = [2., 6., 10., 15.];
+        let squared_distance_bin_edges: Vec<f64> =
+            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
+
+        // check the means (using results computed by pyvsf)
+        let expected = HashMap::from([
+            ("mean", vec![284.57142857142856, 236.0, f64::NAN]),
+            ("weight", vec![7., 3., 0.]),
+        ]);
+        let rtol_atol_sets = HashMap::from([("mean", [3.0e-16, 0.0]), ("weight", [0.0, 0.0])]);
+
+        let n_spatial_bins = distance_bin_edges.len() - 1;
+
+        for use_points in [true, false] {
+            let mean_accum = Mean;
+            let mut mean_statepacks = common::prepare_statepacks(n_spatial_bins, &mean_accum);
+
+            let result = if use_points {
+                let points = scenario.point_props();
+                apply_accum(
+                    &mut mean_statepacks.view_mut(),
+                    &mean_accum,
+                    &points,
+                    None,
+                    &squared_distance_bin_edges,
+                    &dot_product,
+                )
+            } else {
+                let block = scenario.cartesian_block();
+                apply_cartesian(
+                    &mut mean_statepacks.view_mut(),
+                    &mean_accum,
+                    &block,
+                    None,
+                    &squared_distance_bin_edges,
+                    &scenario.cell_width(),
+                )
+            };
+            assert_eq!(result, Ok(()));
+
+            let output = get_output(&mean_accum, &mean_statepacks.view());
+            println!("{:#?}", output);
+
+            common::assert_consistent_results(&output, &expected, &rtol_atol_sets);
+        }
+    }
+
+    #[test]
+    fn test_random_autocorr_scenario() {
         let seed = 10582441886303702641_u64;
         let scenario = TestScenario::setup(seed, [4, 3, 2]);
 
@@ -150,6 +292,16 @@ mod tests {
         }
 
         // we can run things with cartesian_block
+        let block = scenario.cartesian_block();
+        let result = apply_cartesian(
+            &mut statepacks.view_mut(),
+            &mean_accum,
+            &block,
+            None,
+            &squared_distance_bin_edges,
+            &scenario.cell_width(),
+        );
+        /*
         let result = apply_accum(
             &mut statepacks.view_mut(),
             &mean_accum,
@@ -158,32 +310,17 @@ mod tests {
             &squared_distance_bin_edges,
             &dot_product,
         );
+        */
 
         assert_eq!(result, Ok(()));
 
         let output_cartesian = get_output(&mean_accum, &statepacks.view());
-
-        println!("{:?}", output_points);
-        println!("{:?}", output_cartesian);
-        assert_eq!(
-            output_points["weight"], output_cartesian["weight"],
-            "\"weight\" isn't consistent!"
-        );
+        println!("points: {:?}", output_points);
+        println!("cartesian: {:?}", output_cartesian);
 
         // the fact that the inputs are sorta garbage may make this comparison
-        // a little problematic (e.g. it may make make the answers unstable)
-        let itr = output_points["mean"]
-            .iter()
-            .zip(output_cartesian["mean"].iter())
-            .enumerate();
-        for (i, (pts_mean, grid_mean)) in itr {
-            assert!(
-                common::isclose(*grid_mean, *pts_mean, 0.0, 0.0),
-                "index {} of mean aren't consistent. actual: {}, ref: {}",
-                i,
-                *grid_mean,
-                *pts_mean
-            );
-        }
+        // a little problematic (e.g. it may make make the means unstable)
+        let rtol_atol_sets = HashMap::from([("weight", [0.0, 0.0]), ("mean", [0.0, 0.0])]);
+        common::assert_consistent_results(&output_cartesian, &output_points, &rtol_atol_sets);
     }
 }
