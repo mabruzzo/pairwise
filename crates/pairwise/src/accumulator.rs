@@ -38,7 +38,8 @@ pub fn get_output(
 }
 
 // TODO: refactor so that Histogram doesn't hold a vector and move to
-//       pairwise_internal/accumulator.rs (to )
+//       pairwise_internal/accumulator.rs
+#[derive(Clone)]
 pub struct Histogram {
     // maybe call these hist_bucket_edges?
     hist_bin_edges: Vec<f64>,

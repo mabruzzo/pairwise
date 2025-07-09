@@ -3,7 +3,7 @@ name = "pairwise"
 version = "0.1.0"
 edition = "2024"
 authors = ["Matthew W. Abruzzo", "Adam J. Wheeler"]
-rust-version = "1.85"
+rust-version = "1.86"
 
 [dependencies]
 pairwise_nostd_internal = { path = "../pairwise_nostd_internal" }
@@ -16,3 +16,5 @@ ndarray = { version = "0.16", default-features = false }
 
 [dev-dependencies]
 ndarray = { version = "0.16", default-features = true }
+rand.version = "0.9.1"
+rand_xoshiro = { version = "0.7.0" }

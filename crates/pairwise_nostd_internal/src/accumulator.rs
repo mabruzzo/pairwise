@@ -114,6 +114,7 @@ pub trait Accumulator {
     }
 }
 
+#[derive(Clone)]
 pub struct Mean;
 
 impl Mean {
