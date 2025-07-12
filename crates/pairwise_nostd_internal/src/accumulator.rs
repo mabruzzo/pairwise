@@ -116,7 +116,7 @@ pub struct DataElement {
     pub weight: f64,
 }
 
-/// describes the output components from a single Accumulator statepack
+/// describes the output components from a single Accumulator accum_state
 pub enum OutputDescr {
     MultiScalarComp(&'static [&'static str]),
     SingleVecComp { size: usize, name: &'static str },
@@ -124,7 +124,7 @@ pub enum OutputDescr {
 
 impl OutputDescr {
     /// the number of components to allocate per component
-    pub fn n_per_statepack(&self) -> usize {
+    pub fn n_per_accum_state(&self) -> usize {
         match self {
             Self::MultiScalarComp(names) => names.len(),
             Self::SingleVecComp { size, .. } => *size,
@@ -165,47 +165,43 @@ impl OutputDescr {
 ///   the effort)
 pub trait Accumulator {
     /// the number of f64 elements needed to track the accumulator data
-    fn statepack_size(&self) -> usize;
+    fn accum_state_size(&self) -> usize;
 
     /// initializes the storage tracking the acumulator's state
-    fn reset_statepack(&self, statepack: &mut AccumStateViewMut);
+    fn reset_accum_state(&self, accum_state: &mut AccumStateViewMut);
 
-    /// consume the value and weight to update the statepack
-    fn consume(&self, statepack: &mut AccumStateViewMut, datum: &DataElement);
+    /// consume the value and weight to update the accum_state
+    fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &DataElement);
 
-    /// merge the state-packs tracked by `statepack` and other, and update
-    /// `statepack` accordingly
-    fn merge(&self, statepack: &mut AccumStateViewMut, other: &AccumStateView);
+    /// merge the state-packs tracked by `accum_state` and other, and update
+    /// `accum_state` accordingly
+    fn merge(&self, accum_state: &mut AccumStateViewMut, other: &AccumStateView);
 
-    /// extract all output-values from a single statepack. Expects `value` to
-    /// have the shape given by `[self.n_value_comps()]` and `statepack` to
-    /// have the shape provided by `[self.statepack_size()]`
+    /// extract all output-values from a single accum_state. Expects `value` to
+    /// have the shape given by `[self.n_value_comps()]` and `accum_state` to
+    /// have the shape provided by `[self.accum_state_size()]`
     ///
     /// Use `self.value_prop` to interpret the meaning of each value component
-    fn value_from_statepack(&self, value: &mut ArrayViewMut1<f64>, statepack: &AccumStateView);
+    fn value_from_accum_state(&self, value: &mut ArrayViewMut1<f64>, accum_state: &AccumStateView);
 
-    /// Describes the outputs produced from a single statepack
+    /// Describes the outputs produced from a single accum_state
     fn output_descr(&self) -> OutputDescr;
 
     // the functions down below apply to multiple state-packs at a time (they
     // probably should not be part of this trait
 
     /// Maybe we should detach this...
-    fn values_from_statepacks(
-        &self,
-        values: &mut ArrayViewMut2<f64>,
-        statepacks: &ArrayView2<f64>,
-    ) {
+    fn values_from_statepack(&self, values: &mut ArrayViewMut2<f64>, statepack: &ArrayView2<f64>) {
         // get the number of derivable quantities per pack (this is slow and dumb)
 
         // sanity checks:
-        assert!(values.shape()[0] == self.output_descr().n_per_statepack());
-        assert!(statepacks.shape()[0] == self.statepack_size());
-        assert!(values.shape()[1] == statepacks.shape()[1]);
+        assert!(values.shape()[0] == self.output_descr().n_per_accum_state());
+        assert!(statepack.shape()[0] == self.accum_state_size());
+        assert!(values.shape()[1] == statepack.shape()[1]);
 
         for i in 0..values.shape()[1] {
-            let state = AccumStateView::from_array_view(statepacks.index_axis(Axis(1), i));
-            self.value_from_statepack(&mut values.index_axis_mut(Axis(1), i), &state);
+            let state = AccumStateView::from_array_view(statepack.index_axis(Axis(1), i));
+            self.value_from_accum_state(&mut values.index_axis_mut(Axis(1), i), &state);
         }
     }
 }
@@ -222,31 +218,31 @@ impl Mean {
 }
 
 impl Accumulator for Mean {
-    fn statepack_size(&self) -> usize {
+    fn accum_state_size(&self) -> usize {
         2_usize
     }
 
-    fn reset_statepack(&self, statepack: &mut AccumStateViewMut) {
-        statepack[Mean::TOTAL] = 0.0;
-        statepack[Mean::WEIGHT] = 0.0;
+    fn reset_accum_state(&self, accum_state: &mut AccumStateViewMut) {
+        accum_state[Mean::TOTAL] = 0.0;
+        accum_state[Mean::WEIGHT] = 0.0;
     }
 
-    fn consume(&self, statepack: &mut AccumStateViewMut, datum: &DataElement) {
-        statepack[Mean::WEIGHT] += datum.weight;
-        statepack[Mean::TOTAL] += datum.value * datum.weight;
+    fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &DataElement) {
+        accum_state[Mean::WEIGHT] += datum.weight;
+        accum_state[Mean::TOTAL] += datum.value * datum.weight;
     }
 
-    fn merge(&self, statepack: &mut AccumStateViewMut, other: &AccumStateView) {
-        statepack[Mean::TOTAL] += other[Mean::TOTAL];
-        statepack[Mean::WEIGHT] += other[Mean::WEIGHT];
+    fn merge(&self, accum_state: &mut AccumStateViewMut, other: &AccumStateView) {
+        accum_state[Mean::TOTAL] += other[Mean::TOTAL];
+        accum_state[Mean::WEIGHT] += other[Mean::WEIGHT];
     }
 
     fn output_descr(&self) -> OutputDescr {
         OutputDescr::MultiScalarComp(Mean::OUTPUT_COMPONENTS)
     }
 
-    fn value_from_statepack(&self, value: &mut ArrayViewMut1<f64>, statepack: &AccumStateView) {
-        value[[Mean::VALUE_MEAN]] = statepack[Mean::TOTAL] / statepack[Mean::WEIGHT];
-        value[[Mean::VALUE_WEIGHT]] = statepack[Mean::WEIGHT];
+    fn value_from_accum_state(&self, value: &mut ArrayViewMut1<f64>, accum_state: &AccumStateView) {
+        value[[Mean::VALUE_MEAN]] = accum_state[Mean::TOTAL] / accum_state[Mean::WEIGHT];
+        value[[Mean::VALUE_WEIGHT]] = accum_state[Mean::WEIGHT];
     }
 }

@@ -18,16 +18,16 @@ use pairwise_nostd_internal::{
 ///       part of the public API.
 pub fn get_output(
     accum: &impl Accumulator,
-    stateprops: &ArrayView2<f64>,
+    stateprop: &ArrayView2<f64>,
 ) -> HashMap<&'static str, Vec<f64>> {
     let description = accum.output_descr();
-    let n_bins = stateprops.shape()[1];
-    let n_comps = description.n_per_statepack();
+    let n_bins = stateprop.shape()[1];
+    let n_comps = description.n_per_accum_state();
 
     let mut buffer = Vec::new();
     buffer.resize(n_comps * n_bins, 0.0);
     let mut buffer_view = ArrayViewMut2::from_shape([n_comps, n_bins], &mut buffer).unwrap();
-    accum.values_from_statepacks(&mut buffer_view, stateprops);
+    accum.values_from_statepack(&mut buffer_view, stateprop);
 
     match description {
         OutputDescr::MultiScalarComp(names) => {
@@ -64,27 +64,27 @@ impl Histogram {
 }
 
 impl Accumulator for Histogram {
-    fn statepack_size(&self) -> usize {
+    fn accum_state_size(&self) -> usize {
         self.n_hist_bins
     }
 
     /// initializes the storage tracking the acumulator's state
-    fn reset_statepack(&self, statepack: &mut AccumStateViewMut) {
-        statepack.fill(0.0);
+    fn reset_accum_state(&self, accum_state: &mut AccumStateViewMut) {
+        accum_state.fill(0.0);
     }
 
-    /// consume the value and weight to update the statepack
-    fn consume(&self, statepack: &mut AccumStateViewMut, datum: &DataElement) {
+    /// consume the value and weight to update the accum_state
+    fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &DataElement) {
         if let Some(hist_bin_idx) = get_bin_idx(datum.value, &self.hist_bin_edges) {
-            statepack[hist_bin_idx] += datum.weight;
+            accum_state[hist_bin_idx] += datum.weight;
         }
     }
 
-    /// merge the state-packs tracked by `statepack` and other, and update
-    /// `statepack` accordingly
-    fn merge(&self, statepack: &mut AccumStateViewMut, other: &AccumStateView) {
+    /// merge the state-packs tracked by `accum_state` and other, and update
+    /// `accum_state` accordingly
+    fn merge(&self, accum_state: &mut AccumStateViewMut, other: &AccumStateView) {
         for i in 0..self.n_hist_bins {
-            statepack[i] += other[i];
+            accum_state[i] += other[i];
         }
     }
 
@@ -95,9 +95,9 @@ impl Accumulator for Histogram {
         }
     }
 
-    fn value_from_statepack(&self, value: &mut ArrayViewMut1<f64>, statepack: &AccumStateView) {
+    fn value_from_accum_state(&self, value: &mut ArrayViewMut1<f64>, accum_state: &AccumStateView) {
         for i in 0..self.n_hist_bins {
-            value[[i]] = statepack[i];
+            value[[i]] = accum_state[i];
         }
     }
 }
