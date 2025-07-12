@@ -26,17 +26,17 @@ mod tests {
         let accum = Mean;
 
         let mut storage = [0.0, 0.0];
-        let mut statepack = AccumStateViewMut::from_contiguous_slice(&mut storage);
-        accum.reset_accum_state(&mut statepack);
+        let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
+        accum.reset_accum_state(&mut accum_state);
 
         accum.consume(
-            &mut statepack,
+            &mut accum_state,
             &DataElement {
                 value: 4.0,
                 weight: 1.0,
             },
         );
-        let value_map = _get_output_single(&accum, &statepack.as_view());
+        let value_map = _get_output_single(&accum, &accum_state.as_view());
 
         assert_eq!(value_map["mean"][0], 4.0);
         assert_eq!(value_map["weight"][0], 1.0);
@@ -47,25 +47,25 @@ mod tests {
         let accum = Mean;
 
         let mut storage = [0.0, 0.0];
-        let mut statepack = AccumStateViewMut::from_contiguous_slice(&mut storage);
-        accum.reset_accum_state(&mut statepack);
+        let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
+        accum.reset_accum_state(&mut accum_state);
 
         accum.consume(
-            &mut statepack,
+            &mut accum_state,
             &DataElement {
                 value: 4.0,
                 weight: 1.0,
             },
         );
         accum.consume(
-            &mut statepack,
+            &mut accum_state,
             &DataElement {
                 value: 8.0,
                 weight: 1.0,
             },
         );
 
-        let value_map = _get_output_single(&accum, &statepack.as_view());
+        let value_map = _get_output_single(&accum, &accum_state.as_view());
         assert_eq!(value_map["mean"][0], 6.0);
         assert_eq!(value_map["weight"][0], 2.0);
     }
@@ -75,17 +75,17 @@ mod tests {
         let accum = Mean;
 
         let mut storage = [0.0, 0.0];
-        let mut statepack = AccumStateViewMut::from_contiguous_slice(&mut storage);
-        accum.reset_accum_state(&mut statepack);
+        let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
+        accum.reset_accum_state(&mut accum_state);
         accum.consume(
-            &mut statepack,
+            &mut accum_state,
             &DataElement {
                 value: 4.0,
                 weight: 1.0,
             },
         );
         accum.consume(
-            &mut statepack,
+            &mut accum_state,
             &DataElement {
                 value: 8.0,
                 weight: 1.0,
@@ -93,26 +93,26 @@ mod tests {
         );
 
         let mut storage_other = [0.0, 0.0];
-        let mut statepack_other = AccumStateViewMut::from_contiguous_slice(&mut storage_other);
-        accum.reset_accum_state(&mut statepack_other);
+        let mut accum_state_other = AccumStateViewMut::from_contiguous_slice(&mut storage_other);
+        accum.reset_accum_state(&mut accum_state_other);
         accum.consume(
-            &mut statepack_other,
+            &mut accum_state_other,
             &DataElement {
                 value: 1.0,
                 weight: 1.0,
             },
         );
         accum.consume(
-            &mut statepack_other,
+            &mut accum_state_other,
             &DataElement {
                 value: 3.0,
                 weight: 1.0,
             },
         );
 
-        accum.merge(&mut statepack, &statepack_other.as_view());
+        accum.merge(&mut accum_state, &accum_state_other.as_view());
 
-        let value_map = _get_output_single(&accum, &statepack.as_view());
+        let value_map = _get_output_single(&accum, &accum_state.as_view());
         assert_eq!(value_map["mean"][0], 4.0);
         assert_eq!(value_map["weight"][0], 4.0);
     }
@@ -131,43 +131,43 @@ mod tests {
         let accum = Histogram::new(&[0.0, 1.0, 2.0]).unwrap();
 
         let mut storage = [0.0, 0.0];
-        let mut statepack = AccumStateViewMut::from_contiguous_slice(&mut storage);
-        accum.reset_accum_state(&mut statepack);
+        let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
+        accum.reset_accum_state(&mut accum_state);
 
         accum.consume(
-            &mut statepack,
+            &mut accum_state,
             &DataElement {
                 value: 0.5,
                 weight: 1.0,
             },
         );
         accum.consume(
-            &mut statepack,
+            &mut accum_state,
             &DataElement {
                 value: -50.0,
                 weight: 1.0,
             },
         );
         accum.consume(
-            &mut statepack,
+            &mut accum_state,
             &DataElement {
                 value: 1000.0,
                 weight: 1.0,
             },
         );
 
-        let value_map = _get_output_single(&accum, &statepack.as_view());
+        let value_map = _get_output_single(&accum, &accum_state.as_view());
         assert_eq!(value_map["weight"][0], 1.0);
         assert_eq!(value_map["weight"][1], 0.0);
 
         accum.consume(
-            &mut statepack,
+            &mut accum_state,
             &DataElement {
                 value: 1.1,
                 weight: 5.0,
             },
         );
-        let value_map = _get_output_single(&accum, &statepack.as_view());
+        let value_map = _get_output_single(&accum, &accum_state.as_view());
         assert_eq!(value_map["weight"][0], 1.0);
         assert_eq!(value_map["weight"][1], 5.0);
     }

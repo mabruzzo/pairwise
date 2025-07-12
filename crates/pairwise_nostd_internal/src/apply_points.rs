@@ -67,7 +67,7 @@ impl<'a> PointProps<'a> {
 }
 
 fn apply_accum_helper<const CROSS: bool>(
-    stateprops: &mut StatePackViewMut,
+    statepack: &mut StatePackViewMut,
     accum: &impl Accumulator,
     points_a: &PointProps,
     points_b: &PointProps,
@@ -91,7 +91,7 @@ fn apply_accum_helper<const CROSS: bool>(
                     weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
                 };
 
-                accum.consume(&mut stateprops.get_state_mut(distance_bin_idx), &datum);
+                accum.consume(&mut statepack.get_state_mut(distance_bin_idx), &datum);
             }
         }
     }
@@ -99,6 +99,9 @@ fn apply_accum_helper<const CROSS: bool>(
 
 /// Computes contributions to binned statistics from values computed from the
 /// specified pairs of points.
+///
+/// In more detail, `statepack`, acts as a container of accumulator state. It
+/// holds an accum_state per bin.
 ///
 /// When `points_b` is `None`, the function considers all unique pairs of
 /// points within `points_a`. Otherwise, all pairs of points between `points_a`

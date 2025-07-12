@@ -6,7 +6,8 @@ use pairwise::{
 
 // Things are a little unergonomic!
 
-// helper function!
+// helper function that sets up the statepack, which holds one accum_state
+// per spatial bin
 fn prepare_statepack(n_spatial_bins: usize, accum: &impl Accumulator) -> Array2<f64> {
     assert!(n_spatial_bins > 0);
     let mut statepack = Array2::<f64>::zeros((accum.accum_state_size(), n_spatial_bins));

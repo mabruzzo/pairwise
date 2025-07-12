@@ -32,14 +32,19 @@
 //! machinery is responsible for computing the statistic within a single bin.
 //! We draw a distinction between the current state of the accumulator between
 //! the actual accumulation logic.
-//! - We refer to the current state of the accumulator as its state-pack.
+//! - We refer to the current state of a single accumlator as the `accum_state`.
 //! - The accumulation logic is encapsulated by the functions implemented by
 //!   the `Accumulator` trait. At the time of writing, an Accumulator
-//!   implements logic for modifying a single state-pack.
+//!   implements logic for modifying a single `accum_state` at a time.
+//! - From the perspective of an accumulator, the `accum_state` is packaged
+//!   inside within the [`AccumStateView`] & [`AccumStateViewMut`] types (the
+//!   exact type depends on context)
 //!
-//! At a high-level, external code tracks separate state-packs for each bin,
-//! and invokes accumulators for separate state-packs. The external code needs
-//! flexibility for how it stores the state-packs.
+//! At a high-level, external code manages and each bin's `accum_state`. A
+//! collection of `accum_state`s is usually managed by a [`StatePackViewMut`]
+//! instance. Currently, the accumulators are designed to be agnostic about
+//! the precise way a given `accum_state` is organized in memory. This is done
+//! to give additional flexiblity to the external code driving the calculation.
 //!
 //! We will revisit this in the future once we are done architecting other
 //! parts of the design.
@@ -132,11 +137,12 @@ impl OutputDescr {
     }
 }
 
-// Accumulators generally operate on individual state-packs (the implementation
-// is currently inefficient, but we will refactor and try to come up with
-// better abstractions once we are done mapping out all the requirements)
-//
-// In the context of the larger package, there will be n accumulators
+/// Accumulators generally operate on individual `accum_state`s.
+///
+/// The implementation is currently inefficient, but we will refactor and try
+/// to come up with better abstractions once we are done mapping out all the
+/// requirements.
+///
 /// # Note
 /// It might be elegant to:
 /// - introduce a separate, related trait, called `Consume` or `UpdateLeft`,
@@ -173,8 +179,8 @@ pub trait Accumulator {
     /// consume the value and weight to update the accum_state
     fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &DataElement);
 
-    /// merge the state-packs tracked by `accum_state` and other, and update
-    /// `accum_state` accordingly
+    /// merge the state information tracked by `accum_state` and `other`, and
+    /// update `accum_state` accordingly
     fn merge(&self, accum_state: &mut AccumStateViewMut, other: &AccumStateView);
 
     /// extract all output-values from a single accum_state. Expects `value` to
@@ -187,12 +193,15 @@ pub trait Accumulator {
     /// Describes the outputs produced from a single accum_state
     fn output_descr(&self) -> OutputDescr;
 
-    // the functions down below apply to multiple state-packs at a time (they
-    // probably should not be part of this trait
-
-    /// Maybe we should detach this...
+    /// This function computes the output values for every `accum_state` in
+    /// `statepack`.
+    ///
+    /// TODO: relocate this function. The fact that this operates on many
+    ///       `accum_state`s in a `statepack` rather than on an individual
+    ///       `accum_state` is a significant deviation from the other functions
+    ///       in this trait. Maybe we move this to the pairwise crate
     fn values_from_statepack(&self, values: &mut ArrayViewMut2<f64>, statepack: &ArrayView2<f64>) {
-        // get the number of derivable quantities per pack (this is slow and dumb)
+        // get the number of derivable quantities per accum_state (this is slow and dumb)
 
         // sanity checks:
         assert!(values.shape()[0] == self.output_descr().n_per_accum_state());

@@ -80,8 +80,8 @@ impl Accumulator for Histogram {
         }
     }
 
-    /// merge the state-packs tracked by `accum_state` and other, and update
-    /// `accum_state` accordingly
+    /// merge the state information tracked by `accum_state` and `other`, and
+    /// update `accum_state` accordingly
     fn merge(&self, accum_state: &mut AccumStateViewMut, other: &AccumStateView) {
         for i in 0..self.n_hist_bins {
             accum_state[i] += other[i];
