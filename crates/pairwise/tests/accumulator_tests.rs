@@ -1,6 +1,6 @@
-use ndarray::{ArrayView1, ArrayViewMut1, NewAxis, s};
+use ndarray::{NewAxis, s};
 use pairwise::{Accumulator, Histogram, Mean, get_output};
-use pairwise_nostd_internal::DataElement;
+use pairwise_nostd_internal::{AccumStateView, AccumStateViewMut, DataElement};
 use std::collections::HashMap;
 
 // this is inefficient, but it gets the job done for now
@@ -8,9 +8,9 @@ use std::collections::HashMap;
 // this is probably an indication that we could improve the Accumulator API
 fn _get_output_single(
     accum: &impl Accumulator,
-    stateprop: &ArrayView1<f64>,
+    stateprop: &AccumStateView,
 ) -> HashMap<&'static str, Vec<f64>> {
-    get_output(accum, &stateprop.slice(s![.., NewAxis]))
+    get_output(accum, &stateprop.as_array_view().slice(s![.., NewAxis]))
 }
 
 // TODO: factor out this function and the get_output function from
@@ -26,7 +26,7 @@ mod tests {
         let accum = Mean;
 
         let mut storage = [0.0, 0.0];
-        let mut statepack = ArrayViewMut1::from_shape([2], &mut storage).unwrap();
+        let mut statepack = AccumStateViewMut::from_contiguous_slice(&mut storage);
         accum.reset_statepack(&mut statepack);
 
         accum.consume(
@@ -36,7 +36,7 @@ mod tests {
                 weight: 1.0,
             },
         );
-        let value_map = _get_output_single(&accum, &statepack.view());
+        let value_map = _get_output_single(&accum, &statepack.as_view());
 
         assert_eq!(value_map["mean"][0], 4.0);
         assert_eq!(value_map["weight"][0], 1.0);
@@ -47,7 +47,7 @@ mod tests {
         let accum = Mean;
 
         let mut storage = [0.0, 0.0];
-        let mut statepack = ArrayViewMut1::from_shape([2], &mut storage).unwrap();
+        let mut statepack = AccumStateViewMut::from_contiguous_slice(&mut storage);
         accum.reset_statepack(&mut statepack);
 
         accum.consume(
@@ -65,7 +65,7 @@ mod tests {
             },
         );
 
-        let value_map = _get_output_single(&accum, &statepack.view());
+        let value_map = _get_output_single(&accum, &statepack.as_view());
         assert_eq!(value_map["mean"][0], 6.0);
         assert_eq!(value_map["weight"][0], 2.0);
     }
@@ -75,7 +75,7 @@ mod tests {
         let accum = Mean;
 
         let mut storage = [0.0, 0.0];
-        let mut statepack = ArrayViewMut1::from_shape([2], &mut storage).unwrap();
+        let mut statepack = AccumStateViewMut::from_contiguous_slice(&mut storage);
         accum.reset_statepack(&mut statepack);
         accum.consume(
             &mut statepack,
@@ -93,7 +93,7 @@ mod tests {
         );
 
         let mut storage_other = [0.0, 0.0];
-        let mut statepack_other = ArrayViewMut1::from_shape([2], &mut storage_other).unwrap();
+        let mut statepack_other = AccumStateViewMut::from_contiguous_slice(&mut storage_other);
         accum.reset_statepack(&mut statepack_other);
         accum.consume(
             &mut statepack_other,
@@ -110,9 +110,9 @@ mod tests {
             },
         );
 
-        accum.merge(&mut statepack, statepack_other.view());
+        accum.merge(&mut statepack, &statepack_other.as_view());
 
-        let value_map = _get_output_single(&accum, &statepack.view());
+        let value_map = _get_output_single(&accum, &statepack.as_view());
         assert_eq!(value_map["mean"][0], 4.0);
         assert_eq!(value_map["weight"][0], 4.0);
     }
@@ -131,7 +131,7 @@ mod tests {
         let accum = Histogram::new(&[0.0, 1.0, 2.0]).unwrap();
 
         let mut storage = [0.0, 0.0];
-        let mut statepack = ArrayViewMut1::from_shape([2], &mut storage).unwrap();
+        let mut statepack = AccumStateViewMut::from_contiguous_slice(&mut storage);
         accum.reset_statepack(&mut statepack);
 
         accum.consume(
@@ -156,7 +156,7 @@ mod tests {
             },
         );
 
-        let value_map = _get_output_single(&accum, &statepack.view());
+        let value_map = _get_output_single(&accum, &statepack.as_view());
         assert_eq!(value_map["weight"][0], 1.0);
         assert_eq!(value_map["weight"][1], 0.0);
 
@@ -167,7 +167,7 @@ mod tests {
                 weight: 5.0,
             },
         );
-        let value_map = _get_output_single(&accum, &statepack.view());
+        let value_map = _get_output_single(&accum, &statepack.as_view());
         assert_eq!(value_map["weight"][0], 1.0);
         assert_eq!(value_map["weight"][1], 5.0);
     }

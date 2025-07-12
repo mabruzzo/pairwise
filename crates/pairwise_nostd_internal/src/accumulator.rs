@@ -44,7 +44,8 @@
 //! We will revisit this in the future once we are done architecting other
 //! parts of the design.
 
-use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
+use crate::state::{AccumStateView, AccumStateViewMut};
+use ndarray::{ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
 
 /// Instances of this element are consumed by the Accumulator
 ///
@@ -167,21 +168,21 @@ pub trait Accumulator {
     fn statepack_size(&self) -> usize;
 
     /// initializes the storage tracking the acumulator's state
-    fn reset_statepack(&self, statepack: &mut ArrayViewMut1<f64>);
+    fn reset_statepack(&self, statepack: &mut AccumStateViewMut);
 
     /// consume the value and weight to update the statepack
-    fn consume(&self, statepack: &mut ArrayViewMut1<f64>, datum: &DataElement);
+    fn consume(&self, statepack: &mut AccumStateViewMut, datum: &DataElement);
 
     /// merge the state-packs tracked by `statepack` and other, and update
     /// `statepack` accordingly
-    fn merge(&self, statepack: &mut ArrayViewMut1<f64>, other: ArrayView1<f64>);
+    fn merge(&self, statepack: &mut AccumStateViewMut, other: &AccumStateView);
 
     /// extract all output-values from a single statepack. Expects `value` to
     /// have the shape given by `[self.n_value_comps()]` and `statepack` to
     /// have the shape provided by `[self.statepack_size()]`
     ///
     /// Use `self.value_prop` to interpret the meaning of each value component
-    fn value_from_statepack(&self, value: &mut ArrayViewMut1<f64>, statepack: &ArrayView1<f64>);
+    fn value_from_statepack(&self, value: &mut ArrayViewMut1<f64>, statepack: &AccumStateView);
 
     /// Describes the outputs produced from a single statepack
     fn output_descr(&self) -> OutputDescr;
@@ -203,10 +204,8 @@ pub trait Accumulator {
         assert!(values.shape()[1] == statepacks.shape()[1]);
 
         for i in 0..values.shape()[1] {
-            self.value_from_statepack(
-                &mut values.index_axis_mut(Axis(1), i),
-                &statepacks.index_axis(Axis(1), i),
-            );
+            let state = AccumStateView::from_array_view(statepacks.index_axis(Axis(1), i));
+            self.value_from_statepack(&mut values.index_axis_mut(Axis(1), i), &state);
         }
     }
 }
@@ -227,27 +226,27 @@ impl Accumulator for Mean {
         2_usize
     }
 
-    fn reset_statepack(&self, statepack: &mut ArrayViewMut1<f64>) {
-        statepack[[Mean::TOTAL]] = 0.0;
-        statepack[[Mean::WEIGHT]] = 0.0;
+    fn reset_statepack(&self, statepack: &mut AccumStateViewMut) {
+        statepack[Mean::TOTAL] = 0.0;
+        statepack[Mean::WEIGHT] = 0.0;
     }
 
-    fn consume(&self, statepack: &mut ArrayViewMut1<f64>, datum: &DataElement) {
-        statepack[[Mean::WEIGHT]] += datum.weight;
-        statepack[[Mean::TOTAL]] += datum.value * datum.weight;
+    fn consume(&self, statepack: &mut AccumStateViewMut, datum: &DataElement) {
+        statepack[Mean::WEIGHT] += datum.weight;
+        statepack[Mean::TOTAL] += datum.value * datum.weight;
     }
 
-    fn merge(&self, statepack: &mut ArrayViewMut1<f64>, other: ArrayView1<f64>) {
-        statepack[[Mean::TOTAL]] += other[[Mean::TOTAL]];
-        statepack[[Mean::WEIGHT]] += other[[Mean::WEIGHT]];
+    fn merge(&self, statepack: &mut AccumStateViewMut, other: &AccumStateView) {
+        statepack[Mean::TOTAL] += other[Mean::TOTAL];
+        statepack[Mean::WEIGHT] += other[Mean::WEIGHT];
     }
 
     fn output_descr(&self) -> OutputDescr {
         OutputDescr::MultiScalarComp(Mean::OUTPUT_COMPONENTS)
     }
 
-    fn value_from_statepack(&self, value: &mut ArrayViewMut1<f64>, statepack: &ArrayView1<f64>) {
-        value[[Mean::VALUE_MEAN]] = statepack[[Mean::TOTAL]] / statepack[[Mean::WEIGHT]];
-        value[[Mean::VALUE_WEIGHT]] = statepack[[Mean::WEIGHT]];
+    fn value_from_statepack(&self, value: &mut ArrayViewMut1<f64>, statepack: &AccumStateView) {
+        value[[Mean::VALUE_MEAN]] = statepack[Mean::TOTAL] / statepack[Mean::WEIGHT];
+        value[[Mean::VALUE_WEIGHT]] = statepack[Mean::WEIGHT];
     }
 }

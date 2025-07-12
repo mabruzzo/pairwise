@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2};
 
-use pairwise_nostd_internal::{Accumulator, DataElement, OutputDescr, get_bin_idx};
+use pairwise_nostd_internal::{
+    AccumStateView, AccumStateViewMut, Accumulator, DataElement, OutputDescr, get_bin_idx,
+};
 
 /// compute the output quantities from an Accumulator's state properties and
 /// return the result in a HashMap.
@@ -67,22 +69,22 @@ impl Accumulator for Histogram {
     }
 
     /// initializes the storage tracking the acumulator's state
-    fn reset_statepack(&self, statepack: &mut ArrayViewMut1<f64>) {
+    fn reset_statepack(&self, statepack: &mut AccumStateViewMut) {
         statepack.fill(0.0);
     }
 
     /// consume the value and weight to update the statepack
-    fn consume(&self, statepack: &mut ArrayViewMut1<f64>, datum: &DataElement) {
+    fn consume(&self, statepack: &mut AccumStateViewMut, datum: &DataElement) {
         if let Some(hist_bin_idx) = get_bin_idx(datum.value, &self.hist_bin_edges) {
-            statepack[[hist_bin_idx]] += datum.weight;
+            statepack[hist_bin_idx] += datum.weight;
         }
     }
 
     /// merge the state-packs tracked by `statepack` and other, and update
     /// `statepack` accordingly
-    fn merge(&self, statepack: &mut ArrayViewMut1<f64>, other: ArrayView1<f64>) {
+    fn merge(&self, statepack: &mut AccumStateViewMut, other: &AccumStateView) {
         for i in 0..self.n_hist_bins {
-            statepack[[i]] += other[[i]];
+            statepack[i] += other[i];
         }
     }
 
@@ -93,9 +95,9 @@ impl Accumulator for Histogram {
         }
     }
 
-    fn value_from_statepack(&self, value: &mut ArrayViewMut1<f64>, statepack: &ArrayView1<f64>) {
+    fn value_from_statepack(&self, value: &mut ArrayViewMut1<f64>, statepack: &AccumStateView) {
         for i in 0..self.n_hist_bins {
-            value[[i]] = statepack[[i]];
+            value[[i]] = statepack[i];
         }
     }
 }

@@ -10,8 +10,9 @@ use pairwise::{
 fn prepare_statepack(n_spatial_bins: usize, accum: &impl Accumulator) -> Array2<f64> {
     assert!(n_spatial_bins > 0);
     let mut statepack = Array2::<f64>::zeros((accum.statepack_size(), n_spatial_bins));
-    for mut col in statepack.columns_mut() {
-        accum.reset_statepack(&mut col);
+    let mut statepack_view = StatePackViewMut::from_array_view(statepack.view_mut());
+    for i in 0..n_spatial_bins {
+        accum.reset_statepack(&mut statepack_view.get_state_mut(i));
     }
     statepack
 }
