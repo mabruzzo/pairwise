@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2};
 
-use pairwise_nostd_internal::{Accumulator, OutputDescr, get_bin_idx};
+use pairwise_nostd_internal::{Accumulator, DataElement, OutputDescr, get_bin_idx};
 
 /// compute the output quantities from an Accumulator's state properties and
 /// return the result in a HashMap.
@@ -72,9 +72,9 @@ impl Accumulator for Histogram {
     }
 
     /// consume the value and weight to update the statepack
-    fn consume(&self, statepack: &mut ArrayViewMut1<f64>, val: f64, weight: f64) {
-        if let Some(hist_bin_idx) = get_bin_idx(val, &self.hist_bin_edges) {
-            statepack[[hist_bin_idx]] += weight;
+    fn consume(&self, statepack: &mut ArrayViewMut1<f64>, datum: &DataElement) {
+        if let Some(hist_bin_idx) = get_bin_idx(datum.value, &self.hist_bin_edges) {
+            statepack[[hist_bin_idx]] += datum.weight;
         }
     }
 

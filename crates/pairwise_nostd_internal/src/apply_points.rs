@@ -1,3 +1,4 @@
+use crate::DataElement;
 use crate::accumulator::Accumulator;
 use crate::misc::{get_bin_idx, squared_diff_norm};
 use ndarray::{ArrayView2, ArrayViewMut2, Axis};
@@ -85,18 +86,14 @@ fn apply_accum_helper<const CROSS: bool>(
                 points_a.n_spatial_dims,
             );
             if let Some(distance_bin_idx) = get_bin_idx(distance_squared, squared_bin_edges) {
-                // get the value. This is hardcoded to correspond to the velocity structure
-                // function when accumulated with Mean
-                // TODO switch on pairwise op?
-                let val = pairwise_fn(points_a.values, points_b.values, i_a, i_b);
-
-                // get the weight
-                let pair_weight = points_a.get_weight(i_a) * points_b.get_weight(i_b);
+                let datum = DataElement {
+                    value: pairwise_fn(points_a.values, points_b.values, i_a, i_b),
+                    weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
+                };
 
                 accum.consume(
                     &mut stateprops.index_axis_mut(Axis(1), distance_bin_idx),
-                    val,
-                    pair_weight,
+                    &datum,
                 );
             }
         }

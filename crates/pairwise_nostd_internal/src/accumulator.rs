@@ -17,6 +17,8 @@
 //! For simplicity, let's assume `𝒚ᵢ` is a scalar `yᵢ` (it may be useful to
 //! come back to this for longitudinal statistics and tensors).
 //!
+//! In practice, we use [`DataElement`] to package together `yᵢ` & `wᵢ`
+//!
 //! If a statistic just summed the values of `wᵢ` and totally ignored `yᵢ`,
 //! that would be equivalent to a normal histogram. Other statistics that we
 //! compute can be thought of generalizations of histograms (this idea is also
@@ -44,6 +46,75 @@
 
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
 
+/// Instances of this element are consumed by the Accumulator
+///
+/// In the future, we might want to store vector components rather than the
+/// scalar (we can convert the vector components to a scalar as necessary
+/// within accumulators).
+///
+/// # Supporting SIMD Instructions
+/// I have some doubts about how well we will be able to get autovectorization
+/// to work since we are reading data from multiple pointers that we access
+/// through abstractions (it may be hard to properly communicate to the
+/// compiler without lots of unsafe code). The fact that the operations that
+/// we want to vectorize are split across a few layers of abstraction adds
+/// further complication.
+///
+/// To support SIMD, we probably want to make this take a generic type (we'll
+/// need to define a trait for essential floating point operations) rather than
+/// hardcoding the struct members to floats and have the Accumulators operate
+/// on these generic types. By doing this, we could pass in
+/// [`DVec2`](https://docs.rs/glam/latest/glam/f64/struct.DVec2.html) from the
+/// `glam` package or
+/// [`std::f64x2`](https://doc.rust-lang.org/std/simd/type.f64x2.html) from
+/// nightly. For this to work, we would probably to transmute the input
+/// array buffers. If using `glam`'s types, we might want to look into
+/// `bytemuck` to safely transmute. If using nightly, `std::simd` [has some
+/// support for doing this](https://doc.rust-lang.org/std/simd/struct.Simd.html#layout-1).
+///
+/// # General Optimization Notes
+/// We probably want to ensure that the accumulator methods are inlined. If
+/// they aren't inlined, then its conceivable that using a struct may
+/// introduce a performance penalty, especially if we start encoding
+/// (mathematical) vector components. In more detail, passing the values in
+/// a struct to a function, means that the values need to be packed in memory
+/// to match the struct's internal representation to communicate across the
+/// function boundaries (this issue goes away when the function is inlined).
+///
+/// There's definitely more to this story. As I understand it,
+/// platform-specific calling conventions will influence how values are passed
+/// to functions even if we passed each struct-member as individual args. Thus,
+/// we probably want to ensure inlining to get optimal code either way (i.e.
+/// there's no real disadvantage to using the struct, *yet*).
+///
+/// In practice, my real concern is in the context of SIMD optimizations.
+/// - I have some concerns that the packing multiple SIMD-sized data packs into
+///   a struct to pass the information into an inlined function, may present
+///   more of a challenge to the optimizer than just passing each SIMD-sized
+///   data pack directly to the function as arguments
+/// - First, while an optimizer should be able to make the same optimizations
+///   in both cases, the act of packing values into a struct certainly makes
+///   more work for the optimizer. It's unclear whether the "quantity of work"
+///   actually matters... (it seems plausible that an optimizer might have a
+///   heuristic telling it "give up" if there seems to be "too much" to avoid
+///   needlessly increasing compile times)
+/// - Second, I *think* the types offered by `std::simd` (e.g. `f64x2`) may
+///   receive special treatment from the rust compiler to encourage
+///   optimizations with SIMD operations (I may be wrong). If this is indeed
+///   the case, I have some concerns that placing such types within a struct
+///   *could* interfere with this treatement (due to the struct's memory
+///   representation requirements).
+///
+/// With all that said, I think it's worthwhile use an explicit type for now.
+/// I think that there are significant advantages to improving the readability
+/// of the code and it would be relatively move away from using the struct
+/// representation later (it would be easier to do that before we start
+/// introducing more accumulators).
+pub struct DataElement {
+    pub value: f64,
+    pub weight: f64,
+}
+
 /// describes the output components from a single Accumulator statepack
 pub enum OutputDescr {
     MultiScalarComp(&'static [&'static str]),
@@ -65,6 +136,32 @@ impl OutputDescr {
 // better abstractions once we are done mapping out all the requirements)
 //
 // In the context of the larger package, there will be n accumulators
+/// # Note
+/// It might be elegant to:
+/// - introduce a separate, related trait, called `Consume` or `UpdateLeft`,
+///   which would look something like
+///   ```text
+///   pub trait UpdateLeft<Rhs> {
+///       fn update_left(accum_state: &mut ArrayViewMut1<f64>, right: Rhs);
+///   }
+///   ```
+/// - rename the current trait to something like `AccumMiscOps` and delete the
+///   `consume` and `merge` methods.
+/// - define the `Accumulator` trait as a super trait:
+///   ```text
+///   pub trait Accumulator:
+///       AccumMiscOps
+///       + UpdateLeft<&Self>
+///       + UpdateLeft<&DataElement>
+///   {}
+///   ```
+/// - thus for each Accumulator, we would be implementing `UpdateLeft<&Self>`
+///   (instead of `merge`) and `UpdateLeft<&DataElement>` (instead of
+///   `consume`).
+/// - The advantage to doing this is that `update_left` would be used for
+///   merges and consuming -- it's purely aesthetic. It may also be nice if we
+///   introduce the idea of partially digested data... (it probably isn't worth
+///   the effort)
 pub trait Accumulator {
     /// the number of f64 elements needed to track the accumulator data
     fn statepack_size(&self) -> usize;
@@ -73,7 +170,7 @@ pub trait Accumulator {
     fn reset_statepack(&self, statepack: &mut ArrayViewMut1<f64>);
 
     /// consume the value and weight to update the statepack
-    fn consume(&self, statepack: &mut ArrayViewMut1<f64>, val: f64, weight: f64);
+    fn consume(&self, statepack: &mut ArrayViewMut1<f64>, datum: &DataElement);
 
     /// merge the state-packs tracked by `statepack` and other, and update
     /// `statepack` accordingly
@@ -135,9 +232,9 @@ impl Accumulator for Mean {
         statepack[[Mean::WEIGHT]] = 0.0;
     }
 
-    fn consume(&self, statepack: &mut ArrayViewMut1<f64>, val: f64, weight: f64) {
-        statepack[[Mean::WEIGHT]] += weight;
-        statepack[[Mean::TOTAL]] += val * weight;
+    fn consume(&self, statepack: &mut ArrayViewMut1<f64>, datum: &DataElement) {
+        statepack[[Mean::WEIGHT]] += datum.weight;
+        statepack[[Mean::TOTAL]] += datum.value * datum.weight;
     }
 
     fn merge(&self, statepack: &mut ArrayViewMut1<f64>, other: ArrayView1<f64>) {

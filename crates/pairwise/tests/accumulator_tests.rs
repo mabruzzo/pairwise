@@ -1,5 +1,6 @@
 use ndarray::{ArrayView1, ArrayViewMut1, NewAxis, s};
 use pairwise::{Accumulator, Histogram, Mean, get_output};
+use pairwise_nostd_internal::DataElement;
 use std::collections::HashMap;
 
 // this is inefficient, but it gets the job done for now
@@ -28,7 +29,13 @@ mod tests {
         let mut statepack = ArrayViewMut1::from_shape([2], &mut storage).unwrap();
         accum.reset_statepack(&mut statepack);
 
-        accum.consume(&mut statepack, 4.0, 1.0);
+        accum.consume(
+            &mut statepack,
+            &DataElement {
+                value: 4.0,
+                weight: 1.0,
+            },
+        );
         let value_map = _get_output_single(&accum, &statepack.view());
 
         assert_eq!(value_map["mean"][0], 4.0);
@@ -43,8 +50,20 @@ mod tests {
         let mut statepack = ArrayViewMut1::from_shape([2], &mut storage).unwrap();
         accum.reset_statepack(&mut statepack);
 
-        accum.consume(&mut statepack, 4.0, 1.0);
-        accum.consume(&mut statepack, 8.0, 1.0);
+        accum.consume(
+            &mut statepack,
+            &DataElement {
+                value: 4.0,
+                weight: 1.0,
+            },
+        );
+        accum.consume(
+            &mut statepack,
+            &DataElement {
+                value: 8.0,
+                weight: 1.0,
+            },
+        );
 
         let value_map = _get_output_single(&accum, &statepack.view());
         assert_eq!(value_map["mean"][0], 6.0);
@@ -58,14 +77,38 @@ mod tests {
         let mut storage = [0.0, 0.0];
         let mut statepack = ArrayViewMut1::from_shape([2], &mut storage).unwrap();
         accum.reset_statepack(&mut statepack);
-        accum.consume(&mut statepack, 4.0, 1.0);
-        accum.consume(&mut statepack, 8.0, 1.0);
+        accum.consume(
+            &mut statepack,
+            &DataElement {
+                value: 4.0,
+                weight: 1.0,
+            },
+        );
+        accum.consume(
+            &mut statepack,
+            &DataElement {
+                value: 8.0,
+                weight: 1.0,
+            },
+        );
 
         let mut storage_other = [0.0, 0.0];
         let mut statepack_other = ArrayViewMut1::from_shape([2], &mut storage_other).unwrap();
         accum.reset_statepack(&mut statepack_other);
-        accum.consume(&mut statepack_other, 1.0, 1.0);
-        accum.consume(&mut statepack_other, 3.0, 1.0);
+        accum.consume(
+            &mut statepack_other,
+            &DataElement {
+                value: 1.0,
+                weight: 1.0,
+            },
+        );
+        accum.consume(
+            &mut statepack_other,
+            &DataElement {
+                value: 3.0,
+                weight: 1.0,
+            },
+        );
 
         accum.merge(&mut statepack, statepack_other.view());
 
@@ -91,15 +134,39 @@ mod tests {
         let mut statepack = ArrayViewMut1::from_shape([2], &mut storage).unwrap();
         accum.reset_statepack(&mut statepack);
 
-        accum.consume(&mut statepack, 0.5, 1.0);
-        accum.consume(&mut statepack, -50.0, 1.0);
-        accum.consume(&mut statepack, 1000.0, 1.0);
+        accum.consume(
+            &mut statepack,
+            &DataElement {
+                value: 0.5,
+                weight: 1.0,
+            },
+        );
+        accum.consume(
+            &mut statepack,
+            &DataElement {
+                value: -50.0,
+                weight: 1.0,
+            },
+        );
+        accum.consume(
+            &mut statepack,
+            &DataElement {
+                value: 1000.0,
+                weight: 1.0,
+            },
+        );
 
         let value_map = _get_output_single(&accum, &statepack.view());
         assert_eq!(value_map["weight"][0], 1.0);
         assert_eq!(value_map["weight"][1], 0.0);
 
-        accum.consume(&mut statepack, 1.1, 5.0);
+        accum.consume(
+            &mut statepack,
+            &DataElement {
+                value: 1.1,
+                weight: 5.0,
+            },
+        );
         let value_map = _get_output_single(&accum, &statepack.view());
         assert_eq!(value_map["weight"][0], 1.0);
         assert_eq!(value_map["weight"][1], 5.0);
