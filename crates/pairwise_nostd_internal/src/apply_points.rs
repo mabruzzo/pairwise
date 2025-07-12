@@ -1,7 +1,7 @@
-use crate::DataElement;
-use crate::accumulator::Accumulator;
+use crate::accumulator::{Accumulator, DataElement};
 use crate::misc::{get_bin_idx, squared_diff_norm};
-use ndarray::{ArrayView2, ArrayViewMut2, Axis};
+use crate::state::StatePackViewMut;
+use ndarray::ArrayView2;
 
 /// Collection of point properties.
 ///
@@ -67,7 +67,7 @@ impl<'a> PointProps<'a> {
 }
 
 fn apply_accum_helper<const CROSS: bool>(
-    stateprops: &mut ArrayViewMut2<f64>,
+    stateprops: &mut StatePackViewMut,
     accum: &impl Accumulator,
     points_a: &PointProps,
     points_b: &PointProps,
@@ -91,10 +91,7 @@ fn apply_accum_helper<const CROSS: bool>(
                     weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
                 };
 
-                accum.consume(
-                    &mut stateprops.index_axis_mut(Axis(1), distance_bin_idx),
-                    &datum,
-                );
+                accum.consume(&mut stateprops.get_state_mut(distance_bin_idx), &datum);
             }
         }
     }
@@ -121,7 +118,7 @@ fn apply_accum_helper<const CROSS: bool>(
 ///       think this is Ok while we get everything working, but we definitely
 ///       should revisit!
 pub fn apply_accum(
-    stateprops: &mut ArrayViewMut2<f64>,
+    statepack: &mut StatePackViewMut,
     accum: &impl Accumulator,
     points_a: &PointProps,
     points_b: Option<&PointProps>,
@@ -151,7 +148,7 @@ pub fn apply_accum(
 
     if let Some(points_b) = points_b {
         apply_accum_helper::<false>(
-            stateprops,
+            statepack,
             accum,
             points_a,
             points_b,
@@ -160,7 +157,7 @@ pub fn apply_accum(
         )
     } else {
         apply_accum_helper::<true>(
-            stateprops,
+            statepack,
             accum,
             points_a,
             points_a,
