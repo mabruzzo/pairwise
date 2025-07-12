@@ -1,6 +1,7 @@
 // inform build-system of the crates in this package
 mod accumulator;
 mod misc;
+mod parallel_serial;
 
 // pull in symbols that visible outside of the package
 pub use accumulator::{Histogram, get_output};
