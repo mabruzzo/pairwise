@@ -184,7 +184,13 @@ pub fn mocknestparallel_mean_unordered(
         let idx_bounds = segment::get_index_bounds(stream.len(), seg_index, n_segments);
 
         // now do the work!
-        _mockflatparallel_mean_unordered(stream, f, accum, local_statepack, idx_bounds);
+        _mocknestedparallel_mean_unordered::<4_usize>(
+            stream,
+            f,
+            accum,
+            local_statepack,
+            idx_bounds,
+        );
     }
 
     // after all the above loop is done, let's merge together our results such
@@ -196,14 +202,13 @@ pub fn mocknestparallel_mean_unordered(
 }
 
 // this helper function does the heavy lifting for
-// mockflatparallel_mean_unordered
+// mocknestedparallel_mean_unordered
 fn _mocknestedparallel_mean_unordered<const N_PARTIAL_RESULTS: usize>(
     stream: &SampleDataStreamView,
     f: &impl Fn(f64) -> f64,
     accum: &Mean,
     statepack: &mut StatePackViewMut,
     i_bounds: (usize, usize),
-    subchunk: usize,
 ) {
     let n_bins = statepack.n_states();
     assert!(N_PARTIAL_RESULTS > 0);
@@ -246,7 +251,7 @@ fn _mocknestedparallel_mean_unordered<const N_PARTIAL_RESULTS: usize>(
     }
 }
 
-// we skipped over a few steps to get to this version
+/* THIS ISN'T READY YET!!
 pub struct MeanUnorderedReduction<'a, F: Fn(f64) -> f64> {
     stream: SampleDataStreamView<'a>,
     f: &'a F, // todo: stop storing f (we should hard-code the function)
@@ -297,3 +302,4 @@ impl<'a, F: Fn(f64) -> f64> ReductionSpec for MeanUnorderedReduction<'a, F> {
         todo!("implement me!")
     }
 }
+*/
