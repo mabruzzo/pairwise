@@ -26,7 +26,7 @@ pub struct StandardTeamParam {
     pub n_teams: usize,
 }
 
-/// Used to hold a data element and its assoicated bin_index
+/// Used to hold a data element and its associated bin_index
 ///
 /// This is only used when we need to pack this information into memory. In
 /// most cases, track these in separate variables
@@ -288,8 +288,8 @@ pub trait TeamProps {
 /// error-handling in this trait's methods.
 pub trait ReductionSpec {
     // this trait's associated items are split into 2 parts.
-    //   1. the associated supported by all trait implementors
-    //   2. associated items conditionally supported by trait implementors
+    //   1. the associated supported by all trait implementers
+    //   2. associated items conditionally supported by trait implementers
     // TODO: Figure out how to better express the conditionally implemented
     //       associated items (maybe use multiple traits?)
 

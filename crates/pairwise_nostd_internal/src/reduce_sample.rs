@@ -102,7 +102,7 @@ pub fn accumulator_mean_unordered(
 // we skipped over a few steps to get to this version
 pub struct MeanUnorderedReduction<'a, F: Fn(f64) -> f64> {
     stream: SampleDataStreamView<'a>,
-    f: &'a F, // todo: stop storeing f
+    f: &'a F, // todo: stop storing f (we should hard-code the function)
     accum: Mean,
     n_bins: usize,
 }
