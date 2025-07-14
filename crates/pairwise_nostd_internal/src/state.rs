@@ -60,7 +60,10 @@
 //!       include overlapping memory regions (this isn't allowed in safe or
 //!       unsafe Rust)
 
-use core::ops::{Index, IndexMut};
+use core::{
+    f64,
+    ops::{Index, IndexMut},
+};
 use ndarray::{ArrayView1, ArrayViewMut1, ArrayViewMut2, Axis};
 
 pub struct AccumStateView<'a> {
@@ -208,6 +211,12 @@ impl<'a> StatePackViewMut<'a> {
         Self { data: array_view }
     }
 
+    pub fn from_slice(n_state: usize, state_size: usize, xs: &'a mut [f64]) -> Self {
+        Self {
+            data: ArrayViewMut2::from_shape([state_size, n_state], xs).unwrap(),
+        }
+    }
+
     #[inline]
     pub fn get_state(&self, i: usize) -> AccumStateView {
         AccumStateView::from_array_view(self.data.index_axis(Axis(1), i))
@@ -224,6 +233,10 @@ impl<'a> StatePackViewMut<'a> {
 
     pub fn n_states(&self) -> usize {
         self.data.len_of(Axis(1))
+    }
+
+    pub fn total_size(&self) -> usize {
+        self.state_size() * self.n_states()
     }
 
     // we probably want to add something like get_pair_disjoint_mut, which would

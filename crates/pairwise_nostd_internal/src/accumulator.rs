@@ -123,6 +123,15 @@ pub struct DataElement {
     pub weight: f64,
 }
 
+impl DataElement {
+    pub fn zeroed() -> Self {
+        DataElement {
+            value: 0.0,
+            weight: 0.0,
+        }
+    }
+}
+
 /// describes the output components from a single Accumulator accum_state
 pub enum OutputDescr {
     MultiScalarComp(&'static [&'static str]),
