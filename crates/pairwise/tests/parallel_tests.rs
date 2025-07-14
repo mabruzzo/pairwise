@@ -1,5 +1,6 @@
 use pairwise_nostd_internal::reduce_sample::{
-    SampleDataStreamView, naive_mean_chunked, naive_mean_unordered,
+    chunked::{SampleDataStreamView, naive_mean_chunked},
+    unordered::naive_mean_unordered,
 };
 
 use rand::distr::{Distribution, Uniform};
