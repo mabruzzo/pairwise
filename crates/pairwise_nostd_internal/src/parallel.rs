@@ -1,6 +1,6 @@
 //! Our parallelism abstractions use the concepts of thread teams & reductions
 
-use crate::accumulator::{Accumulator, DataElement};
+use crate::accumulator::{Accumulator, DataElement, reset_full_statepack};
 use crate::state::{AccumStateViewMut, StatePackViewMut};
 use core::num::NonZeroU32;
 
@@ -30,6 +30,9 @@ pub struct StandardTeamParam {
 ///
 /// This is only used when we need to pack this information into memory. In
 /// most cases, track these in separate variables
+///
+/// I don't love that this defines copy, but it's important for examples
+#[derive(Clone, Copy)]
 pub struct BinnedDataElement {
     pub bin_index: usize,
     pub datum: DataElement,
@@ -456,9 +459,7 @@ pub fn fill_single_team_statepack<T, R>(
 
     // TODO: consider distributing work among team members
     team.exec_if_root_member(statepack, &|statepack: &mut StatePackViewMut| {
-        for i in 0..statepack.n_states() {
-            accum.reset_accum_state(&mut statepack.get_state_mut(i));
-        }
+        reset_full_statepack(accum, statepack);
     });
 
     // now let's move to the crux of the work that is done by the thread team

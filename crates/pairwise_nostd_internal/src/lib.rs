@@ -9,7 +9,7 @@ mod state;
 // we expose it to support testing...
 pub mod reduce_sample;
 
-pub use accumulator::{Accumulator, DataElement, Mean, OutputDescr};
+pub use accumulator::{Accumulator, DataElement, Mean, OutputDescr, reset_full_statepack};
 pub use apply_points::{PointProps, apply_accum};
 pub use misc::{dot_product, get_bin_idx, squared_diff_norm};
 pub use parallel::{

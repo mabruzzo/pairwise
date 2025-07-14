@@ -21,7 +21,7 @@
 //!    with a known bin-index
 //! -> in unordered.rs, we consider a variation where we assume that the
 //!    data is in a totally random order
-//! The logic has been separated between files to facillitate side-by-side
+//! The logic has been separated between files to facilitate side-by-side
 //! comparisons
 
 use crate::accumulator::{Accumulator, DataElement, Mean};

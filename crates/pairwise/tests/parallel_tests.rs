@@ -1,6 +1,11 @@
-use pairwise_nostd_internal::reduce_sample::{
-    chunked::{SampleDataStreamView, naive_mean_chunked},
-    unordered::naive_mean_unordered,
+use pairwise::{Mean, StatePackViewMut, get_output};
+
+use pairwise_nostd_internal::{
+    reduce_sample::{
+        chunked::{SampleDataStreamView, accumulator_mean_chunked, naive_mean_chunked},
+        unordered::{accumulator_mean_unordered, naive_mean_unordered},
+    },
+    reset_full_statepack,
 };
 
 use rand::distr::{Distribution, Uniform};
@@ -78,17 +83,27 @@ fn setup_sample_data_stream(
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 enum StreamKind {
     Unordered,
     Chunked,
 }
 
+#[derive(Debug)]
+enum WrapperError {
+    Unimplemented,
+    Failure,
+}
+
+// in this case, we largely accept statepack just for the sake of maintaining
+// a consistent interface with other flavors of this function
 fn wrapped_naive(
     stream: &SampleDataStreamView,
     f: &impl Fn(f64) -> f64,
     version: StreamKind,
-    n_bins: usize,
-) -> common::BinnedStatMap {
+    statepack: &mut StatePackViewMut,
+) -> Result<common::BinnedStatMap, WrapperError> {
+    let n_bins = statepack.n_states();
     let mut tot_weight_bins = vec![0.0; n_bins];
     let mut mean_times_weight_bins = vec![0.0; n_bins];
     match version {
@@ -102,10 +117,61 @@ fn wrapped_naive(
     for i in 0..n_bins {
         mean_times_weight_bins[i] /= tot_weight_bins[i];
     }
-    HashMap::from([
+    Ok(HashMap::from([
         ("mean", mean_times_weight_bins),
         ("weight", tot_weight_bins),
-    ])
+    ]))
+}
+
+type BoxedFunc = Box<
+    dyn Fn(
+        &SampleDataStreamView,
+        StreamKind,
+        &mut StatePackViewMut,
+    ) -> Result<common::BinnedStatMap, WrapperError>,
+>;
+
+// we picked something that will return an integer when passed an integer
+#[inline(always)]
+fn my_func(x: f64) -> f64 {
+    x.powi(3) + x.powi(2) - 1.0
+}
+
+fn build_registry() -> HashMap<&'static str, BoxedFunc> {
+    let mut out: HashMap<&'static str, BoxedFunc> = HashMap::new();
+
+    //let naive_fn: BoxedFunc = );
+    out.insert(
+        "naive",
+        Box::new(
+            |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
+                wrapped_naive(stream, &my_func, version, statepack)
+            },
+        ),
+    );
+    out.insert(
+        "accumulator",
+        Box::new(
+            |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
+                let accum = Mean;
+                reset_full_statepack(&accum, statepack);
+                match version {
+                    StreamKind::Chunked => {
+                        accumulator_mean_chunked(stream, &my_func, &accum, statepack)
+                    }
+                    StreamKind::Unordered => {
+                        accumulator_mean_unordered(stream, &my_func, &accum, statepack)
+                    }
+                }
+                let out = get_output(&accum, statepack);
+                Ok(out)
+            },
+        ),
+    );
+
+    //return Err(WrapperError::Unimplemented)
+
+    out
 }
 
 mod tests {
@@ -120,13 +186,35 @@ mod tests {
         let stream = setup_sample_data_stream(seed, num_chunks, max_chunk_size, max_bin_index);
 
         let n_bins = 9; // this is intentionally smaller than max_bin_index
+        let mut statepack_buf = vec![0.0; 2 * n_bins];
+        let mut statepack = StatePackViewMut::from_slice(n_bins, 2, &mut statepack_buf);
 
-        let f = |x: f64| x.powi(3) + x.powi(2) - 1.0;
+        let registry = build_registry();
 
-        let ref_map = wrapped_naive(&stream.as_view(), &f, StreamKind::Unordered, n_bins);
-        let other_map = wrapped_naive(&stream.as_view(), &f, StreamKind::Chunked, n_bins);
+        let ref_map =
+            registry["naive"](&stream.as_view(), StreamKind::Unordered, &mut statepack).unwrap();
 
         let rtol_atol_sets = HashMap::from([("weight", [0.0, 0.0]), ("mean", [0.0, 0.0])]);
-        common::assert_consistent_results(&other_map, &ref_map, &rtol_atol_sets);
+        for (key, func) in &registry {
+            println!("{}", key);
+            for version in [StreamKind::Chunked, StreamKind::Unordered] {
+                match func(&stream.as_view(), version, &mut statepack) {
+                    Ok(calculated_map) => {
+                        common::assert_consistent_results(
+                            &calculated_map,
+                            &ref_map,
+                            &rtol_atol_sets,
+                        );
+                    }
+                    Err(WrapperError::Unimplemented) => {
+                        eprintln!("(\"{}\", {:?}): isn't implemented", key, version)
+                    }
+                    _ => panic!(
+                        "(\"{}\", {:?}): something went wrong implemented",
+                        key, version
+                    ),
+                }
+            }
+        }
     }
 }

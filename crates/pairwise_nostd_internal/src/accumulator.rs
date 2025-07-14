@@ -51,7 +51,10 @@
 //! We will revisit this in the future once we are done architecting other
 //! parts of the design.
 
-use crate::state::{AccumStateView, AccumStateViewMut};
+use crate::{
+    StatePackViewMut,
+    state::{AccumStateView, AccumStateViewMut},
+};
 use ndarray::{ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
 
 /// Instances of this element are consumed by the Accumulator
@@ -118,6 +121,9 @@ use ndarray::{ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
 /// of the code and it would be relatively move away from using the struct
 /// representation later (it would be easier to do that before we start
 /// introducing more accumulators).
+///
+/// I don't love that this defines copy, but it's important for examples
+#[derive(Clone, Copy)]
 pub struct DataElement {
     pub value: f64,
     pub weight: f64,
@@ -223,6 +229,31 @@ pub trait Accumulator {
             let state = AccumStateView::from_array_view(statepack.index_axis(Axis(1), i));
             self.value_from_accum_state(&mut values.index_axis_mut(Axis(1), i), &state);
         }
+    }
+}
+
+// not sure if this should actually be part of the public API, but it's useful
+// in a handful of cases
+pub fn reset_full_statepack(accum: &impl Accumulator, statepack: &mut StatePackViewMut) {
+    for i in 0..statepack.n_states() {
+        accum.reset_accum_state(&mut statepack.get_state_mut(i));
+    }
+}
+
+// ideally, other would be more clearly immutable, but I don't think we want to
+// introduce another type just for this 1 case
+//
+// not sure if this should actually be part of the public API, but it's useful
+// in a handful of cases
+pub fn merge_full_statepacks(
+    accum: &impl Accumulator,
+    statepack: &mut StatePackViewMut,
+    other: &StatePackViewMut,
+) {
+    let n_bins = statepack.n_states();
+    assert_eq!(n_bins, other.n_states());
+    for i in 0..statepack.n_states() {
+        accum.merge(&mut statepack.get_state_mut(i), &other.get_state(i));
     }
 }
 

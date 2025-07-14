@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2};
 
 use pairwise_nostd_internal::{
-    AccumStateView, AccumStateViewMut, Accumulator, DataElement, OutputDescr, get_bin_idx,
+    AccumStateView, AccumStateViewMut, Accumulator, DataElement, OutputDescr, StatePackViewMut,
+    get_bin_idx,
 };
 
 /// compute the output quantities from an Accumulator's state properties and
@@ -17,6 +18,14 @@ use pairwise_nostd_internal::{
 ///       testing_helpers crate OR we should explicitly decide to make this
 ///       part of the public API.
 pub fn get_output(
+    accum: &impl Accumulator,
+    statepack: &StatePackViewMut,
+) -> HashMap<&'static str, Vec<f64>> {
+    get_output_legacy(accum, &statepack.as_array_view())
+}
+
+//todo: remove me before a release
+pub fn get_output_legacy(
     accum: &impl Accumulator,
     stateprop: &ArrayView2<f64>,
 ) -> HashMap<&'static str, Vec<f64>> {

@@ -3,7 +3,8 @@ mod common;
 use common::prepare_statepack;
 use ndarray::ArrayView2;
 use pairwise::{
-    Histogram, Mean, PointProps, StatePackViewMut, apply_accum, diff_norm, dot_product, get_output,
+    Histogram, Mean, PointProps, StatePackViewMut, apply_accum, diff_norm, dot_product,
+    get_output_legacy,
 };
 
 // Things are a little unergonomic!
@@ -162,7 +163,7 @@ mod tests {
         assert_eq!(result, Ok(()));
 
         // output buffers
-        let mean_result_map = get_output(&mean_accum, &mean_statepack.view());
+        let mean_result_map = get_output_legacy(&mean_accum, &mean_statepack.view());
 
         for i in 0..n_spatial_bins {
             // we might need to adopt an actual rtol
@@ -202,7 +203,7 @@ mod tests {
             &diff_norm,
         );
         assert_eq!(result, Ok(()));
-        let hist_result_map = get_output(&hist_accum, &hist_statepack.view());
+        let hist_result_map = get_output_legacy(&hist_accum, &hist_statepack.view());
         for (i, expected) in expected_hist_weights.iter().enumerate() {
             assert_eq!(
                 hist_result_map["weight"][i], *expected,
@@ -275,7 +276,7 @@ mod tests {
         );
         assert_eq!(result, Ok(()));
 
-        let output = get_output(&accum, &statepack.view());
+        let output = get_output_legacy(&accum, &statepack.view());
 
         for i in 0..n_spatial_bins {
             assert!(
@@ -324,7 +325,7 @@ mod tests {
         );
         assert_eq!(result, Ok(()));
 
-        let output = get_output(&mean_accum, &mean_statepack.view());
+        let output = get_output_legacy(&mean_accum, &mean_statepack.view());
 
         for i in 0..3 {
             // we might need to adopt an actual rtol

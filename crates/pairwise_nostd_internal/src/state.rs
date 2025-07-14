@@ -64,7 +64,7 @@ use core::{
     f64,
     ops::{Index, IndexMut},
 };
-use ndarray::{ArrayView1, ArrayViewMut1, ArrayViewMut2, Axis};
+use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
 
 pub struct AccumStateView<'a> {
     // when we refactor this to stop wrapping ArrayView1, we really *need* to
@@ -215,6 +215,15 @@ impl<'a> StatePackViewMut<'a> {
         Self {
             data: ArrayViewMut2::from_shape([state_size, n_state], xs).unwrap(),
         }
+    }
+
+    // todo: remove this method before our release
+    pub fn as_array_view(&self) -> ArrayView2<f64> {
+        self.data.view()
+    }
+
+    pub fn as_array_view_mut(&mut self) -> ArrayViewMut2<f64> {
+        self.data.view_mut()
     }
 
     #[inline]
