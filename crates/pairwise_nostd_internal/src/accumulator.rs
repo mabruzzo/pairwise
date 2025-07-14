@@ -32,7 +32,8 @@
 //! machinery is responsible for computing the statistic within a single bin.
 //! We draw a distinction between the current state of the accumulator between
 //! the actual accumulation logic.
-//! - We refer to the current state of a single accumlator as the `accum_state`.
+//! - We refer to the current state of a single accumulator as the
+//!   `accum_state`.
 //! - The accumulation logic is encapsulated by the functions implemented by
 //!   the `Accumulator` trait. At the time of writing, an Accumulator
 //!   implements logic for modifying a single `accum_state` at a time.
@@ -44,7 +45,8 @@
 //! collection of `accum_state`s is usually managed by a [`StatePackViewMut`]
 //! instance. Currently, the accumulators are designed to be agnostic about
 //! the precise way a given `accum_state` is organized in memory. This is done
-//! to give additional flexiblity to the external code driving the calculation.
+//! to give additional flexibility to the external code driving the
+//! calculation.
 //!
 //! We will revisit this in the future once we are done architecting other
 //! parts of the design.
@@ -108,7 +110,7 @@ use ndarray::{ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
 ///   receive special treatment from the rust compiler to encourage
 ///   optimizations with SIMD operations (I may be wrong). If this is indeed
 ///   the case, I have some concerns that placing such types within a struct
-///   *could* interfere with this treatement (due to the struct's memory
+///   *could* interfere with this treatment (due to the struct's memory
 ///   representation requirements).
 ///
 /// With all that said, I think it's worthwhile use an explicit type for now.
