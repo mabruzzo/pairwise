@@ -61,7 +61,7 @@
 //!       unsafe Rust)
 
 use core::ops::{Index, IndexMut};
-use ndarray::{ArrayView1, ArrayViewMut1, ArrayViewMut2, Axis};
+use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
 
 pub struct AccumStateView<'a> {
     // when we refactor this to stop wrapping ArrayView1, we really *need* to
@@ -208,6 +208,22 @@ impl<'a> StatePackViewMut<'a> {
         Self { data: array_view }
     }
 
+    pub fn from_slice(n_state: usize, state_size: usize, xs: &'a mut [f64]) -> Self {
+        Self {
+            data: ArrayViewMut2::from_shape([state_size, n_state], xs).unwrap(),
+        }
+    }
+
+    // todo: remove this method before our release
+    pub fn as_array_view(&self) -> ArrayView2<f64> {
+        self.data.view()
+    }
+
+    // todo: remove this method before our release
+    pub fn as_array_view_mut(&mut self) -> ArrayViewMut2<f64> {
+        self.data.view_mut()
+    }
+
     #[inline]
     pub fn get_state(&self, i: usize) -> AccumStateView {
         AccumStateView::from_array_view(self.data.index_axis(Axis(1), i))
@@ -224,6 +240,10 @@ impl<'a> StatePackViewMut<'a> {
 
     pub fn n_states(&self) -> usize {
         self.data.len_of(Axis(1))
+    }
+
+    pub fn total_size(&self) -> usize {
+        self.state_size() * self.n_states()
     }
 
     // we probably want to add something like get_pair_disjoint_mut, which would
