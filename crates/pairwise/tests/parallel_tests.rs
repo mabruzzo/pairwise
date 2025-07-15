@@ -3,7 +3,9 @@ use pairwise::{Mean, StatePackViewMut, get_output};
 use pairwise_nostd_internal::{
     BinnedDataElement,
     reduce_sample::{
-        chunked::{SampleDataStreamView, accumulator_mean_chunked, naive_mean_chunked},
+        chunked::{
+            QuadraticPolynomial, SampleDataStreamView, accumulator_mean_chunked, naive_mean_chunked,
+        },
         unordered::{
             accumulator_mean_unordered, naive_mean_unordered, restructured1_mean_unordered,
             restructured2_mean_unordered,
@@ -103,7 +105,7 @@ enum WrapperError {
 // a consistent interface with other flavors of this function
 fn wrapped_naive(
     stream: &SampleDataStreamView,
-    f: &impl Fn(f64) -> f64,
+    f: QuadraticPolynomial,
     version: StreamKind,
     statepack: &mut StatePackViewMut,
 ) -> Result<common::BinnedStatMap, WrapperError> {
@@ -135,37 +137,29 @@ type BoxedFunc = Box<
     ) -> Result<common::BinnedStatMap, WrapperError>,
 >;
 
-// we picked something that will return an integer when passed an integer
-#[inline(always)]
-fn my_func(x: f64) -> f64 {
-    x.powi(3) + x.powi(2) - 1.0
-}
-
-fn build_registry() -> HashMap<&'static str, BoxedFunc> {
-    let mut out: HashMap<&'static str, BoxedFunc> = HashMap::new();
+fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
+    let mut out: HashMap<String, BoxedFunc> = HashMap::new();
 
     //let naive_fn: BoxedFunc = );
     out.insert(
-        "naive",
+        String::from("naive"),
         Box::new(
-            |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
-                wrapped_naive(stream, &my_func, version, statepack)
+            move |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
+                wrapped_naive(stream, f, version, statepack)
             },
         ),
     );
 
     out.insert(
-        "accumulator",
+        String::from("accumulator"),
         Box::new(
-            |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
+            move |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
                 let accum = Mean;
                 reset_full_statepack(&accum, statepack);
                 match version {
-                    StreamKind::Chunked => {
-                        accumulator_mean_chunked(stream, &my_func, &accum, statepack)
-                    }
+                    StreamKind::Chunked => accumulator_mean_chunked(stream, f, &accum, statepack),
                     StreamKind::Unordered => {
-                        accumulator_mean_unordered(stream, &my_func, &accum, statepack)
+                        accumulator_mean_unordered(stream, f, &accum, statepack)
                     }
                 }
                 let out = get_output(&accum, statepack);
@@ -175,9 +169,9 @@ fn build_registry() -> HashMap<&'static str, BoxedFunc> {
     );
 
     out.insert(
-        "restructured1",
+        String::from("restructured1"),
         Box::new(
-            |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
+            move |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
                 let accum = Mean;
                 reset_full_statepack(&accum, statepack);
                 match version {
@@ -186,7 +180,7 @@ fn build_registry() -> HashMap<&'static str, BoxedFunc> {
                         let mut collect_pad = vec![BinnedDataElement::zeroed(); 4];
                         restructured1_mean_unordered(
                             stream,
-                            &my_func,
+                            f,
                             &accum,
                             statepack,
                             &mut collect_pad,
@@ -201,9 +195,9 @@ fn build_registry() -> HashMap<&'static str, BoxedFunc> {
     );
 
     out.insert(
-        "restructured2",
+        String::from("restructured2"),
         Box::new(
-            |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
+            move |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
                 let accum = Mean;
                 reset_full_statepack(&accum, statepack);
                 // we are going to break up the work in a way that is
@@ -228,7 +222,7 @@ fn build_registry() -> HashMap<&'static str, BoxedFunc> {
                         let mut collect_pad = vec![BinnedDataElement::zeroed(); n_members_per_team];
                         restructured2_mean_unordered(
                             stream,
-                            &my_func,
+                            f,
                             &accum,
                             statepack,
                             &mut scratch_statepacks,
@@ -241,8 +235,6 @@ fn build_registry() -> HashMap<&'static str, BoxedFunc> {
             },
         ),
     );
-
-    //return Err(WrapperError::Unimplemented)
 
     out
 }
@@ -272,7 +264,7 @@ mod tests {
 
         // go through and generate the registry of all implementations for
         // the sample algorithm
-        let registry = build_registry();
+        let registry = build_registry(QuadraticPolynomial::new(1.0, -1.0, 3.0));
 
         // let's come up with the reference answers. The results subsequent
         // executions will be compared against this case

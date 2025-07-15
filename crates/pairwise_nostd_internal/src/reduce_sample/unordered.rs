@@ -5,13 +5,13 @@ use crate::accumulator::{
     Accumulator, DataElement, Mean, merge_full_statepacks, reset_full_statepack,
 };
 use crate::parallel::{BinnedDataElement, MemberId, ReductionSpec, StandardTeamParam};
-use crate::reduce_sample::chunked::SampleDataStreamView;
+use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
 use crate::state::StatePackViewMut;
 
 // Version 0: our simple naive implementation
 pub fn naive_mean_unordered(
     stream: &SampleDataStreamView,
-    f: &impl Fn(f64) -> f64,
+    f: QuadraticPolynomial,
     tot_weight_bins: &mut [f64],
     mean_times_weight_bins: &mut [f64],
 ) {
@@ -24,7 +24,7 @@ pub fn naive_mean_unordered(
         let w = stream.weights[i];
         if bin_index < n_bins {
             tot_weight_bins[bin_index] += w;
-            mean_times_weight_bins[bin_index] += w * f(x);
+            mean_times_weight_bins[bin_index] += w * f.call(x);
         }
     }
 }
@@ -32,7 +32,7 @@ pub fn naive_mean_unordered(
 // Version 1: an implementation that uses accumulator machinery
 pub fn accumulator_mean_unordered(
     stream: &SampleDataStreamView,
-    f: &impl Fn(f64) -> f64,
+    f: QuadraticPolynomial,
     accum: &Mean,
     statepack: &mut StatePackViewMut,
 ) {
@@ -42,7 +42,7 @@ pub fn accumulator_mean_unordered(
     for i in 0..stream.len() {
         let bin_index = stream.bin_indices[i];
         let datum = DataElement {
-            value: f(stream.x_array[i]),
+            value: f.call(stream.x_array[i]),
             weight: stream.weights[i],
         };
         if bin_index < n_bins {
@@ -97,7 +97,7 @@ pub fn accumulator_mean_unordered(
 // consider from the stream (more on that later)
 pub fn restructured1_mean_unordered(
     stream: &SampleDataStreamView,
-    f: &impl Fn(f64) -> f64,
+    f: QuadraticPolynomial,
     accum: &Mean,
     statepack: &mut StatePackViewMut,
     collect_pad: &mut [BinnedDataElement],
@@ -129,7 +129,7 @@ pub fn restructured1_mean_unordered(
                 BinnedDataElement {
                     bin_index: stream.bin_indices[i],
                     datum: DataElement {
-                        value: f(stream.x_array[i]),
+                        value: f.call(stream.x_array[i]),
                         weight: stream.weights[i],
                     },
                 }
@@ -196,7 +196,7 @@ fn consolidate_scratch_statepacks(accum: &Mean, scratch_statepacks: &mut [StateP
 // scratch_statepack_storage is provided to simulate the fact that each thread
 pub fn restructured2_mean_unordered(
     stream: &SampleDataStreamView,
-    f: &impl Fn(f64) -> f64,
+    f: QuadraticPolynomial,
     accum: &Mean,
     statepack: &mut StatePackViewMut,
     scratch_statepacks: &mut [StatePackViewMut],
@@ -235,7 +235,7 @@ pub fn restructured2_mean_unordered(
     consolidate_scratch_statepacks(accum, scratch_statepacks);
 
     // finally add the contribution to statepack
-    merge_full_statepacks(accum, statepack, scratch_statepacks.get(0).unwrap());
+    merge_full_statepacks(accum, statepack, scratch_statepacks.first().unwrap());
 }
 
 /* THIS ISN'T READY YET!!

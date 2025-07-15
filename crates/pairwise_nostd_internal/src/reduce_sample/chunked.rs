@@ -28,6 +28,31 @@ use crate::accumulator::{Accumulator, DataElement, Mean};
 //use crate::parallel::{BinnedDataElement, MemberId, ReductionSpec, StandardTeamParam};
 use crate::state::{AccumStateViewMut, StatePackViewMut};
 
+// Defining some basic functionality for implementing this example:
+// ================================================================
+
+// for simplicity, we assume that the function that operates on the data stream
+// can always be modelled as a quadratic polynomial (this assumption is
+// primarily made to simplify the code)
+
+/// Models the quadratic polynomial: `a*x^2 + b*x + c`
+#[derive(Clone, Copy)]
+pub struct QuadraticPolynomial {
+    a: f64,
+    b: f64,
+    c: f64,
+}
+
+impl QuadraticPolynomial {
+    pub fn new(a: f64, b: f64, c: f64) -> Self {
+        Self { a, b, c }
+    }
+
+    pub fn call(&self, x: f64) -> f64 {
+        self.c + x * (self.b + x * self.a)
+    }
+}
+
 #[derive(Clone)]
 pub struct SampleDataStreamView<'a> {
     // we only make the members public so that they can get reused in unordered.rs
@@ -69,7 +94,7 @@ impl<'a> SampleDataStreamView<'a> {
 
 pub fn naive_mean_chunked(
     stream: &SampleDataStreamView,
-    f: &impl Fn(f64) -> f64,
+    f: QuadraticPolynomial,
     tot_weight_bins: &mut [f64],
     mean_times_weight_bins: &mut [f64],
 ) {
@@ -88,7 +113,7 @@ pub fn naive_mean_chunked(
             let mut tmp_mean_times_weight = 0.0;
             for i in i_global..(i_global + chunk_len) {
                 local_tot_weight += stream.weights[i];
-                tmp_mean_times_weight += stream.weights[i] * f(stream.x_array[i]);
+                tmp_mean_times_weight += stream.weights[i] * f.call(stream.x_array[i]);
             }
             tot_weight_bins[bin_index] += local_tot_weight;
             mean_times_weight_bins[bin_index] += tmp_mean_times_weight;
@@ -99,7 +124,7 @@ pub fn naive_mean_chunked(
 
 pub fn accumulator_mean_chunked(
     stream: &SampleDataStreamView,
-    f: &impl Fn(f64) -> f64,
+    f: QuadraticPolynomial,
     accum: &Mean,
     statepack: &mut StatePackViewMut,
 ) {
@@ -122,7 +147,7 @@ pub fn accumulator_mean_chunked(
                 accum.consume(
                     &mut tmp_accum_state,
                     &DataElement {
-                        value: f(stream.x_array[i]),
+                        value: f.call(stream.x_array[i]),
                         weight: stream.weights[i],
                     },
                 );
