@@ -1,8 +1,8 @@
 //! Implements the "serial" backend for running thread teams
 
 use pairwise_nostd_internal::{
-    AccumStateViewMut, Accumulator, BinnedDataElement, Executor, MemberId, ReductionSpec,
-    StandardTeamParam, StatePackViewMut, TeamProps, fill_single_team_statepack,
+    Accumulator, BinnedDataElement, Executor, ReductionSpec, StandardTeamParam, StatePackViewMut,
+    TeamProps, ThreadMember, fill_single_team_statepack,
 };
 use std::num::NonZeroU32;
 
@@ -14,6 +14,7 @@ struct DummyWrapper<T>(T);
 
 impl TeamProps for SerialTeam {
     type SharedDataHandle<T> = DummyWrapper<T>;
+    type MemberPropType = ThreadMember;
 
     fn exec_if_root_member(
         &mut self,
@@ -26,49 +27,65 @@ impl TeamProps for SerialTeam {
 
     fn calccontribs_combine_apply(
         &mut self,
-        statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
+        binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         accum: &impl Accumulator,
         bin_index: usize,
-        get_member_contrib: &impl Fn(&mut AccumStateViewMut, MemberId),
+        get_member_contrib: &impl Fn(&mut StatePackViewMut, ThreadMember),
     ) {
+        let n_members = 1;
+        let accum_state_size = accum.accum_state_size();
         // we should really pre-allocate the memory in a constructor
-        let mut accum_state_buffer = vec![0.0; accum.accum_state_size()];
 
-        // get accum_state and (IMPORTANTLY) reset the state
-        let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut accum_state_buffer);
-        accum.reset_accum_state(&mut accum_state);
+        // create a temporary StatePack that holds a temporary accumulator
+        // state so that can be filled by each team member (we should really
+        // pre-allocate this).
+        let mut tmp_state_buffer = vec![0.0; n_members * accum_state_size];
+        let mut tmp_statepack =
+            StatePackViewMut::from_slice(n_members, accum_state_size, &mut tmp_state_buffer);
+
+        // reset the state in the statepack
+        for i in 0..n_members {
+            accum.reset_accum_state(&mut tmp_statepack.get_state_mut(i));
+        }
 
         // step 0: apply a barrier
         // (obviously this is a no-op for a serial implementation)
 
         // step 1: each team member calls the get_member_contrib closure
-        get_member_contrib(&mut accum_state, MemberId::new(0_u32));
+        get_member_contrib(&mut tmp_statepack, ThreadMember::new(0_u32));
 
         // step 2: perform a local reduction among all the team members
-        // (this is a no-op for a serial implementation, accum_state already
-        // holds all contributions)
+        if n_members == 1 {
+            // no-op since tmp_statepack.get_state(0) already holds all
+            // contributions
+        } else {
+            panic!("not currently supported in a serial implementation")
+        }
 
         // step 3: have the member holding the total contribution to update the
         //         `accum_state` stored at `bin_index` in `statpack`
-        if statepack.0.n_states() > bin_index {
+        if binned_statepack.0.n_states() > bin_index {
             accum.merge(
-                &mut statepack.0.get_state_mut(bin_index),
-                &accum_state.as_view(),
+                &mut binned_statepack.0.get_state_mut(bin_index),
+                &tmp_statepack.get_state(0),
             );
         }
     }
 
     fn getelements_gather_apply(
         &mut self,
-        statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
+        binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         accum: &impl Accumulator,
-        get_element_bin_pair: &impl Fn(MemberId) -> BinnedDataElement,
+        get_element_bin_pair: &impl Fn(&mut [BinnedDataElement], ThreadMember),
     ) {
         // step 0: apply a barrier
         // (obviously this is a no-op for a serial implementation)
 
+        // we should obviously pre-allocate this memory
+        let mut collect_pad = [BinnedDataElement::zeroed()];
+
         // step 1: each team member calls the get_element_bin_pair closure
-        let element_bin_pair = get_element_bin_pair(MemberId::new(0_u32));
+        get_element_bin_pair(&mut collect_pad, ThreadMember::new(0_u32));
 
         // step 2: gather the element-bin pairs into the memory of a single
         //         team member
@@ -76,11 +93,11 @@ impl TeamProps for SerialTeam {
 
         // step 3: the team member holding every element_bin_pair now uses
         //         them to update statepack
-        let bin_index = element_bin_pair.bin_index;
-        if statepack.0.n_states() > bin_index {
+        let bin_index = collect_pad[0].bin_index;
+        if binned_statepack.0.n_states() > bin_index {
             accum.consume(
-                &mut statepack.0.get_state_mut(bin_index),
-                &element_bin_pair.datum,
+                &mut binned_statepack.0.get_state_mut(bin_index),
+                &collect_pad[0].datum,
             );
         }
     }

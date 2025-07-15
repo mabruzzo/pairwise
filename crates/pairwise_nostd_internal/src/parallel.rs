@@ -1,26 +1,74 @@
-//! Our parallelism abstractions use the concepts of thread teams & reductions
+//! Our parallelism abstractions use the concepts of teams & reductions
+//!
+//! In general, a parallel reduction is a way of characterizing a certain kind
+//! of calculation that can be broken into parts, where each part can be
+//! computed simultaneously, and each of the partial results can be combined
+//! together into a single result.
+//!
+//! The idea of a "team" is an abstraction that we define in the context of
+//! describing parallelism. When we decompose a parallel reduction into pieces
+//! or "units of work":
+//! - we can distributed the units of work among 1 or more teams
+//! - a team is composed of 1 or more members. The members of a team work
+//!   together in a tightly-coupled, synchronous manner to collaboratively
+//!   complete a single task at a time.
+//!
+//! This abstraction nicely maps to hardware:
+//! - on GPUs, you can imagine that each team-member corresponds to a separate
+//!   thread in a single Warp (aka a WaveFront)
+//! - on CPUs, it is optimal for a team to be represented by a single thread,
+//!   and for each member to correspond to a lane use by SIMD instructions
+//!
+//! Of course we also have flexibility to adjust the definition of this
+//! hardware mapping
 
 use crate::accumulator::{Accumulator, DataElement, reset_full_statepack};
-use crate::state::{AccumStateViewMut, StatePackViewMut};
+use crate::state::StatePackViewMut;
 use core::num::NonZeroU32;
 
-pub struct MemberId(u32);
+/// Used to describes the properties of a team member.
+///
+/// The main reason purpose for this trait's existence is so that methods of
+/// [`ReductionSpec`] can accept a type that implements this trait as an
+/// argument and provide a specialization for:
+/// - the case when the members of a team are represented by a full thread
+/// - the case when the members of a team are vector-lanes driven by a single
+///   thread.
+///
+/// # Note
+/// If we are clever enough, I think we can probably get rid of this trait.
+pub trait TeamMemberProp {
+    const IS_VECTOR_PROCESSOR: bool;
 
-impl MemberId {
+    /// when SELF::IS_VECTOR_PROCESSOR is `true`, this will return 0
+    fn get_id(&self) -> u32;
+}
+
+pub struct ThreadMember(u32);
+
+impl ThreadMember {
     pub fn new(rank: u32) -> Self {
-        MemberId(rank)
+        ThreadMember(rank)
     }
+}
 
-    pub fn get(&self) -> u32 {
+impl TeamMemberProp for ThreadMember {
+    const IS_VECTOR_PROCESSOR: bool = false;
+
+    fn get_id(&self) -> u32 {
         self.0
     }
 }
 
-/// This struct holds standardized parameters that describe Thread Team
-/// parallelism. Different backends will obviously require extra parameters.
+/// This struct holds standardized parameters that describe Team parallelism.
+/// Different backends will obviously require extra parameters.
 ///
 /// (This was implemented without a whole lot of thought: we may want to
 /// reevaluate things, like exposing public members)
+///
+/// # Note
+/// When we want to use SIMD vectorization on CPU, n_members_per_team holds the
+/// number of vector lanes that are to be used in each operation
 pub struct StandardTeamParam {
     pub n_members_per_team: usize,
     pub n_teams: usize,
@@ -47,9 +95,10 @@ impl BinnedDataElement {
     }
 }
 
-/// the goal here is to use a parallelism strategy with thread-teams. This is
-/// hardly a novel concept. The actual implementation will be tailored to the
-/// "backend" that we are using (e.g. serial, multi-threading, GPU)
+/// The basic idea here is to define an abstraction where a team is composed of
+/// 1 or more members, and the members work together in a tightly-coupled,
+/// synchronous manner to collaboratively complete a single task at a time.
+/// (This is hardly a novel concept!)
 ///
 /// The methods are all designed to be entered by all members of a team the
 /// same time. Calls to these methods should be written *as if* there is a
@@ -58,7 +107,7 @@ impl BinnedDataElement {
 ///
 /// # Design Consideration
 /// For now, we have explicitly chosen **NOT** to provide methods that directly
-/// expose a member id. The current approach for accessing team_rank (i.e. only
+/// expose a member id. The current approach for accessing the id (i.e. only
 /// when closures are called from within methods), generally encourages a
 /// design where we can write a serial implementation can support arbitrary
 /// team sizes (and is capable of returning bitwise identical results to
@@ -66,6 +115,19 @@ impl BinnedDataElement {
 /// exposes member_id, then the majority of non-trivial code using that method
 /// would be only be compatible with a serial implementation when the number of
 /// threads per team is 1.
+///
+/// # Naming Considerations
+/// We may to come up with better terminology. At this point, I'm comfortable
+/// saying pretty definitively that we this trait can describe:
+/// - a team of threads (fast on GPUs, used on CPUs for testing)
+/// - a team of 1 thread that "simulates" the role of multiple members, for
+///   testing purposes. (basically it goes through and does the work of 1
+///   member at a time)
+/// - a where each member corresponds to a SIMD vector lane (this is invoked
+///   by a single thread at a time)
+///
+/// It might be beneficial to use terms like Lanes (in the context of vector
+/// processors)
 pub trait TeamProps {
     /// This is a TeamProp-specific type for protecting shared data (i.e. to
     /// prevent multiple members of a thread-team from accessing the data at
@@ -88,6 +150,10 @@ pub trait TeamProps {
     ///   make a similar kind of optimizations in all implementations
     type SharedDataHandle<T>;
 
+    /// The choice of type indicates whether the members of a team correspond
+    /// to individual threads OR the lanes driven by a single thread
+    type MemberPropType: TeamMemberProp;
+
     /// Has the root member of the team execute `f`, which modifies `statepack`
     ///
     /// The other team members do nothing during this function call.
@@ -99,48 +165,60 @@ pub trait TeamProps {
 
     /// Triggers a barrier for all threads in the thread team, then this does
     /// 3 things:
-    /// 1. each team member calls the `get_member_contrib` closure. Each call
-    ///    store the contributions from this call in a separate temporary
-    ///    variable (provided by `&mut self`).
-    /// 2. then all team members participate in a local reduction to combine
-    ///    together all the contributions from each of the temporary variables
-    /// 3. Finally, `team` has a single member use this total contribution to
-    ///    update the `accum_state` stored at `bin_index` in `statpack`
+    /// 1. team members collectively call the `get_member_contrib` closure.
+    ///    - each member records the contributions from the call in a distinct
+    ///      `accum_state` that is provided by `&mut self`.
+    ///    - The `accum_state` variable is passed into the closure within a
+    ///      [`StatePackViewMut`] type (since that is the type used to refer
+    ///      to a collection of 1 or more accum_state).
+    ///    - **IMPORTANTLY:** the memory associated with binned_statepacks is
+    ///      left completely untouched.
+    /// 2. Then, we combine the contributions from each member (in a "nested
+    ///    reduction") so a single member holds the total contribution.
+    /// 3. Finally, this single member use this total contribution to update
+    ///    the `accum_state` stored at `bin_index` in `binned_statpack`
     ///
     /// # Note:
     /// I suspect that the memory barrier requires a memory fence
     fn calccontribs_combine_apply(
         &mut self,
-        statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
+        binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         accum: &impl Accumulator,
         bin_index: usize,
-        get_member_contrib: &impl Fn(&mut AccumStateViewMut, MemberId),
+        get_member_contrib: &impl Fn(&mut StatePackViewMut, Self::MemberPropType),
     );
 
     /// Triggers a barrier for all threads in the thread team. Then this does
     /// 3 things:
-    /// 1. each team member calls the `get_element_bin_pair` closure, which
-    ///    gets a data-element and its associated bin index, returned in a
-    ///    [`BinnedDataElement`]
-    /// 2. we gather [`BinnedDataElement`] instance into the memory of a single
-    ///    team member
-    /// 3. we have that team member sequentially use the information in
-    ///    each `BinnedDataElement` to update the statepack
+    /// 1. each team member calls the `get_element_bin_pair` closure
+    ///    - each member computes and records a [`BinnedDataElement`] instance
+    ///      to memory provided by `&mut self`.
+    /// 2. Then, we gather the recorded [`BinnedDataElement`] instances into
+    ///    memory accessibly by one of the team members
+    /// 3. finally, that team member sequentially uses the batch of
+    ///    [`BinnedDataElement`] instances to update `binned_statepack`
     fn getelements_gather_apply(
         &mut self,
-        statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
+        binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         accum: &impl Accumulator,
-        get_element_bin_pair: &impl Fn(MemberId) -> BinnedDataElement,
+        get_element_bin_pair: &impl Fn(&mut [BinnedDataElement], Self::MemberPropType),
     );
 }
 
 /// Used for specifying the details of a binned reduction.
 ///
+/// <div class="warning">
+///
+/// **IMPORTANT**: I think this trait does too much and should probably be
+/// broken up. I go into more detail at the very end of the docstring
+///
+/// </div>
+///
 /// At a high-level, types that implement this trait generally:
 /// 1. encode details about a binned reduction
 /// 2. have access to the data-source used in the binned reduction.
 /// 3. know how to best decompose the overall binned reduction into 1 or more
-///    smaller "units of work." We provide more detail momentary (including a
+///    smaller "units of work." We provide more detail momentarily (including a
 ///    definition for a "unit of work").
 ///
 /// This trait essentially provides a standardized interface for external code
@@ -184,21 +262,29 @@ pub trait TeamProps {
 /// and using them to update the appropriate `accum_state`s.
 ///
 /// ### Parallelism Considerations
-/// It's also important to understand that this trait is used in the context of
-/// thread teams. The number of teams and the number of members per team are
-/// commonly encoded within instances of [`StandardTeamParam`].
+/// It's also important to understand that this trait is usually used to
+/// parallelize operations using our "team." abstraction. The number of teams
+/// and the number of members per team are commonly encoded within instances
+/// of [`StandardTeamParam`].
+///
+/// Let's provide some basic intuition:
 /// - the simplest serial implementation of the algorithm is equivalent to
-///   having 1 team of 1 member
-/// - most CPU threading implementations will be fastest with 1-member thread
-///   teams.
+///   having 1 team composed of a single member
+/// - if we totally ignore SIMD instructions for the moment, the most
+///   efficient CPU threading implementation will generally have `n` threads
+///   act operate as `n` single-member teams.
+/// - members of a multi-member teams may map to separate threads (fast on
+///   GPUs) or (on CPUs) separate lanes involved in SIMD operations of a single
+///   thread
+/// - we provide significantly more detail in other parts of this module
 ///
 /// In more detail:
-/// - each thread team is assigned multiple independent "units of work"
-/// - For simplicity, it's convenient to think of each thread team as a
-///   separate, completely independent entity. We can combine the results of
-///   each team at the very end of a reduction after every team is done.
+/// - each team is assigned multiple independent "units of work"
+/// - For simplicity, it's convenient to think of separate teams as separate,
+///   completely independent entities. We can combine the results of each
+///   team at the very end of a reduction after every team is done.
 ///
-/// **IMPORTANTLY:** all members of a given thread team work together on a
+/// **IMPORTANTLY:** all members of a given team work together on a
 /// single "unit of work" at a time. They do this work in a synchronized,
 /// lock-step manner. (So if a team is assigned 2 "units of work," the work
 /// together until the first unit is completely done before they all move onto
@@ -213,7 +299,8 @@ pub trait TeamProps {
 ///
 /// In the context of this snippet, `team_param` holds a [`StandardTeamParam`]
 /// instance. You should imagine that all of the members of the team with the
-/// id of `team_id` are executing in lockstep with each other.
+/// id of `team_id` are executing this snippet in lockstep with each other (and
+/// the function calls produce exactly the same result for each member).
 ///
 /// ```ignore
 /// let (outer_start, outer_stop) = reduce_spec.outer_team_loop_bounds(team_id, &team_param);
@@ -228,12 +315,12 @@ pub trait TeamProps {
 /// ```
 ///
 /// In the above snippet, the nested for-loop iterates over every "unit of
-/// work" that the team, is responsible for completing. Specifically, each
+/// work" that the team is responsible for completing. Specifically, each
 /// `(outer_idx, inner_idx)` pair maps to a distinct "unit of work."
 /// (**DON'T FORGET:** the members of a given team work together to
-/// complete a single unit of work at a time). The trait provides methods to
-/// actually complete the work associated with this pair. We'll discuss those
-/// shortly.
+/// complete a single unit of work at a time). The trait also provides methods
+/// to actually complete the work associated with this pair. We'll discuss
+/// those methods shortly.
 ///
 /// Developer Note: I really want to eliminate the outer loop and delete
 /// [`outer_team_loop_bounds`]. I also want to replace
@@ -251,44 +338,61 @@ pub trait TeamProps {
 ///
 /// Types that implement this trait fall into 2 categories. This category is
 /// specified by the [`ReductionSpec::NESTED_REDUCE`] associated constant and
-/// is constrained by the nature of the underlying data source.
+/// is constrained by the nature of the underlying data source. As we note at
+/// the very end of this docstring, this trait should probably be split off
+/// into separate traits to reflect these categories
 ///
 /// when [`reductionspec::nested_reduce`] is `true`, then:
 /// - we know ahead of time that all data elements in a "unit-of-work" share
 ///   a common bin index.
-/// - that shared bin index is computed by [`infer_distance_bin`].
-/// - use the [`collect_team_contrib`] method to collect contributes for a
-///   given team member in this scenario
+/// - the shared bin index is computed by [`infer_bin_index`].
+/// - the type provides the [`collect_team_contrib`] method to collect
+///   contributions for the team members.
 /// - the intention is to:
-///   1. have each team member call [`collect_team_contrib`]. Afterward, each
-///      member will have store contributions from the current unit of work in
-///      a local `accum_state` value.
-///   2. Then, we combine the contributions from each member (in a "nested
-///      reduction") so that the member with an id of 0 will have the total
-///      contributions from the current unit in their own local variable.
-///   3. Finally, the member with a member_id of 0, will use the total
-///      contribution to update the appropriate accum_state from statepack.
+///   1. Have the team collectively call [`collect_team_contrib`]. Each member
+///      will record contributions to a separate `accum_state`
+///   2. Then, these separate `accum_state` should be combined (in a "nested
+///      reduction") so that a single member knows the total contribution
+///      from the current unit of work.
+///   3. Finally, that single member will use the total contribution to update
+///      the accum_state from the appropriate statepack bin.
 ///
 /// when [`reductionspec::nested_reduce`] is `false`, then:
 /// - we don't know of any relationship between the data-elements and the
 ///   associated bin indices in a "unit-of-work." This really restricts the
-///   level of parallelism, so we simply do the best we possibly can do
-/// - thus we use the [`get_datum_index_pair`] method to simply have each
-///   team member compute a data-element from the data source and pre-compute
-///   the associated bin-index
+///   level of parallelism, we can achieve.
+/// - The best we can do is adopt a "batching strategy," that has the
+///   has the team members use [`get_datum_index_pair`] to pre-generate a
+///   batch of data-elements (& each associated bin-index) from the data
+///   source. (the batch of entries is to be sequentially processed)
 /// - the intention is to:
-///    1. have each team member call [`get_datum_index_pair`], which
-///       gets a data-element and its associated bin index, returned in a
-///       a [`BinnedDataElement`] instance
-///    2. gather [`BinnedDataElement`] instance into the memory of a single
-///       team member
-///    3. have that team member sequentially use the information in each
-///       `BinnedDataElement` to update the statepack
+///    1. have the team members collectively call [`get_datum_index_pair`].
+///       Each member pre-generates a (data-element, bin-index) pair from the
+///       data source, represented as a [`BinnedDataElement`] instance
+///    2. Then the [`BinnedDataElement`] instances should be gathered into a
+///       collection-pad accessible in the memory of a single team member
+///    3. have that team member process the batch of values in
+///       [`BinnedDataElement`] values to sequentially update the binned
+///       statepack
 ///
 /// # Development Note
 /// An important premise is that you do error-checking while constructing
 /// structs, and you design the logic such that you don't have to do **any**
 /// error-handling in this trait's methods.
+///
+/// # Ideas for Improvement:
+/// The use of `ReductionSpec::NESTED_REDUCE` to determine which methods should
+/// be used is suboptimal. While I'm not in a huge rush to do this, this is
+/// sign that we should break up this trait.
+///
+/// If we have a module `reduction`, I could imagine that we might define
+/// traits with names like
+/// - `reduction::Nested`
+/// - `reduction::BinnedDataBatching`
+///
+/// where each trait is a superset of a third trait (maybe `ReductionInfo`?)
+/// that declares common methods. (If we do this, then we would need to split
+/// apart [`fill_single_team_statepack`] into separate functions)
 pub trait ReductionSpec {
     // this trait's associated items are split into 2 parts.
     //   1. the associated supported by all trait implementers
@@ -374,45 +478,92 @@ pub trait ReductionSpec {
         None
     }
 
-    /// Collects all contributions to `accum_state` from the data elements
-    /// reserved for the team member with id given by `member_id` and the
-    /// `(outer_index, inner_index)` pair. This assumes that all data
-    /// elements are associated with the index returned by [`infer_bin_index`]
+    /// Intended to be called collectively by the members of a team so that
+    /// each team member can compute a separate part of the accumulator
+    /// state contribution with the `(outer_index, inner_index)` pair.
+    ///
+    /// The data elements considered within this calculation are all associated
+    /// associated with the index returned by [`infer_bin_index`].
+    ///
+    /// Each member stores its contribution in the `accum_state_buf` variable.
+    /// Below, we discuss the precise meaning of this variable.
     ///
     /// **IMPORTANT:** DO NOT USE unless Self::NESTED_REDUCE holds `true`
+    ///
+    /// <div class="warning">
+    ///
+    /// `accum_states` has the type of `StatePackViewMut` purely because its
+    /// the appropriate type for tracking 1 or more accumulator states. This is
+    /// scratch space intended to be regularly overwritten. The memory used for
+    /// tracking binned accumulator states is totally distinct
+    ///
+    /// </div>
+    ///
+    /// # Note
+    /// This function should display slightly specialized behavior based on the
+    /// value of [`TeamMemberProp::IS_VECTOR_PROCESSOR`]
+    /// - when `false`: team members essentially correspond to threads. Each
+    ///   thread in a given team will execute this function at the same time.
+    ///   In this case, you can assume that `accum_state_buf` holds just a
+    ///   single `accum_state`
+    /// - when `true`: there is only a single thread in the team and the
+    ///   number of members in the team correspond to the number of vector
+    ///   lanes that the should be used in CPU SIMD instructions. In this
+    ///   case, you can assume that the `accum_state_buf` argument has an entry
+    ///   for each vector lane. Each entry is expected to be filled with
+    ///   contributions during a single call to this function.
     #[allow(unused)] // <- suppresses unused variable warnings
     fn collect_team_contrib(
         &self,
-        accum_state: &mut AccumStateViewMut,
+        accum_state_buf: &mut StatePackViewMut,
         outer_index: usize,
         inner_index: usize,
-        member_id: &MemberId,
+        member_prop: &impl TeamMemberProp,
         team_param: &StandardTeamParam,
     ) {
         // this **MUST** be overwritten when NESTED_REDUCE is true
     }
 
-    /// Computes data element and its associated bin index reserved for the
-    /// team member with id given by `member_id` and the
-    /// `(outer_index, inner_index)` pair
+    /// Intended to be called collectively by the members of a team so that
+    /// each team member can determine the data-element and its associated
+    /// bin index reserved for it by the specified `(outer_index, inner_index)`
+    /// pair.
+    ///
+    /// Each element records its reserved data-element bin-index pair to
+    /// `collect_pad`. Below, we discuss the precise meaning of this variable.
+    /// If a member doesn't have an associated data-element, it records a
+    /// data-element with a finite value and a weight of 0 (since it won't
+    /// influence the reduction).
     ///
     /// **IMPORTANT:** DO NOT USE unless Self::NESTED_REDUCE holds `false`
     ///
     /// # Note
-    /// To support SIMD, we might want to consider making it possible to
-    /// compute multiple `BinnedDataElement` instances at once (in this case,
-    /// we should probably pass in a buffer that gets modified)
-    #[allow(unused)] // <- suppresses unused variable warnings
+    /// This function should display slightly specialized behavior based on the
+    /// value of [`TeamMemberProp::IS_VECTOR_PROCESSOR`]
+    /// - when `false`: team members essentially correspond to threads. Each
+    ///   thread in a given team will execute this function at the same time.
+    ///   In this case, you can assume that `collect_pad` just holds space for
+    ///   a single [`BinnedDataElement`] instance.
+    /// - when `true`: there is only a single thread in the team and the
+    ///   number of members in the team correspond to the number of vector
+    ///   lanes that the should be used in CPU SIMD instructions. In this case,
+    ///   you can assume that the `collect_pad` argument has an entry for each
+    ///   vector lane. The expectation is for each entry to be filled in a
+    ///   single call to this function.
+    ///
+    /// # Implementation Note
+    /// Currently, in a single collective call to this function, each team
+    /// member only records a single [`BinnedDataElement`] instance. In the
+    /// future, we might consider recording multiple elements (it may be
+    /// important for getting the most out of SIMD instructions).
     fn get_datum_index_pair(
         &self,
+        collect_pad: &mut [BinnedDataElement],
         outer_index: usize,
         inner_index: usize,
-        member_id: MemberId,
+        member_prop: &impl TeamMemberProp,
         team_param: &StandardTeamParam,
-    ) -> BinnedDataElement {
-        // this **MUST** be overwritten when NESTED_REDUCE is false
-        BinnedDataElement::zeroed()
-    }
+    );
 }
 
 /// Initialize and fill a single Thread Team's `statepack`.
@@ -422,8 +573,8 @@ pub trait ReductionSpec {
 /// - Calling the functions:
 ///   - all team members of execute this function at the same time:
 ///   - arguments:
-///     - `statepack`: specifies the `StatePackViewMut` that the team will
-///       initialize and update
+///     - `binned_statepack`: specifies the `StatePackViewMut` that the team
+///       will initialize and update
 ///     - `team`: will be tailored to the identity of each team member.
 ///     - `team_param` & `reduce_spec` are **exactly** the same for each member
 /// - During execution the members of the team proceed through the loop in
@@ -437,7 +588,7 @@ pub trait ReductionSpec {
 ///     implementation of a thread team that can work with with an arbitrary
 ///     number of teams and members per team
 pub fn fill_single_team_statepack<T, R>(
-    statepack: &mut T::SharedDataHandle<StatePackViewMut>,
+    binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
     team: &mut T,
     team_id: usize,
     team_param: &StandardTeamParam,
@@ -458,7 +609,7 @@ pub fn fill_single_team_statepack<T, R>(
     // consistent with having no contributions
 
     // TODO: consider distributing work among team members
-    team.exec_if_root_member(statepack, &|statepack: &mut StatePackViewMut| {
+    team.exec_if_root_member(binned_statepack, &|statepack: &mut StatePackViewMut| {
         reset_full_statepack(accum, statepack);
     });
 
@@ -482,26 +633,32 @@ pub fn fill_single_team_statepack<T, R>(
                 // bin_index will be None if the data isn't relevat for the current task
                 if let Some(bin_index) = bin_index {
                     // the next function call does 3 things
-                    // 1. each team member calls [`collect_team_contrib`]. They
-                    //    will each store the contributions from this call in a
-                    //    separate temporary variable (provided by `team`).
+                    // 1. the team members call [`collect_team_contrib`]. They
+                    //    each store the contributions from this call in a
+                    //    distinct region of memory
+                    //    - that memory is provided by `team` via the
+                    //      `tmp_accum_states` argument
+                    //    - to be completely clear, the memory referenced in
+                    //      `tmp_accum_states` is COMPLETELY distinct from
+                    //      `binned_statepack`
                     // 2. `team` performs a nested reduction to combine
                     //    together all the contributions from each of the
                     //    temporary variables into a total contribution
                     // 3. Finally, `team` has a single member use this total
                     //    contribution to update the `accum_state` stored at
-                    //    `bin_index` in `statpack`
+                    //    `bin_index` in `binned_statpack`
                     team.calccontribs_combine_apply(
-                        statepack,
+                        binned_statepack,
                         reduce_spec.get_accum(),
                         bin_index,
-                        &|accum_state: &mut AccumStateViewMut, member_id: MemberId| {
+                        &|tmp_accum_states: &mut StatePackViewMut,
+                          member_prop: T::MemberPropType| {
                             // we should make sure that reset_accum_state is called!!!!
                             reduce_spec.collect_team_contrib(
-                                accum_state,
+                                tmp_accum_states,
                                 outer_idx,
                                 inner_idx,
-                                &member_id,
+                                &member_prop,
                                 team_param,
                             )
                         },
@@ -509,21 +666,32 @@ pub fn fill_single_team_statepack<T, R>(
                 }
             } else {
                 // in this case, the bin-index order is unpredictable.
-                // the next function effectively:
-                // 1. has each team member call `get_datum_index_pair`, which
-                //    gets a data-element and its associated bin index,
-                //    returned in a a `BinnedDataElement` instance
-                // 2. gathers `BinnedDataElement` instances into the memory of
-                //    a single team member
-                // 3. has that team member sequentially use the information in
-                //    each `BinnedDataElement` to update the statepack
+                // The best we can do is adopt a "batching strategy." We split
+                // the "unit of work" into 2 parts. The first part is
+                // parallelized by team-members & the second part is sequential
+                // In the next function call:
+                // 1. the team collectively calls `get_datum_index_pair`, where
+                //    each member pre-generates a (data-element, bin-index)
+                //    pair from the data-source. The pair is represented as a
+                //    `BinnedDataElement` instance
+                // 2. then, these `BinnedDataElement` are gathered into a
+                //    collection-pad that can be accessed by one of the team
+                //    members
+                // 3. finally, that team member sequentially uses the batch
+                //    of `BinnedDataElement` instances to update
+                //    `binned_statepack`
                 team.getelements_gather_apply(
-                    statepack,
+                    binned_statepack,
                     reduce_spec.get_accum(),
-                    &|member_id: MemberId| -> BinnedDataElement {
+                    &|collect_pad: &mut [BinnedDataElement], member_prop: T::MemberPropType| {
                         // we should make sure that reset_accum_state is called!!!!
-                        reduce_spec
-                            .get_datum_index_pair(outer_idx, inner_idx, member_id, team_param)
+                        reduce_spec.get_datum_index_pair(
+                            collect_pad,
+                            outer_idx,
+                            inner_idx,
+                            &member_prop,
+                            team_param,
+                        );
                     },
                 );
             }
@@ -531,6 +699,16 @@ pub fn fill_single_team_statepack<T, R>(
     }
 }
 
+/// a trait for expressing how to launch a reduction
+///
+/// This is mostly intended as a placeholder. The idea is that we would
+/// implement something like this for each parallelism "backend," so we have a
+/// uniform interface for easily switching between backends.
+///
+/// **NOTE:** Types that implement this trait are intended to live entirely on
+/// the CPU. A GPU backend would provide a type that implements this crate in
+/// order to execute the CPU calls that are needed for managing memory and
+/// launching GPU calculations
 pub trait Executor {
     // I suspect that we may want to set up team_size & league_size elsewhere
     fn drive_reduce(

@@ -4,7 +4,7 @@
 use crate::accumulator::{
     Accumulator, DataElement, Mean, merge_full_statepacks, reset_full_statepack,
 };
-use crate::parallel::{BinnedDataElement, MemberId, ReductionSpec, StandardTeamParam};
+use crate::parallel::{BinnedDataElement, ReductionSpec, StandardTeamParam, ThreadMember};
 use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
 use crate::state::StatePackViewMut;
 
