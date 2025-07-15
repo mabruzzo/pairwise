@@ -118,7 +118,7 @@ use ndarray::{ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
 /// of the code and it would be relatively move away from using the struct
 /// representation later (it would be easier to do that before we start
 /// introducing more accumulators).
-pub struct DataElement {
+pub struct Datum {
     pub value: f64,
     pub weight: f64,
 }
@@ -179,7 +179,7 @@ pub trait Accumulator {
     fn reset_accum_state(&self, accum_state: &mut AccumStateViewMut);
 
     /// consume the value and weight to update the accum_state
-    fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &DataElement);
+    fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &Datum);
 
     /// merge the state information tracked by `accum_state` and `other`, and
     /// update `accum_state` accordingly
@@ -238,7 +238,7 @@ impl Accumulator for Mean {
         accum_state[Mean::WEIGHT] = 0.0;
     }
 
-    fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &DataElement) {
+    fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &Datum) {
         accum_state[Mean::WEIGHT] += datum.weight;
         accum_state[Mean::TOTAL] += datum.value * datum.weight;
     }

@@ -1,4 +1,4 @@
-use crate::accumulator::{Accumulator, DataElement};
+use crate::accumulator::{Accumulator, Datum};
 use crate::misc::{get_bin_idx, squared_diff_norm};
 use crate::state::StatePackViewMut;
 use ndarray::ArrayView2;
@@ -86,7 +86,7 @@ fn apply_accum_helper<const CROSS: bool>(
                 points_a.n_spatial_dims,
             );
             if let Some(distance_bin_idx) = get_bin_idx(distance_squared, squared_bin_edges) {
-                let datum = DataElement {
+                let datum = Datum {
                     value: pairwise_fn(points_a.values, points_b.values, i_a, i_b),
                     weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
                 };

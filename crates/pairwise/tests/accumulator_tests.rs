@@ -1,6 +1,6 @@
 use ndarray::{NewAxis, s};
 use pairwise::{Accumulator, Histogram, Mean, get_output_from_statepack_array};
-use pairwise_nostd_internal::{AccumStateView, AccumStateViewMut, DataElement};
+use pairwise_nostd_internal::{AccumStateView, AccumStateViewMut, Datum};
 use std::collections::HashMap;
 
 // this is inefficient, but it gets the job done for now
@@ -31,7 +31,7 @@ mod tests {
 
         accum.consume(
             &mut accum_state,
-            &DataElement {
+            &Datum {
                 value: 4.0,
                 weight: 1.0,
             },
@@ -52,14 +52,14 @@ mod tests {
 
         accum.consume(
             &mut accum_state,
-            &DataElement {
+            &Datum {
                 value: 4.0,
                 weight: 1.0,
             },
         );
         accum.consume(
             &mut accum_state,
-            &DataElement {
+            &Datum {
                 value: 8.0,
                 weight: 1.0,
             },
@@ -79,14 +79,14 @@ mod tests {
         accum.reset_accum_state(&mut accum_state);
         accum.consume(
             &mut accum_state,
-            &DataElement {
+            &Datum {
                 value: 4.0,
                 weight: 1.0,
             },
         );
         accum.consume(
             &mut accum_state,
-            &DataElement {
+            &Datum {
                 value: 8.0,
                 weight: 1.0,
             },
@@ -97,14 +97,14 @@ mod tests {
         accum.reset_accum_state(&mut accum_state_other);
         accum.consume(
             &mut accum_state_other,
-            &DataElement {
+            &Datum {
                 value: 1.0,
                 weight: 1.0,
             },
         );
         accum.consume(
             &mut accum_state_other,
-            &DataElement {
+            &Datum {
                 value: 3.0,
                 weight: 1.0,
             },
@@ -136,21 +136,21 @@ mod tests {
 
         accum.consume(
             &mut accum_state,
-            &DataElement {
+            &Datum {
                 value: 0.5,
                 weight: 1.0,
             },
         );
         accum.consume(
             &mut accum_state,
-            &DataElement {
+            &Datum {
                 value: -50.0,
                 weight: 1.0,
             },
         );
         accum.consume(
             &mut accum_state,
-            &DataElement {
+            &Datum {
                 value: 1000.0,
                 weight: 1.0,
             },
@@ -162,7 +162,7 @@ mod tests {
 
         accum.consume(
             &mut accum_state,
-            &DataElement {
+            &Datum {
                 value: 1.1,
                 weight: 5.0,
             },
