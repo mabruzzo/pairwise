@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2};
+use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
 
 use pairwise_nostd_internal::{
     AccumStateView, AccumStateViewMut, Accumulator, Datum, OutputDescr, StatePackViewMut,
@@ -59,10 +59,15 @@ pub fn get_output_from_statepack_array(
     let n_bins = statepack_data.shape()[1];
     let n_comps = description.n_per_accum_state();
 
-    let mut buffer = Vec::new();
-    buffer.resize(n_comps * n_bins, 0.0);
+    // todo: the rest of this function could definitely be optimized!
+    let mut buffer = vec![0.0; n_comps * n_bins];
     let mut buffer_view = ArrayViewMut2::from_shape([n_comps, n_bins], &mut buffer).unwrap();
-    accum.values_from_statepack(&mut buffer_view, statepack_data);
+    for i in 0..n_bins {
+        accum.value_from_accum_state(
+            &mut buffer_view.index_axis_mut(Axis(1), i),
+            &AccumStateView::from_array_view(statepack_data.index_axis(Axis(1), i)),
+        );
+    }
 
     match description {
         OutputDescr::MultiScalarComp(names) => {

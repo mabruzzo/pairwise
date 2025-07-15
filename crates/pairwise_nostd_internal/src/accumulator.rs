@@ -52,7 +52,7 @@
 //! parts of the design.
 
 use crate::state::{AccumStateView, AccumStateViewMut};
-use ndarray::{ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
+use ndarray::ArrayViewMut1;
 
 /// Instances of this element are consumed by the Accumulator
 ///
@@ -194,27 +194,6 @@ pub trait Accumulator {
 
     /// Describes the outputs produced from a single accum_state
     fn output_descr(&self) -> OutputDescr;
-
-    /// This function computes the output values for every `accum_state` in
-    /// `statepack`.
-    ///
-    /// TODO: relocate this function. The fact that this operates on many
-    ///       `accum_state`s in a `statepack` rather than on an individual
-    ///       `accum_state` is a significant deviation from the other functions
-    ///       in this trait. Maybe we move this to the pairwise crate
-    fn values_from_statepack(&self, values: &mut ArrayViewMut2<f64>, statepack: &ArrayView2<f64>) {
-        // get the number of derivable quantities per accum_state (this is slow and dumb)
-
-        // sanity checks:
-        assert!(values.shape()[0] == self.output_descr().n_per_accum_state());
-        assert!(statepack.shape()[0] == self.accum_state_size());
-        assert!(values.shape()[1] == statepack.shape()[1]);
-
-        for i in 0..values.shape()[1] {
-            let state = AccumStateView::from_array_view(statepack.index_axis(Axis(1), i));
-            self.value_from_accum_state(&mut values.index_axis_mut(Axis(1), i), &state);
-        }
-    }
 }
 
 pub struct Mean;
