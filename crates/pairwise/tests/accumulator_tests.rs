@@ -27,7 +27,7 @@ mod tests {
 
         let mut storage = [0.0, 0.0];
         let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
-        accum.reset_accum_state(&mut accum_state);
+        accum.init_accum_state(&mut accum_state);
 
         accum.consume(
             &mut accum_state,
@@ -48,7 +48,7 @@ mod tests {
 
         let mut storage = [0.0, 0.0];
         let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
-        accum.reset_accum_state(&mut accum_state);
+        accum.init_accum_state(&mut accum_state);
 
         accum.consume(
             &mut accum_state,
@@ -76,7 +76,7 @@ mod tests {
 
         let mut storage = [0.0, 0.0];
         let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
-        accum.reset_accum_state(&mut accum_state);
+        accum.init_accum_state(&mut accum_state);
         accum.consume(
             &mut accum_state,
             &Datum {
@@ -94,7 +94,7 @@ mod tests {
 
         let mut storage_other = [0.0, 0.0];
         let mut accum_state_other = AccumStateViewMut::from_contiguous_slice(&mut storage_other);
-        accum.reset_accum_state(&mut accum_state_other);
+        accum.init_accum_state(&mut accum_state_other);
         accum.consume(
             &mut accum_state_other,
             &Datum {
@@ -132,7 +132,7 @@ mod tests {
 
         let mut storage = [0.0, 0.0];
         let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
-        accum.reset_accum_state(&mut accum_state);
+        accum.init_accum_state(&mut accum_state);
 
         accum.consume(
             &mut accum_state,

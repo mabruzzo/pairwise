@@ -109,7 +109,7 @@ impl Accumulator for Histogram {
     }
 
     /// initializes the storage tracking the acumulator's state
-    fn reset_accum_state(&self, accum_state: &mut AccumStateViewMut) {
+    fn init_accum_state(&self, accum_state: &mut AccumStateViewMut) {
         accum_state.fill(0.0);
     }
 

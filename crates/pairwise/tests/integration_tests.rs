@@ -13,7 +13,7 @@ fn prepare_statepack(n_spatial_bins: usize, accum: &impl Accumulator) -> Array2<
     let mut statepack = Array2::<f64>::zeros((accum.accum_state_size(), n_spatial_bins));
     let mut statepack_view = StatePackViewMut::from_array_view(statepack.view_mut());
     for i in 0..n_spatial_bins {
-        accum.reset_accum_state(&mut statepack_view.get_state_mut(i));
+        accum.init_accum_state(&mut statepack_view.get_state_mut(i));
     }
     statepack
 }

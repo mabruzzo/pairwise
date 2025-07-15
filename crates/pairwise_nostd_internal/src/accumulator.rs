@@ -175,8 +175,27 @@ pub trait Accumulator {
     /// the number of f64 elements needed to track the accumulator data
     fn accum_state_size(&self) -> usize;
 
-    /// initializes the storage tracking the acumulator's state
-    fn reset_accum_state(&self, accum_state: &mut AccumStateViewMut);
+    /// initializes the storage tracking the acumulator's state.
+    ///
+    /// You need to call this function before you start working with the
+    /// storage. You can also use this to reset the accumulator's state since
+    /// it blindly overwrites any existing values.
+    ///
+    /// <div class="warning">
+    ///
+    /// It's unfortunate that the storage needs to be explicitly initialized
+    /// and it is indeed a footgun of this low-level API. This decision is a
+    /// consequence of the fact that we want to maintain flexibility over the
+    /// organization of the storage used for accumulators.
+    ///
+    /// This design rationale makes slightly more sense in the context that
+    /// types implementing the [`Accumulator`] trait aren't themselves
+    /// accumulators, but are instead objects that provide logic for working
+    /// with accumulator-storage. Maybe a better abstraction will present
+    /// itself?
+    ///
+    /// </div>
+    fn init_accum_state(&self, accum_state: &mut AccumStateViewMut);
 
     /// consume the value and weight to update the accum_state
     fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &Datum);
@@ -212,7 +231,7 @@ impl Accumulator for Mean {
         2_usize
     }
 
-    fn reset_accum_state(&self, accum_state: &mut AccumStateViewMut) {
+    fn init_accum_state(&self, accum_state: &mut AccumStateViewMut) {
         accum_state[Mean::TOTAL] = 0.0;
         accum_state[Mean::WEIGHT] = 0.0;
     }
