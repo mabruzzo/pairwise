@@ -25,8 +25,12 @@
 //! comparisons
 
 use crate::accumulator::{Accumulator, Datum, Mean};
+use crate::misc::segment_idx_bounds;
 //use crate::parallel::{BinnedDatum, MemberId, ReductionSpec, StandardTeamParam};
-use crate::reduce_utils::{reset_full_statepack, serial_merge_accum_states};
+use crate::reduce_utils::{
+    merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
+    serial_merge_accum_states,
+};
 use crate::state::{AccumStateViewMut, StatePackViewMut};
 
 // Defining some basic functionality for implementing this example:
@@ -281,4 +285,67 @@ pub fn restructured1_mean_chunked(
         }
         i_global += chunk_len
     }
+}
+
+// now we finally write a function that carves up the task in a way conducive
+// to achieving the coarser grained parallelism.
+//
+// Essentially, the strategy is to cut up the index-range into segment.
+// - we accumulate the contributions of each segment in a separate temporary
+//   binned_statepack (we use `restructured1_mean_unordered` to actually gather these
+//   contributions)
+// - at the very end, we gather up all the contributions and use them to update
+//   the output binned_statepack
+//
+// scratch_statepack_storage is provided to simulate the fact that each thread
+pub fn restructured2_mean_chunked(
+    stream: &SampleDataStreamView,
+    f: QuadraticPolynomial,
+    accum: &Mean,
+    binned_statepack: &mut StatePackViewMut,
+    scratch_binned_statepacks: &mut [StatePackViewMut],
+    tmp_accum_states: &mut StatePackViewMut,
+) {
+    let Some(chunk_lens) = stream.chunk_lens else {
+        panic!("the data stream wasn't chunked!")
+    };
+
+    // a scratch_binned_statepack has been provided for every segment
+    let n_segments = scratch_binned_statepacks.len();
+    assert!(n_segments > 0);
+
+    // each pass through this loop considers a separate index-segment.
+    // -> this work could be distributed among different threads (or thread
+    //    groups)
+    // -> if we did parallelize this loop, each thread (or thread group) would
+    //    need to allocate its own collect_pad
+    #[allow(clippy::needless_range_loop)]
+    for seg_index in 0..n_segments {
+        let local_binned_statepack = &mut scratch_binned_statepacks[seg_index];
+        reset_full_statepack(accum, local_binned_statepack);
+
+        // determine chunk indices to be processed in the current segment
+        let chunk_idx_bounds = segment_idx_bounds(chunk_lens.len(), seg_index, n_segments);
+
+        // now do the work!
+        restructured1_mean_chunked(
+            stream,
+            f,
+            accum,
+            local_binned_statepack,
+            tmp_accum_states,
+            Some(chunk_idx_bounds),
+        );
+    }
+
+    // after all the above loop is done, let's merge together our results such
+    // that scratch_binned_statepacks[0] holds all the contributions
+    serial_consolidate_scratch_statepacks(accum, scratch_binned_statepacks);
+
+    // finally add the contribution to binned_statepack
+    merge_full_statepacks(
+        accum,
+        binned_statepack,
+        scratch_binned_statepacks.first().unwrap(),
+    );
 }

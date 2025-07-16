@@ -32,6 +32,27 @@ pub fn merge_full_statepacks(
     }
 }
 
+// consolidates the statepacks in such a way that scratch_statepacks[0]
+// contains the results of every other statepack
+//
+// this function makes no guarantees about the final state of other
+// entries within scratch_statepack
+//
+// not sure if this should actually be part of the public API, but it's useful
+// in a handful of cases
+pub fn serial_consolidate_scratch_statepacks(
+    accum: &impl Accumulator,
+    scratch_statepacks: &mut [StatePackViewMut],
+) {
+    // if we wanted to simulate parallelism, then the way this loop works is
+    // pretty inefficient. We would instead strive for something more similar
+    // to serial_merge_accum_states
+    for i in 1..scratch_statepacks.len() {
+        let [main, other] = scratch_statepacks.get_disjoint_mut([0, i]).unwrap();
+        merge_full_statepacks(accum, main, other);
+    }
+}
+
 // Merges all accumulator states. At the end of this function call,
 // statepack.get_state(0) is valid. All other entries are in an undetermined
 // state

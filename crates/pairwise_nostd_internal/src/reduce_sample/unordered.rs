@@ -5,7 +5,9 @@ use crate::accumulator::{Accumulator, Datum, Mean};
 use crate::misc::segment_idx_bounds;
 use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, TeamMemberProp};
 use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
-use crate::reduce_utils::{merge_full_statepacks, reset_full_statepack};
+use crate::reduce_utils::{
+    merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
+};
 use crate::state::StatePackViewMut;
 
 // Version 0: our simple naive implementation
@@ -149,20 +151,6 @@ pub fn restructured1_mean_unordered(
     }
 }
 
-// consolidates the statepacks in such a way that scratch_statepacks[0]
-// contains the results of every other statepack
-//
-// this function makes no guarantees about the final state of other
-// entries within scratch_statepack
-fn consolidate_scratch_statepacks(accum: &Mean, scratch_statepacks: &mut [StatePackViewMut]) {
-    // if we wanted to simulate parallelism, then the way this loop works is
-    // pretty inefficient
-    for i in 1..scratch_statepacks.len() {
-        let [main, other] = scratch_statepacks.get_disjoint_mut([0, i]).unwrap();
-        merge_full_statepacks(accum, main, other);
-    }
-}
-
 // now we finally write a function that carves up the task in a way conducive
 // to achieving the coarser grained parallelism.
 //
@@ -212,7 +200,7 @@ pub fn restructured2_mean_unordered(
 
     // after all the above loop is done, let's merge together our results such
     // that scratch_binned_statepacks[0] holds all the contributions
-    consolidate_scratch_statepacks(accum, scratch_binned_statepacks);
+    serial_consolidate_scratch_statepacks(accum, scratch_binned_statepacks);
 
     // finally add the contribution to binned_statepack
     merge_full_statepacks(
