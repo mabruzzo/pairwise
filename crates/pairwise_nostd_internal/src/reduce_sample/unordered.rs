@@ -75,13 +75,13 @@ pub fn accumulator_mean_unordered(
 // - in a later version of this functionality, we will worry about parallelism
 //
 // Motivating our design.
-// - ideally, we would love to somehow parallelize the process of generating
-//   the data element and bin-index from the data source, and using these
-//   values to update the appropriate accum_state bins.
+// - ideally, we would love to somehow parallelize the whole process of
+//   generating the (datum, bin-index) pairs from the data source, and using
+//   it to update the appropriate accum_state bins.
 // - Unfortunately, the unpredictable order is a large obstacle to
 //   parallelizing the update of accumulator state (in a general way)
-// - So, we do the best we possibly can. And treat the task of generating the
-//   (data-element, bin-index) pair separately from updating the appropriate
+// - So, we do the best we possibly can. We treat the task of generating the
+//   (datum, bin-index) pairs separately from updating the appropriate
 //   accumulator state. This is a batching strategy:
 //   - pre-generate a batch of pairs and store them in a collection-pad
 //     (this operation can be parallelized)
@@ -134,7 +134,7 @@ pub fn restructured1_mean_unordered(
             };
         }
 
-        // now we sequentially process the (data-element, bin-index) pairs
+        // now we sequentially process the (datum, bin-index) pairs
         // -> there isn't a general, portable way to do this
         for e in collect_pad.iter() {
             let bin_index = e.bin_index;

@@ -72,7 +72,7 @@ impl TeamProps for SerialTeam {
         }
     }
 
-    fn getelements_gather_apply(
+    fn collect_pairs_then_apply(
         &mut self,
         binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         accum: &impl Accumulator,
