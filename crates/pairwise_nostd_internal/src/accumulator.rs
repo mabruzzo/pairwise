@@ -51,7 +51,7 @@
 //! We will revisit this in the future once we are done architecting other
 //! parts of the design.
 
-use crate::state::{AccumStateView, AccumStateViewMut, StatePackViewMut};
+use crate::state::{AccumStateView, AccumStateViewMut};
 use ndarray::ArrayViewMut1;
 
 /// Instances of this element are consumed by the Accumulator
@@ -225,31 +225,6 @@ pub trait Accumulator {
 
     /// Describes the outputs produced from a single accum_state
     fn output_descr(&self) -> OutputDescr;
-}
-
-// not sure if this should actually be part of the public API, but it's useful
-// in a handful of cases
-pub fn reset_full_statepack(accum: &impl Accumulator, statepack: &mut StatePackViewMut) {
-    for i in 0..statepack.n_states() {
-        accum.init_accum_state(&mut statepack.get_state_mut(i));
-    }
-}
-
-// ideally, other would be more clearly immutable, but I don't think we want to
-// introduce another type just for this 1 case
-//
-// not sure if this should actually be part of the public API, but it's useful
-// in a handful of cases
-pub fn merge_full_statepacks(
-    accum: &impl Accumulator,
-    statepack: &mut StatePackViewMut,
-    other: &StatePackViewMut,
-) {
-    let n_bins = statepack.n_states();
-    assert_eq!(n_bins, other.n_states());
-    for i in 0..statepack.n_states() {
-        accum.merge(&mut statepack.get_state_mut(i), &other.get_state(i));
-    }
 }
 
 #[derive(Clone, Copy)]

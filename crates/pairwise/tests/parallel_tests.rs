@@ -1,10 +1,11 @@
-use pairwise::{Executor, Mean, SerialExecutor, StatePackViewMut, get_output};
+use pairwise::{Accumulator, Executor, Mean, SerialExecutor, StatePackViewMut, get_output};
 
 use pairwise_nostd_internal::{
     BinnedDatum,
     reduce_sample::{
         chunked::{
-            QuadraticPolynomial, SampleDataStreamView, accumulator_mean_chunked, naive_mean_chunked,
+            QuadraticPolynomial, SampleDataStreamView, accumulator_mean_chunked,
+            naive_mean_chunked, restructured1_mean_chunked,
         },
         unordered::{
             MeanUnorderedReduction, accumulator_mean_unordered, naive_mean_unordered,
@@ -171,24 +172,43 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
     out.insert(
         String::from("restructured1"),
         Box::new(
-            move |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
+            move |stream: &SampleDataStreamView,
+                  version,
+                  binned_statepack: &mut StatePackViewMut| {
                 let accum = Mean;
-                reset_full_statepack(&accum, statepack);
+                reset_full_statepack(&accum, binned_statepack);
                 match version {
-                    StreamKind::Chunked => return Err(WrapperError::Unimplemented),
+                    StreamKind::Chunked => {
+                        let n_tmp_accum_states = 4;
+                        let mut tmp_buf =
+                            vec![0.0; n_tmp_accum_states * binned_statepack.total_size()];
+                        let mut tmp_accum_states = StatePackViewMut::from_slice(
+                            n_tmp_accum_states,
+                            accum.accum_state_size(),
+                            &mut tmp_buf,
+                        );
+                        restructured1_mean_chunked(
+                            stream,
+                            f,
+                            &accum,
+                            binned_statepack,
+                            &mut tmp_accum_states,
+                            None,
+                        );
+                    }
                     StreamKind::Unordered => {
                         let mut collect_pad = vec![BinnedDatum::zeroed(); 4];
                         restructured1_mean_unordered(
                             stream,
                             f,
                             &accum,
-                            statepack,
+                            binned_statepack,
                             &mut collect_pad,
                             None,
                         );
                     }
                 }
-                let out = get_output(&accum, statepack);
+                let out = get_output(&accum, binned_statepack);
                 Ok(out)
             },
         ),

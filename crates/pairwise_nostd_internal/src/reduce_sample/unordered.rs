@@ -1,9 +1,10 @@
 // this file is intended for illustrative purposes
 // see module-level documentation for chunked.rs for more detail
 
-use crate::accumulator::{Accumulator, Datum, Mean, merge_full_statepacks, reset_full_statepack};
+use crate::accumulator::{Accumulator, Datum, Mean};
 use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, TeamMemberProp};
 use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
+use crate::reduce_utils::{merge_full_statepacks, reset_full_statepack};
 use crate::state::StatePackViewMut;
 
 // Version 0: our simple naive implementation

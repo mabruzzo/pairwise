@@ -22,7 +22,8 @@
 //! Of course we also have flexibility to adjust the definition of this
 //! hardware mapping
 
-use crate::accumulator::{Accumulator, Datum, reset_full_statepack};
+use crate::accumulator::{Accumulator, Datum};
+use crate::reduce_utils::reset_full_statepack;
 use crate::state::StatePackViewMut;
 use core::num::NonZeroU32;
 
