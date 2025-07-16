@@ -7,5 +7,7 @@ mod parallel_serial;
 pub use accumulator::{Histogram, get_output, get_output_from_statepack_array};
 pub use misc::diff_norm;
 pub use pairwise_nostd_internal::{
-    Accumulator, Mean, OutputDescr, PointProps, StatePackViewMut, apply_accum, dot_product,
+    Accumulator, Executor, Mean, OutputDescr, PointProps, StatePackViewMut, apply_accum,
+    dot_product,
 };
+pub use parallel_serial::SerialExecutor;

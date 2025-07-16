@@ -252,6 +252,7 @@ pub fn merge_full_statepacks(
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Mean;
 
 impl Mean {

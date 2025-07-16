@@ -2,7 +2,7 @@
 // see module-level documentation for chunked.rs for more detail
 
 use crate::accumulator::{Accumulator, Datum, Mean, merge_full_statepacks, reset_full_statepack};
-use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, ThreadMember};
+use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, TeamMemberProp};
 use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
 use crate::state::StatePackViewMut;
 
@@ -236,16 +236,20 @@ pub fn restructured2_mean_unordered(
     merge_full_statepacks(accum, statepack, scratch_statepacks.first().unwrap());
 }
 
-/* THIS ISN'T READY YET!!
-pub struct MeanUnorderedReduction<'a, F: Fn(f64) -> f64> {
+pub struct MeanUnorderedReduction<'a> {
     stream: SampleDataStreamView<'a>,
-    f: &'a F, // todo: stop storing f (we should hard-code the function)
+    f: QuadraticPolynomial,
     accum: Mean,
     n_bins: usize,
 }
 
-impl<'a, F: Fn(f64) -> f64> MeanUnorderedReduction<'a, F> {
-    pub fn new(stream: SampleDataStreamView<'a>, f: &'a F, accum: Mean, n_bins: usize) -> Self {
+impl<'a> MeanUnorderedReduction<'a> {
+    pub fn new(
+        stream: SampleDataStreamView<'a>,
+        f: QuadraticPolynomial,
+        accum: Mean,
+        n_bins: usize,
+    ) -> Self {
         Self {
             stream,
             f,
@@ -255,7 +259,7 @@ impl<'a, F: Fn(f64) -> f64> MeanUnorderedReduction<'a, F> {
     }
 }
 
-impl<'a, F: Fn(f64) -> f64> ReductionSpec for MeanUnorderedReduction<'a, F> {
+impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
     type AccumulatorType = Mean;
 
     fn get_accum(&self) -> &Self::AccumulatorType {
@@ -272,19 +276,60 @@ impl<'a, F: Fn(f64) -> f64> ReductionSpec for MeanUnorderedReduction<'a, F> {
         team_id: usize,
         team_info: &StandardTeamParam,
     ) -> (usize, usize) {
-        todo!("implement me!");
+        let stream_idx_bounds =
+            segment::get_index_bounds(self.stream.len(), team_id, team_info.n_teams);
+        let n_stream_indices = stream_idx_bounds.1 - stream_idx_bounds.0;
+        let batch_size = team_info.n_members_per_team;
+        let n_batches = n_stream_indices.div_ceil(batch_size);
+        (0, n_batches)
     }
 
     const NESTED_REDUCE: bool = false;
 
-    fn get_datum_index_pair(
+    fn get_datum_index_pair<T: TeamMemberProp>(
         &self,
-        outer_index: usize,
+        collect_pad: &mut [BinnedDatum],
+        _outer_index: usize,
         inner_index: usize,
-        member_id: MemberId,
+        member_prop: &T,
+        team_id: usize,
         team_param: &StandardTeamParam,
-    ) -> BinnedDatum {
-        todo!("implement me!")
+    ) {
+        let stream_idx_bounds =
+            segment::get_index_bounds(self.stream.len(), team_id, team_param.n_teams);
+        let i_offset = stream_idx_bounds.0 + team_param.n_members_per_team * inner_index;
+
+        let stream_len = self.stream.len();
+        let get_binned_datum = |i: usize| -> BinnedDatum {
+            if i >= stream_len {
+                BinnedDatum::zeroed()
+            } else {
+                BinnedDatum {
+                    bin_index: self.stream.bin_indices[i],
+                    datum: Datum {
+                        value: self.f.call(self.stream.x_array[i]),
+                        weight: self.stream.weights[i],
+                    },
+                }
+            }
+        };
+
+        if T::IS_VECTOR_PROCESSOR {
+            // we would need to do a lot of work to get this to auto-vectorize
+            // - as we note in the docstring where the function is declared
+            //   (in the trait declaration), we probably need to pre-generate
+            //   more elements than there are are threads
+            // - we probably need to statically make guarantees about
+            //   alignment and array length
+            // - it may be easier to use machinery like glam::DVec to force
+            //   the vectorizaiton
+            assert_eq!(collect_pad.len(), team_param.n_teams);
+            for (i, pad) in collect_pad.iter_mut().enumerate() {
+                *pad = get_binned_datum(i_offset + i);
+            }
+        } else {
+            let member_id: usize = member_prop.get_id().try_into().unwrap();
+            collect_pad[0] = get_binned_datum(i_offset + member_id);
+        }
     }
 }
-*/

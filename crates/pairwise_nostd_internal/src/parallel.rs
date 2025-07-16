@@ -554,12 +554,13 @@ pub trait ReductionSpec {
     /// future, we might consider recording multiple instances per member (it
     /// may be important for getting the most out of SIMD instructions).
     #[allow(unused)] // <- suppresses unused variable warnings
-    fn get_datum_index_pair(
+    fn get_datum_index_pair<T: TeamMemberProp>(
         &self,
         collect_pad: &mut [BinnedDatum],
         outer_index: usize,
         inner_index: usize,
-        member_prop: &impl TeamMemberProp,
+        member_prop: &T,
+        team_id: usize, // <- primarily used in the sample problem
         team_param: &StandardTeamParam,
     ) {
         // this **MUST** be overwritten when NESTED_REDUCE is true
@@ -690,6 +691,7 @@ pub fn fill_single_team_statepack<T, R>(
                             outer_idx,
                             inner_idx,
                             &member_prop,
+                            team_id,
                             team_param,
                         );
                     },
