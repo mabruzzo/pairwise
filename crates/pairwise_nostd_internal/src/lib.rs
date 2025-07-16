@@ -241,10 +241,12 @@ these categories _"Nested"_ and _"Batched"_.
 
 mod apply_points;
 mod bins;
+mod displacement_vec;
 mod misc;
 mod parallel;
 mod reduce_utils;
 mod reducer;
+mod spatial;
 mod state;
 
 // I'm not really sure we want to publicly expose reduce_sample, but for now,
@@ -260,4 +262,5 @@ pub use parallel::{
 };
 pub use reduce_utils::reset_full_statepack;
 pub use reducer::{Datum, Histogram, Mean, OutputDescr, Reducer};
+pub use spatial::{CartesianBlock, CellWidth};
 pub use state::{AccumStateView, AccumStateViewMut, StatePackViewMut};
