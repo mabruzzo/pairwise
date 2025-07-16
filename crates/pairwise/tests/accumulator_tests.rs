@@ -1,5 +1,6 @@
-use ndarray::{ArrayView1, ArrayViewMut1, NewAxis, s};
-use pairwise::{Accumulator, Histogram, Mean, get_output};
+use ndarray::{NewAxis, s};
+use pairwise::{Accumulator, Histogram, Mean, get_output_from_statepack_array};
+use pairwise_nostd_internal::{AccumStateView, AccumStateViewMut, Datum};
 use std::collections::HashMap;
 
 // this is inefficient, but it gets the job done for now
@@ -7,9 +8,9 @@ use std::collections::HashMap;
 // this is probably an indication that we could improve the Accumulator API
 fn _get_output_single(
     accum: &impl Accumulator,
-    stateprop: &ArrayView1<f64>,
+    stateprop: &AccumStateView,
 ) -> HashMap<&'static str, Vec<f64>> {
-    get_output(accum, &stateprop.slice(s![.., NewAxis]))
+    get_output_from_statepack_array(accum, &stateprop.as_array_view().slice(s![.., NewAxis]))
 }
 
 // TODO: factor out this function and the get_output function from
@@ -25,11 +26,17 @@ mod tests {
         let accum = Mean;
 
         let mut storage = [0.0, 0.0];
-        let mut statepack = ArrayViewMut1::from_shape([2], &mut storage).unwrap();
-        accum.reset_statepack(&mut statepack);
+        let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
+        accum.init_accum_state(&mut accum_state);
 
-        accum.consume(&mut statepack, 4.0, 1.0);
-        let value_map = _get_output_single(&accum, &statepack.view());
+        accum.consume(
+            &mut accum_state,
+            &Datum {
+                value: 4.0,
+                weight: 1.0,
+            },
+        );
+        let value_map = _get_output_single(&accum, &accum_state.as_view());
 
         assert_eq!(value_map["mean"][0], 4.0);
         assert_eq!(value_map["weight"][0], 1.0);
@@ -40,13 +47,25 @@ mod tests {
         let accum = Mean;
 
         let mut storage = [0.0, 0.0];
-        let mut statepack = ArrayViewMut1::from_shape([2], &mut storage).unwrap();
-        accum.reset_statepack(&mut statepack);
+        let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
+        accum.init_accum_state(&mut accum_state);
 
-        accum.consume(&mut statepack, 4.0, 1.0);
-        accum.consume(&mut statepack, 8.0, 1.0);
+        accum.consume(
+            &mut accum_state,
+            &Datum {
+                value: 4.0,
+                weight: 1.0,
+            },
+        );
+        accum.consume(
+            &mut accum_state,
+            &Datum {
+                value: 8.0,
+                weight: 1.0,
+            },
+        );
 
-        let value_map = _get_output_single(&accum, &statepack.view());
+        let value_map = _get_output_single(&accum, &accum_state.as_view());
         assert_eq!(value_map["mean"][0], 6.0);
         assert_eq!(value_map["weight"][0], 2.0);
     }
@@ -56,20 +75,44 @@ mod tests {
         let accum = Mean;
 
         let mut storage = [0.0, 0.0];
-        let mut statepack = ArrayViewMut1::from_shape([2], &mut storage).unwrap();
-        accum.reset_statepack(&mut statepack);
-        accum.consume(&mut statepack, 4.0, 1.0);
-        accum.consume(&mut statepack, 8.0, 1.0);
+        let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
+        accum.init_accum_state(&mut accum_state);
+        accum.consume(
+            &mut accum_state,
+            &Datum {
+                value: 4.0,
+                weight: 1.0,
+            },
+        );
+        accum.consume(
+            &mut accum_state,
+            &Datum {
+                value: 8.0,
+                weight: 1.0,
+            },
+        );
 
         let mut storage_other = [0.0, 0.0];
-        let mut statepack_other = ArrayViewMut1::from_shape([2], &mut storage_other).unwrap();
-        accum.reset_statepack(&mut statepack_other);
-        accum.consume(&mut statepack_other, 1.0, 1.0);
-        accum.consume(&mut statepack_other, 3.0, 1.0);
+        let mut accum_state_other = AccumStateViewMut::from_contiguous_slice(&mut storage_other);
+        accum.init_accum_state(&mut accum_state_other);
+        accum.consume(
+            &mut accum_state_other,
+            &Datum {
+                value: 1.0,
+                weight: 1.0,
+            },
+        );
+        accum.consume(
+            &mut accum_state_other,
+            &Datum {
+                value: 3.0,
+                weight: 1.0,
+            },
+        );
 
-        accum.merge(&mut statepack, statepack_other.view());
+        accum.merge(&mut accum_state, &accum_state_other.as_view());
 
-        let value_map = _get_output_single(&accum, &statepack.view());
+        let value_map = _get_output_single(&accum, &accum_state.as_view());
         assert_eq!(value_map["mean"][0], 4.0);
         assert_eq!(value_map["weight"][0], 4.0);
     }
@@ -88,19 +131,43 @@ mod tests {
         let accum = Histogram::new(&[0.0, 1.0, 2.0]).unwrap();
 
         let mut storage = [0.0, 0.0];
-        let mut statepack = ArrayViewMut1::from_shape([2], &mut storage).unwrap();
-        accum.reset_statepack(&mut statepack);
+        let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
+        accum.init_accum_state(&mut accum_state);
 
-        accum.consume(&mut statepack, 0.5, 1.0);
-        accum.consume(&mut statepack, -50.0, 1.0);
-        accum.consume(&mut statepack, 1000.0, 1.0);
+        accum.consume(
+            &mut accum_state,
+            &Datum {
+                value: 0.5,
+                weight: 1.0,
+            },
+        );
+        accum.consume(
+            &mut accum_state,
+            &Datum {
+                value: -50.0,
+                weight: 1.0,
+            },
+        );
+        accum.consume(
+            &mut accum_state,
+            &Datum {
+                value: 1000.0,
+                weight: 1.0,
+            },
+        );
 
-        let value_map = _get_output_single(&accum, &statepack.view());
+        let value_map = _get_output_single(&accum, &accum_state.as_view());
         assert_eq!(value_map["weight"][0], 1.0);
         assert_eq!(value_map["weight"][1], 0.0);
 
-        accum.consume(&mut statepack, 1.1, 5.0);
-        let value_map = _get_output_single(&accum, &statepack.view());
+        accum.consume(
+            &mut accum_state,
+            &Datum {
+                value: 1.1,
+                weight: 5.0,
+            },
+        );
+        let value_map = _get_output_single(&accum, &accum_state.as_view());
         assert_eq!(value_map["weight"][0], 1.0);
         assert_eq!(value_map["weight"][1], 5.0);
     }

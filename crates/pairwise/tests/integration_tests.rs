@@ -1,18 +1,21 @@
 use ndarray::{Array2, ArrayView2};
 use pairwise::{
-    Accumulator, Histogram, Mean, PointProps, apply_accum, diff_norm, dot_product, get_output,
+    Accumulator, Histogram, Mean, PointProps, StatePackViewMut, apply_accum, diff_norm,
+    dot_product, get_output_from_statepack_array,
 };
 
 // Things are a little unergonomic!
 
-// helper function!
-fn prepare_statepacks(n_spatial_bins: usize, accum: &impl Accumulator) -> Array2<f64> {
+// helper function that sets up the statepack, which holds one accum_state
+// per spatial bin
+fn prepare_statepack(n_spatial_bins: usize, accum: &impl Accumulator) -> Array2<f64> {
     assert!(n_spatial_bins > 0);
-    let mut statepacks = Array2::<f64>::zeros((accum.statepack_size(), n_spatial_bins));
-    for mut col in statepacks.columns_mut() {
-        accum.reset_statepack(&mut col);
+    let mut statepack = Array2::<f64>::zeros((accum.accum_state_size(), n_spatial_bins));
+    let mut statepack_view = StatePackViewMut::from_array_view(statepack.view_mut());
+    for i in 0..n_spatial_bins {
+        accum.init_accum_state(&mut statepack_view.get_state_mut(i));
     }
-    statepacks
+    statepack
 }
 
 #[cfg(test)]
@@ -63,10 +66,10 @@ mod tests {
 
         let accum = Mean;
         let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut statepacks = prepare_statepacks(n_spatial_bins, &accum);
+        let mut statepack = prepare_statepack(n_spatial_bins, &accum);
 
         let result = apply_accum(
-            &mut statepacks.view_mut(),
+            &mut StatePackViewMut::from_array_view(statepack.view_mut()),
             &accum,
             &points,
             None,
@@ -80,7 +83,7 @@ mod tests {
         let squared_distance_bin_edges: Vec<f64> =
             distance_bin_edges.iter().map(|x| x.powi(2)).collect();
         let result = apply_accum(
-            &mut statepacks.view_mut(),
+            &mut StatePackViewMut::from_array_view(statepack.view_mut()),
             &accum,
             &points,
             None,
@@ -101,7 +104,7 @@ mod tests {
         )
         .unwrap();
         let result = apply_accum(
-            &mut statepacks.view_mut(),
+            &mut StatePackViewMut::from_array_view(statepack.view_mut()),
             &accum,
             &points,
             Some(&points_b),
@@ -120,7 +123,7 @@ mod tests {
         )
         .unwrap();
         let result = apply_accum(
-            &mut statepacks.view_mut(),
+            &mut StatePackViewMut::from_array_view(statepack.view_mut()),
             &accum,
             &points,
             Some(&points_b),
@@ -151,7 +154,7 @@ mod tests {
         let expected_weight = [7., 3., 0.];
         let mean_accum = Mean;
         let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut mean_statepacks = prepare_statepacks(n_spatial_bins, &mean_accum);
+        let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_accum);
         let points = PointProps::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
             ArrayView2::from_shape((3, 6), &values).unwrap(),
@@ -159,7 +162,7 @@ mod tests {
         )
         .unwrap();
         let result = apply_accum(
-            &mut mean_statepacks.view_mut(),
+            &mut StatePackViewMut::from_array_view(mean_statepack.view_mut()),
             &mean_accum,
             &points,
             None,
@@ -169,7 +172,7 @@ mod tests {
         assert_eq!(result, Ok(()));
 
         // output buffers
-        let mean_result_map = get_output(&mean_accum, &mean_statepacks.view());
+        let mean_result_map = get_output_from_statepack_array(&mean_accum, &mean_statepack.view());
 
         for i in 0..n_spatial_bins {
             // we might need to adopt an actual rtol
@@ -199,9 +202,9 @@ mod tests {
             3., 2., 0.,
         ];
         let hist_accum = Histogram::new(&hist_bin_edges).unwrap();
-        let mut hist_statepacks = prepare_statepacks(distance_bin_edges.len() - 1, &hist_accum);
+        let mut hist_statepack = prepare_statepack(distance_bin_edges.len() - 1, &hist_accum);
         let result = apply_accum(
-            &mut hist_statepacks.view_mut(),
+            &mut StatePackViewMut::from_array_view(hist_statepack.view_mut()),
             &hist_accum,
             &points,
             None,
@@ -209,7 +212,7 @@ mod tests {
             &diff_norm,
         );
         assert_eq!(result, Ok(()));
-        let hist_result_map = get_output(&hist_accum, &hist_statepacks.view());
+        let hist_result_map = get_output_from_statepack_array(&hist_accum, &hist_statepack.view());
         for (i, expected) in expected_hist_weights.iter().enumerate() {
             assert_eq!(
                 hist_result_map["weight"][i], *expected,
@@ -270,10 +273,10 @@ mod tests {
         // perform the calculation!
         let accum = Mean;
         let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut statepacks = prepare_statepacks(n_spatial_bins, &accum);
+        let mut statepack = prepare_statepack(n_spatial_bins, &accum);
 
         let result = apply_accum(
-            &mut statepacks.view_mut(),
+            &mut StatePackViewMut::from_array_view(statepack.view_mut()),
             &accum,
             &points_a,
             Some(&points_b),
@@ -282,7 +285,7 @@ mod tests {
         );
         assert_eq!(result, Ok(()));
 
-        let output = get_output(&accum, &statepacks.view());
+        let output = get_output_from_statepack_array(&accum, &statepack.view());
 
         for i in 0..n_spatial_bins {
             assert!(
@@ -313,7 +316,7 @@ mod tests {
         let expected_weight = [7., 3., 0.];
         let mean_accum = Mean;
         let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut mean_statepacks = prepare_statepacks(n_spatial_bins, &mean_accum);
+        let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_accum);
 
         let points = PointProps::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
@@ -322,7 +325,7 @@ mod tests {
         )
         .unwrap();
         let result = apply_accum(
-            &mut mean_statepacks.view_mut(),
+            &mut StatePackViewMut::from_array_view(mean_statepack.view_mut()),
             &mean_accum,
             &points,
             None,
@@ -331,7 +334,7 @@ mod tests {
         );
         assert_eq!(result, Ok(()));
 
-        let output = get_output(&mean_accum, &mean_statepacks.view());
+        let output = get_output_from_statepack_array(&mean_accum, &mean_statepack.view());
 
         for i in 0..3 {
             // we might need to adopt an actual rtol

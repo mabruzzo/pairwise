@@ -1,6 +1,7 @@
-use crate::accumulator::Accumulator;
+use crate::accumulator::{Accumulator, Datum};
 use crate::misc::{get_bin_idx, squared_diff_norm};
-use ndarray::{ArrayView2, ArrayViewMut2, Axis};
+use crate::state::StatePackViewMut;
+use ndarray::ArrayView2;
 
 /// Collection of point properties.
 ///
@@ -66,7 +67,7 @@ impl<'a> PointProps<'a> {
 }
 
 fn apply_accum_helper<const CROSS: bool>(
-    stateprops: &mut ArrayViewMut2<f64>,
+    statepack: &mut StatePackViewMut,
     accum: &impl Accumulator,
     points_a: &PointProps,
     points_b: &PointProps,
@@ -85,19 +86,12 @@ fn apply_accum_helper<const CROSS: bool>(
                 points_a.n_spatial_dims,
             );
             if let Some(distance_bin_idx) = get_bin_idx(distance_squared, squared_bin_edges) {
-                // get the value. This is hardcoded to correspond to the velocity structure
-                // function when accumulated with Mean
-                // TODO switch on pairwise op?
-                let val = pairwise_fn(points_a.values, points_b.values, i_a, i_b);
+                let datum = Datum {
+                    value: pairwise_fn(points_a.values, points_b.values, i_a, i_b),
+                    weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
+                };
 
-                // get the weight
-                let pair_weight = points_a.get_weight(i_a) * points_b.get_weight(i_b);
-
-                accum.consume(
-                    &mut stateprops.index_axis_mut(Axis(1), distance_bin_idx),
-                    val,
-                    pair_weight,
-                );
+                accum.consume(&mut statepack.get_state_mut(distance_bin_idx), &datum);
             }
         }
     }
@@ -105,6 +99,9 @@ fn apply_accum_helper<const CROSS: bool>(
 
 /// Computes contributions to binned statistics from values computed from the
 /// specified pairs of points.
+///
+/// In more detail, `statepack`, acts as a container of accumulator state. It
+/// holds an accum_state per bin.
 ///
 /// When `points_b` is `None`, the function considers all unique pairs of
 /// points within `points_a`. Otherwise, all pairs of points between `points_a`
@@ -124,7 +121,7 @@ fn apply_accum_helper<const CROSS: bool>(
 ///       think this is Ok while we get everything working, but we definitely
 ///       should revisit!
 pub fn apply_accum(
-    stateprops: &mut ArrayViewMut2<f64>,
+    statepack: &mut StatePackViewMut,
     accum: &impl Accumulator,
     points_a: &PointProps,
     points_b: Option<&PointProps>,
@@ -154,7 +151,7 @@ pub fn apply_accum(
 
     if let Some(points_b) = points_b {
         apply_accum_helper::<false>(
-            stateprops,
+            statepack,
             accum,
             points_a,
             points_b,
@@ -163,7 +160,7 @@ pub fn apply_accum(
         )
     } else {
         apply_accum_helper::<true>(
-            stateprops,
+            statepack,
             accum,
             points_a,
             points_a,
