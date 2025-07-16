@@ -17,7 +17,7 @@
 //! For simplicity, let's assume `𝒚ᵢ` is a scalar `yᵢ` (it may be useful to
 //! come back to this for longitudinal statistics and tensors).
 //!
-//! In practice, we use [`DataElement`] to package together `yᵢ` & `wᵢ`
+//! In practice, we use [`Datum`] to package together `yᵢ` & `wᵢ`
 //!
 //! If a statistic just summed the values of `wᵢ` and totally ignored `yᵢ`,
 //! that would be equivalent to a normal histogram. Other statistics that we
@@ -51,11 +51,8 @@
 //! We will revisit this in the future once we are done architecting other
 //! parts of the design.
 
-use crate::{
-    StatePackViewMut,
-    state::{AccumStateView, AccumStateViewMut},
-};
-use ndarray::{ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
+use crate::state::{AccumStateView, AccumStateViewMut, StatePackViewMut};
+use ndarray::ArrayViewMut1;
 
 /// Instances of this element are consumed by the Accumulator
 ///
@@ -124,14 +121,14 @@ use ndarray::{ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
 ///
 /// I don't love that this defines copy, but it's important for examples
 #[derive(Clone, Copy)]
-pub struct DataElement {
+pub struct Datum {
     pub value: f64,
     pub weight: f64,
 }
 
-impl DataElement {
+impl Datum {
     pub fn zeroed() -> Self {
-        DataElement {
+        Datum {
             value: 0.0,
             weight: 0.0,
         }
@@ -176,11 +173,11 @@ impl OutputDescr {
 ///   pub trait Accumulator:
 ///       AccumMiscOps
 ///       + UpdateLeft<&Self>
-///       + UpdateLeft<&DataElement>
+///       + UpdateLeft<&Datum>
 ///   {}
 ///   ```
 /// - thus for each Accumulator, we would be implementing `UpdateLeft<&Self>`
-///   (instead of `merge`) and `UpdateLeft<&DataElement>` (instead of
+///   (instead of `merge`) and `UpdateLeft<&Datum>` (instead of
 ///   `consume`).
 /// - The advantage to doing this is that `update_left` would be used for
 ///   merges and consuming -- it's purely aesthetic. It may also be nice if we
@@ -190,11 +187,30 @@ pub trait Accumulator {
     /// the number of f64 elements needed to track the accumulator data
     fn accum_state_size(&self) -> usize;
 
-    /// initializes the storage tracking the acumulator's state
-    fn reset_accum_state(&self, accum_state: &mut AccumStateViewMut);
+    /// initializes the storage tracking the acumulator's state.
+    ///
+    /// You need to call this function before you start working with the
+    /// storage. You can also use this to reset the accumulator's state since
+    /// it blindly overwrites any existing values.
+    ///
+    /// <div class="warning">
+    ///
+    /// It's unfortunate that the storage needs to be explicitly initialized
+    /// and it is indeed a footgun of this low-level API. This decision is a
+    /// consequence of the fact that we want to maintain flexibility over the
+    /// organization of the storage used for accumulators.
+    ///
+    /// This design rationale makes slightly more sense in the context that
+    /// types implementing the [`Accumulator`] trait aren't themselves
+    /// accumulators, but are instead objects that provide logic for working
+    /// with accumulator-storage. Maybe a better abstraction will present
+    /// itself?
+    ///
+    /// </div>
+    fn init_accum_state(&self, accum_state: &mut AccumStateViewMut);
 
     /// consume the value and weight to update the accum_state
-    fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &DataElement);
+    fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &Datum);
 
     /// merge the state information tracked by `accum_state` and `other`, and
     /// update `accum_state` accordingly
@@ -209,34 +225,13 @@ pub trait Accumulator {
 
     /// Describes the outputs produced from a single accum_state
     fn output_descr(&self) -> OutputDescr;
-
-    /// This function computes the output values for every `accum_state` in
-    /// `statepack`.
-    ///
-    /// TODO: relocate this function. The fact that this operates on many
-    ///       `accum_state`s in a `statepack` rather than on an individual
-    ///       `accum_state` is a significant deviation from the other functions
-    ///       in this trait. Maybe we move this to the pairwise crate
-    fn values_from_statepack(&self, values: &mut ArrayViewMut2<f64>, statepack: &ArrayView2<f64>) {
-        // get the number of derivable quantities per accum_state (this is slow and dumb)
-
-        // sanity checks:
-        assert!(values.shape()[0] == self.output_descr().n_per_accum_state());
-        assert!(statepack.shape()[0] == self.accum_state_size());
-        assert!(values.shape()[1] == statepack.shape()[1]);
-
-        for i in 0..values.shape()[1] {
-            let state = AccumStateView::from_array_view(statepack.index_axis(Axis(1), i));
-            self.value_from_accum_state(&mut values.index_axis_mut(Axis(1), i), &state);
-        }
-    }
 }
 
 // not sure if this should actually be part of the public API, but it's useful
 // in a handful of cases
 pub fn reset_full_statepack(accum: &impl Accumulator, statepack: &mut StatePackViewMut) {
     for i in 0..statepack.n_states() {
-        accum.reset_accum_state(&mut statepack.get_state_mut(i));
+        accum.init_accum_state(&mut statepack.get_state_mut(i));
     }
 }
 
@@ -273,12 +268,12 @@ impl Accumulator for Mean {
         2_usize
     }
 
-    fn reset_accum_state(&self, accum_state: &mut AccumStateViewMut) {
+    fn init_accum_state(&self, accum_state: &mut AccumStateViewMut) {
         accum_state[Mean::TOTAL] = 0.0;
         accum_state[Mean::WEIGHT] = 0.0;
     }
 
-    fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &DataElement) {
+    fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &Datum) {
         accum_state[Mean::WEIGHT] += datum.weight;
         accum_state[Mean::TOTAL] += datum.value * datum.weight;
     }

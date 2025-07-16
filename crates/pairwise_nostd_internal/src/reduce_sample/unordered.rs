@@ -1,10 +1,8 @@
 // this file is intended for illustrative purposes
 // see module-level documentation for chunked.rs for more detail
 
-use crate::accumulator::{
-    Accumulator, DataElement, Mean, merge_full_statepacks, reset_full_statepack,
-};
-use crate::parallel::{BinnedDataElement, ReductionSpec, StandardTeamParam, ThreadMember};
+use crate::accumulator::{Accumulator, Datum, Mean, merge_full_statepacks, reset_full_statepack};
+use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, ThreadMember};
 use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
 use crate::state::StatePackViewMut;
 
@@ -41,7 +39,7 @@ pub fn accumulator_mean_unordered(
 
     for i in 0..stream.len() {
         let bin_index = stream.bin_indices[i];
-        let datum = DataElement {
+        let datum = Datum {
             value: f.call(stream.x_array[i]),
             weight: stream.weights[i],
         };
@@ -100,7 +98,7 @@ pub fn restructured1_mean_unordered(
     f: QuadraticPolynomial,
     accum: &Mean,
     statepack: &mut StatePackViewMut,
-    collect_pad: &mut [BinnedDataElement],
+    collect_pad: &mut [BinnedDatum],
     start_stop_idx: Option<(usize, usize)>,
 ) {
     let batch_size = collect_pad.len();
@@ -124,11 +122,11 @@ pub fn restructured1_mean_unordered(
                 // NOTE: we can process an arbitrary number of zeroed data
                 //       elements without affecting the output since it holds
                 //       a weight of 0
-                BinnedDataElement::zeroed()
+                BinnedDatum::zeroed()
             } else {
-                BinnedDataElement {
+                BinnedDatum {
                     bin_index: stream.bin_indices[i],
-                    datum: DataElement {
+                    datum: Datum {
                         value: f.call(stream.x_array[i]),
                         weight: stream.weights[i],
                     },
@@ -200,7 +198,7 @@ pub fn restructured2_mean_unordered(
     accum: &Mean,
     statepack: &mut StatePackViewMut,
     scratch_statepacks: &mut [StatePackViewMut],
-    collect_pad: &mut [BinnedDataElement],
+    collect_pad: &mut [BinnedDatum],
 ) {
     // a scratch_statepack has been provided for every segment
     let n_segments = scratch_statepacks.len();
@@ -285,7 +283,7 @@ impl<'a, F: Fn(f64) -> f64> ReductionSpec for MeanUnorderedReduction<'a, F> {
         inner_index: usize,
         member_id: MemberId,
         team_param: &StandardTeamParam,
-    ) -> BinnedDataElement {
+    ) -> BinnedDatum {
         todo!("implement me!")
     }
 }

@@ -60,10 +60,7 @@
 //!       include overlapping memory regions (this isn't allowed in safe or
 //!       unsafe Rust)
 
-use core::{
-    f64,
-    ops::{Index, IndexMut},
-};
+use core::ops::{Index, IndexMut};
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
 
 pub struct AccumStateView<'a> {
@@ -222,6 +219,7 @@ impl<'a> StatePackViewMut<'a> {
         self.data.view()
     }
 
+    // todo: remove this method before our release
     pub fn as_array_view_mut(&mut self) -> ArrayViewMut2<f64> {
         self.data.view_mut()
     }

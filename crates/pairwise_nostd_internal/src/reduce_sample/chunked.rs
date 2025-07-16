@@ -12,7 +12,7 @@
 //! machinery is intended to be used.
 //!
 //! # The Problem
-//! Suppose we have a stream of elements, where each element is composed of a
+//! Suppose we have a stream of data, where each datum is composed of a
 //! precomputed bin-index, `i`, a value, `x`, and a weight `w`. For some
 //! function `f`, we want to compute the weighted average value of `f(x)`.
 //!
@@ -24,8 +24,8 @@
 //! The logic has been separated between files to facilitate side-by-side
 //! comparisons
 
-use crate::accumulator::{Accumulator, DataElement, Mean};
-//use crate::parallel::{BinnedDataElement, MemberId, ReductionSpec, StandardTeamParam};
+use crate::accumulator::{Accumulator, Datum, Mean};
+//use crate::parallel::{BinnedDatum, MemberId, ReductionSpec, StandardTeamParam};
 use crate::state::{AccumStateViewMut, StatePackViewMut};
 
 // Defining some basic functionality for implementing this example:
@@ -142,11 +142,11 @@ pub fn accumulator_mean_chunked(
     for chunk_len in chunk_lens.iter().cloned() {
         let bin_index = stream.bin_indices[i_global];
         if bin_index < n_bins {
-            accum.reset_accum_state(&mut tmp_accum_state);
+            accum.init_accum_state(&mut tmp_accum_state);
             for i in i_global..(i_global + chunk_len) {
                 accum.consume(
                     &mut tmp_accum_state,
-                    &DataElement {
+                    &Datum {
                         value: f.call(stream.x_array[i]),
                         weight: stream.weights[i],
                     },

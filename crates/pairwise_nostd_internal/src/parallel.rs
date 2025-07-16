@@ -22,7 +22,7 @@
 //! Of course we also have flexibility to adjust the definition of this
 //! hardware mapping
 
-use crate::accumulator::{Accumulator, DataElement, reset_full_statepack};
+use crate::accumulator::{Accumulator, Datum, reset_full_statepack};
 use crate::state::StatePackViewMut;
 use core::num::NonZeroU32;
 
@@ -74,23 +74,23 @@ pub struct StandardTeamParam {
     pub n_teams: usize,
 }
 
-/// Used to hold a data element and its associated bin_index
+/// Used to hold a datum and its associated bin_index
 ///
 /// This is only used when we need to pack this information into memory. In
 /// most cases, track these in separate variables
 ///
 /// I don't love that this defines copy, but it's important for examples
 #[derive(Clone, Copy)]
-pub struct BinnedDataElement {
+pub struct BinnedDatum {
     pub bin_index: usize,
-    pub datum: DataElement,
+    pub datum: Datum,
 }
 
-impl BinnedDataElement {
+impl BinnedDatum {
     pub fn zeroed() -> Self {
-        BinnedDataElement {
+        BinnedDatum {
             bin_index: 0,
-            datum: DataElement::zeroed(),
+            datum: Datum::zeroed(),
         }
     }
 }
@@ -190,18 +190,18 @@ pub trait TeamProps {
 
     /// Triggers a barrier for all threads in the thread team. Then this does
     /// 3 things:
-    /// 1. each team member calls the `get_element_bin_pair` closure
-    ///    - each member computes and records a [`BinnedDataElement`] instance
+    /// 1. each team member calls the `get_datum_bin_pair` closure
+    ///    - each member computes and records a [`BinnedDatum`] instance
     ///      to memory provided by `&mut self`.
-    /// 2. Then, we gather the recorded [`BinnedDataElement`] instances into
+    /// 2. Then, we gather the recorded [`BinnedDatum`] instances into
     ///    memory accessibly by one of the team members
     /// 3. finally, that team member sequentially uses the batch of
-    ///    [`BinnedDataElement`] instances to update `binned_statepack`
+    ///    [`BinnedDatum`] instances to update `binned_statepack`
     fn getelements_gather_apply(
         &mut self,
         binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         accum: &impl Accumulator,
-        get_element_bin_pair: &impl Fn(&mut [BinnedDataElement], Self::MemberPropType),
+        get_datum_bin_pair: &impl Fn(&mut [BinnedDatum], Self::MemberPropType),
     );
 }
 
@@ -242,7 +242,7 @@ pub trait TeamProps {
 ///   - we track a single accumulator state (a single accumulator state is
 ///     commonly called an `accum_state`)
 ///   - to carry out the reduction, we simply generate every relevant data
-///     element (represented by [`DataElement`]) from a data-source and use
+///     element (represented by [`Datum`]) from a data-source and use
 ///     them to update the `accum_state`
 /// - This trait supports binned reductions. Consequently:
 ///   - a separate `accum_state` is tracked for each bin. We refer to this
@@ -250,7 +250,7 @@ pub trait TeamProps {
 ///   - when we generate each data element from the data source, we also
 ///     generate a bin index that specifies which `accum_state` will be updated
 ///     by the `accum_state`. We sometimes represent this pair of information
-///     with the [`BinnedDataElement`] type.
+///     with the [`BinnedDatum`] type.
 ///
 /// ### How to we define a "unit of work?"
 /// As we've just said the overall work of a binned reduction consists of
@@ -368,11 +368,11 @@ pub trait TeamProps {
 /// - the intention is to:
 ///    1. have the team members collectively call [`get_datum_index_pair`].
 ///       Each member pre-generates a (data-element, bin-index) pair from the
-///       data source, represented as a [`BinnedDataElement`] instance
-///    2. Then the [`BinnedDataElement`] instances should be gathered into a
+///       data source, represented as a [`BinnedDatum`] instance
+///    2. Then the [`BinnedDatum`] instances should be gathered into a
 ///       collection-pad accessible in the memory of a single team member
 ///    3. have that team member process the batch of values in
-///       [`BinnedDataElement`] values to sequentially update the binned
+///       [`BinnedDatum`] values to sequentially update the binned
 ///       statepack
 ///
 /// # Development Note
@@ -543,7 +543,7 @@ pub trait ReductionSpec {
     /// - when `false`: team members essentially correspond to threads. Each
     ///   thread in a given team will execute this function at the same time.
     ///   In this case, you can assume that `collect_pad` just holds space for
-    ///   a single [`BinnedDataElement`] instance.
+    ///   a single [`BinnedDatum`] instance.
     /// - when `true`: there is only a single thread in the team and the
     ///   number of members in the team correspond to the number of vector
     ///   lanes that the should be used in CPU SIMD instructions. In this case,
@@ -553,12 +553,12 @@ pub trait ReductionSpec {
     ///
     /// # Implementation Note
     /// Currently, in a single collective call to this function, each team
-    /// member only records a single [`BinnedDataElement`] instance. In the
+    /// member only records a single [`BinnedDatum`] instance. In the
     /// future, we might consider recording multiple elements (it may be
     /// important for getting the most out of SIMD instructions).
     fn get_datum_index_pair(
         &self,
-        collect_pad: &mut [BinnedDataElement],
+        collect_pad: &mut [BinnedDatum],
         outer_index: usize,
         inner_index: usize,
         member_prop: &impl TeamMemberProp,
@@ -673,17 +673,17 @@ pub fn fill_single_team_statepack<T, R>(
                 // 1. the team collectively calls `get_datum_index_pair`, where
                 //    each member pre-generates a (data-element, bin-index)
                 //    pair from the data-source. The pair is represented as a
-                //    `BinnedDataElement` instance
-                // 2. then, these `BinnedDataElement` are gathered into a
+                //    `BinnedDatum` instance
+                // 2. then, these `BinnedDatum` are gathered into a
                 //    collection-pad that can be accessed by one of the team
                 //    members
                 // 3. finally, that team member sequentially uses the batch
-                //    of `BinnedDataElement` instances to update
+                //    of `BinnedDatum` instances to update
                 //    `binned_statepack`
                 team.getelements_gather_apply(
                     binned_statepack,
                     reduce_spec.get_accum(),
-                    &|collect_pad: &mut [BinnedDataElement], member_prop: T::MemberPropType| {
+                    &|collect_pad: &mut [BinnedDatum], member_prop: T::MemberPropType| {
                         // we should make sure that reset_accum_state is called!!!!
                         reduce_spec.get_datum_index_pair(
                             collect_pad,

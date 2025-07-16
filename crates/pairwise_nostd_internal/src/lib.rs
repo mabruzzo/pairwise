@@ -9,11 +9,11 @@ mod state;
 // we expose it to support testing...
 pub mod reduce_sample;
 
-pub use accumulator::{Accumulator, DataElement, Mean, OutputDescr, reset_full_statepack};
+pub use accumulator::{Accumulator, Datum, Mean, OutputDescr, reset_full_statepack};
 pub use apply_points::{PointProps, apply_accum};
 pub use misc::{dot_product, get_bin_idx, squared_diff_norm};
 pub use parallel::{
-    BinnedDataElement, Executor, ReductionSpec, StandardTeamParam, TeamMemberProp, TeamProps,
+    BinnedDatum, Executor, ReductionSpec, StandardTeamParam, TeamMemberProp, TeamProps,
     ThreadMember, fill_single_team_statepack,
 };
 pub use state::{AccumStateView, AccumStateViewMut, StatePackViewMut};

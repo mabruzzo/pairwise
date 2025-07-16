@@ -1,7 +1,7 @@
 //! Implements the "serial" backend for running thread teams
 
 use pairwise_nostd_internal::{
-    Accumulator, BinnedDataElement, Executor, ReductionSpec, StandardTeamParam, StatePackViewMut,
+    Accumulator, BinnedDatum, Executor, ReductionSpec, StandardTeamParam, StatePackViewMut,
     TeamProps, ThreadMember, fill_single_team_statepack,
 };
 use std::num::NonZeroU32;
@@ -45,7 +45,7 @@ impl TeamProps for SerialTeam {
 
         // reset the state in the statepack
         for i in 0..n_members {
-            accum.reset_accum_state(&mut tmp_statepack.get_state_mut(i));
+            accum.init_accum_state(&mut tmp_statepack.get_state_mut(i));
         }
 
         // step 0: apply a barrier
@@ -76,22 +76,22 @@ impl TeamProps for SerialTeam {
         &mut self,
         binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         accum: &impl Accumulator,
-        get_element_bin_pair: &impl Fn(&mut [BinnedDataElement], ThreadMember),
+        get_datum_bin_pair: &impl Fn(&mut [BinnedDatum], ThreadMember),
     ) {
         // step 0: apply a barrier
         // (obviously this is a no-op for a serial implementation)
 
         // we should obviously pre-allocate this memory
-        let mut collect_pad = [BinnedDataElement::zeroed()];
+        let mut collect_pad = [BinnedDatum::zeroed()];
 
-        // step 1: each team member calls the get_element_bin_pair closure
-        get_element_bin_pair(&mut collect_pad, ThreadMember::new(0_u32));
+        // step 1: each team member calls the get_datum_bin_pair closure
+        get_datum_bin_pair(&mut collect_pad, ThreadMember::new(0_u32));
 
-        // step 2: gather the element-bin pairs into the memory of a single
+        // step 2: gather the datum-bin pairs into the memory of a single
         //         team member
         // (obviously this is a no-op for a serial implementation)
 
-        // step 3: the team member holding every element_bin_pair now uses
+        // step 3: the team member holding every datum-bin pair now uses
         //         them to update statepack
         let bin_index = collect_pad[0].bin_index;
         if binned_statepack.0.n_states() > bin_index {
@@ -137,7 +137,7 @@ impl Executor for SerialExecutor {
 
             // now we initialize statepack (this is inefficient!)
             for i in 0..tmp_statepack.n_states() {
-                accum.reset_accum_state(&mut tmp_statepack.get_state_mut(i));
+                accum.init_accum_state(&mut tmp_statepack.get_state_mut(i));
             }
 
             // if we had multiple teams this would theoretically be a for loop

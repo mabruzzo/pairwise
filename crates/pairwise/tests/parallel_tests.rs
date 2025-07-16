@@ -1,7 +1,7 @@
 use pairwise::{Mean, StatePackViewMut, get_output};
 
 use pairwise_nostd_internal::{
-    BinnedDataElement,
+    BinnedDatum,
     reduce_sample::{
         chunked::{
             QuadraticPolynomial, SampleDataStreamView, accumulator_mean_chunked, naive_mean_chunked,
@@ -177,7 +177,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                 match version {
                     StreamKind::Chunked => return Err(WrapperError::Unimplemented),
                     StreamKind::Unordered => {
-                        let mut collect_pad = vec![BinnedDataElement::zeroed(); 4];
+                        let mut collect_pad = vec![BinnedDatum::zeroed(); 4];
                         restructured1_mean_unordered(
                             stream,
                             f,
@@ -219,7 +219,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                 match version {
                     StreamKind::Chunked => return Err(WrapperError::Unimplemented),
                     StreamKind::Unordered => {
-                        let mut collect_pad = vec![BinnedDataElement::zeroed(); n_members_per_team];
+                        let mut collect_pad = vec![BinnedDatum::zeroed(); n_members_per_team];
                         restructured2_mean_unordered(
                             stream,
                             f,
