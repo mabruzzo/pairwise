@@ -2,6 +2,7 @@
 // see module-level documentation for chunked.rs for more detail
 
 use crate::accumulator::{Accumulator, Datum, Mean};
+use crate::misc::segment_idx_bounds;
 use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, TeamMemberProp};
 use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
 use crate::reduce_utils::{merge_full_statepacks, reset_full_statepack};
@@ -148,26 +149,6 @@ pub fn restructured1_mean_unordered(
     }
 }
 
-// introduce some tools to help with the implementation
-// -> the idea is to break a single index range into segments
-mod segment {
-    pub fn get_index_bounds(
-        n_indices: usize,
-        seg_index: usize,
-        n_segments: usize,
-    ) -> (usize, usize) {
-        let nominal_seglen = n_indices / n_segments;
-        // we can be smarter about how we divide the extra work
-        // -> right now, we stick it all with the last seg_index
-        let start = nominal_seglen * seg_index;
-        if (seg_index + 1) == n_segments {
-            (start, n_indices)
-        } else {
-            (start, start + nominal_seglen)
-        }
-    }
-}
-
 // consolidates the statepacks in such a way that scratch_statepacks[0]
 // contains the results of every other statepack
 //
@@ -216,7 +197,7 @@ pub fn restructured2_mean_unordered(
         reset_full_statepack(accum, local_binned_statepack);
 
         // determine DataStream indices to be processed in the current segment
-        let idx_bounds = segment::get_index_bounds(stream.len(), seg_index, n_segments);
+        let idx_bounds = segment_idx_bounds(stream.len(), seg_index, n_segments);
 
         // now do the work!
         restructured1_mean_unordered(
@@ -281,8 +262,7 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
         team_id: usize,
         team_info: &StandardTeamParam,
     ) -> (usize, usize) {
-        let stream_idx_bounds =
-            segment::get_index_bounds(self.stream.len(), team_id, team_info.n_teams);
+        let stream_idx_bounds = segment_idx_bounds(self.stream.len(), team_id, team_info.n_teams);
         let n_stream_indices = stream_idx_bounds.1 - stream_idx_bounds.0;
         let batch_size = team_info.n_members_per_team;
         let n_batches = n_stream_indices.div_ceil(batch_size);
@@ -300,8 +280,7 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
         team_id: usize,
         team_param: &StandardTeamParam,
     ) {
-        let stream_idx_bounds =
-            segment::get_index_bounds(self.stream.len(), team_id, team_param.n_teams);
+        let stream_idx_bounds = segment_idx_bounds(self.stream.len(), team_id, team_param.n_teams);
         let i_offset = stream_idx_bounds.0 + team_param.n_members_per_team * inner_index;
 
         let stream_len = self.stream.len();
