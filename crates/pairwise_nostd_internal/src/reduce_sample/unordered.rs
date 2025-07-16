@@ -32,10 +32,10 @@ pub fn accumulator_mean_unordered(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
     accum: &Mean,
-    statepack: &mut StatePackViewMut,
+    binned_statepack: &mut StatePackViewMut,
 ) {
-    assert_eq!(accum.accum_state_size(), statepack.state_size());
-    let n_bins = statepack.n_states();
+    assert_eq!(accum.accum_state_size(), binned_statepack.state_size());
+    let n_bins = binned_statepack.n_states();
 
     for i in 0..stream.len() {
         let bin_index = stream.bin_indices[i];
@@ -44,7 +44,7 @@ pub fn accumulator_mean_unordered(
             weight: stream.weights[i],
         };
         if bin_index < n_bins {
-            accum.consume(&mut statepack.get_state_mut(bin_index), &datum);
+            accum.consume(&mut binned_statepack.get_state_mut(bin_index), &datum);
         }
     }
 }
@@ -97,14 +97,14 @@ pub fn restructured1_mean_unordered(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
     accum: &Mean,
-    statepack: &mut StatePackViewMut,
+    binned_statepack: &mut StatePackViewMut,
     collect_pad: &mut [BinnedDatum],
     start_stop_idx: Option<(usize, usize)>,
 ) {
     let batch_size = collect_pad.len();
     assert!(batch_size > 0);
-    assert_eq!(accum.accum_state_size(), statepack.state_size());
-    let n_bins = statepack.n_states();
+    assert_eq!(accum.accum_state_size(), binned_statepack.state_size());
+    let n_bins = binned_statepack.n_states();
 
     let (i_start, i_stop) = start_stop_idx.unwrap_or((0, stream.len()));
     assert!(i_stop >= i_start); // when they are equal, we do no work
@@ -141,7 +141,7 @@ pub fn restructured1_mean_unordered(
             let datum = &e.datum;
 
             if bin_index < n_bins {
-                accum.consume(&mut statepack.get_state_mut(bin_index), datum);
+                accum.consume(&mut binned_statepack.get_state_mut(bin_index), datum);
             }
         }
     }
@@ -186,22 +186,22 @@ fn consolidate_scratch_statepacks(accum: &Mean, scratch_statepacks: &mut [StateP
 //
 // Essentially, the strategy is to cut up the index-range into segment.
 // - we accumulate the contributions of each segment in a separate temporary
-//   statepack (we use `restructured1_mean_unordered` to actually gather these
+//   binned_statepack (we use `restructured1_mean_unordered` to actually gather these
 //   contributions)
 // - at the very end, we gather up all the contributions and use them to update
-//   the output statepack
+//   the output binned_statepack
 //
 // scratch_statepack_storage is provided to simulate the fact that each thread
 pub fn restructured2_mean_unordered(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
     accum: &Mean,
-    statepack: &mut StatePackViewMut,
-    scratch_statepacks: &mut [StatePackViewMut],
+    binned_statepack: &mut StatePackViewMut,
+    scratch_binned_statepacks: &mut [StatePackViewMut],
     collect_pad: &mut [BinnedDatum],
 ) {
-    // a scratch_statepack has been provided for every segment
-    let n_segments = scratch_statepacks.len();
+    // a scratch_binned_statepack has been provided for every segment
+    let n_segments = scratch_binned_statepacks.len();
     assert!(n_segments > 0);
 
     // each pass through this loop considers a separate index-segment.
@@ -211,8 +211,8 @@ pub fn restructured2_mean_unordered(
     //    need to allocate its own collect_pad
     #[allow(clippy::needless_range_loop)]
     for seg_index in 0..n_segments {
-        let local_statepack = &mut scratch_statepacks[seg_index];
-        reset_full_statepack(accum, local_statepack);
+        let local_binned_statepack = &mut scratch_binned_statepacks[seg_index];
+        reset_full_statepack(accum, local_binned_statepack);
 
         // determine DataStream indices to be processed in the current segment
         let idx_bounds = segment::get_index_bounds(stream.len(), seg_index, n_segments);
@@ -222,18 +222,22 @@ pub fn restructured2_mean_unordered(
             stream,
             f,
             accum,
-            local_statepack,
+            local_binned_statepack,
             collect_pad,
             Some(idx_bounds),
         );
     }
 
     // after all the above loop is done, let's merge together our results such
-    // that scratch_statepacks[0] holds all the contributions
-    consolidate_scratch_statepacks(accum, scratch_statepacks);
+    // that scratch_binned_statepacks[0] holds all the contributions
+    consolidate_scratch_statepacks(accum, scratch_binned_statepacks);
 
-    // finally add the contribution to statepack
-    merge_full_statepacks(accum, statepack, scratch_statepacks.first().unwrap());
+    // finally add the contribution to binned_statepack
+    merge_full_statepacks(
+        accum,
+        binned_statepack,
+        scratch_binned_statepacks.first().unwrap(),
+    );
 }
 
 pub struct MeanUnorderedReduction<'a> {
