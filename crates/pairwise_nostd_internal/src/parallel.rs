@@ -513,12 +513,12 @@ pub trait ReductionSpec {
     ///   for each vector lane. Each entry is expected to be filled with
     ///   contributions during a single call to this function.
     #[allow(unused)] // <- suppresses unused variable warnings
-    fn compute_team_contrib_then_update(
+    fn compute_team_contrib_then_update<T: TeamMemberProp>(
         &self,
         accum_state_buf: &mut StatePackViewMut,
         outer_index: usize,
         inner_index: usize,
-        member_prop: &impl TeamMemberProp,
+        member_prop: &T,
         team_param: &StandardTeamParam,
     ) {
         // this **MUST** be overwritten when NESTED_REDUCE is true

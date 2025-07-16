@@ -4,8 +4,9 @@ use pairwise_nostd_internal::{
     BinnedDatum,
     reduce_sample::{
         chunked::{
-            QuadraticPolynomial, SampleDataStreamView, accumulator_mean_chunked,
-            naive_mean_chunked, restructured1_mean_chunked, restructured2_mean_chunked,
+            MeanChunkedReduction, QuadraticPolynomial, SampleDataStreamView,
+            accumulator_mean_chunked, naive_mean_chunked, restructured1_mean_chunked,
+            restructured2_mean_chunked,
         },
         unordered::{
             MeanUnorderedReduction, accumulator_mean_unordered, naive_mean_unordered,
@@ -98,8 +99,9 @@ enum StreamKind {
 
 #[derive(Debug)]
 enum WrapperError {
-    Unimplemented,
     Failure,
+    #[allow(dead_code)]
+    Unimplemented,
 }
 
 // in this case, we largely accept statepack just for the sake of maintaining
@@ -282,37 +284,43 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
     out.insert(
         String::from("reduction"),
         Box::new(
-            move |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
+            move |stream: &SampleDataStreamView,
+                  version,
+                  binned_statepack: &mut StatePackViewMut| {
                 let accum = Mean;
-                reset_full_statepack(&accum, statepack);
-                let n_bins = statepack.n_states();
-                match version {
-                    StreamKind::Chunked => return Err(WrapperError::Unimplemented),
+                reset_full_statepack(&accum, binned_statepack);
+                let n_bins = binned_statepack.n_states();
+                let n_members_per_team = NonZeroU32::new(1u32).unwrap();
+                let n_teams = NonZeroU32::new(1u32).unwrap();
+                let mut executor = SerialExecutor;
+                let result = match version {
+                    StreamKind::Chunked => {
+                        let reduce_spec =
+                            MeanChunkedReduction::new(stream.clone(), f, accum, n_bins);
+                        executor.drive_reduce(
+                            binned_statepack,
+                            &reduce_spec,
+                            n_members_per_team,
+                            n_teams,
+                        )
+                    }
                     StreamKind::Unordered => {
                         let reduce_spec =
                             MeanUnorderedReduction::new(stream.clone(), f, accum, n_bins);
-                        let n_members_per_team = NonZeroU32::new(1u32).unwrap();
-                        let n_teams = NonZeroU32::new(1u32).unwrap();
-                        let mut executor = SerialExecutor;
-                        executor
-                            .drive_reduce(statepack, &reduce_spec, n_members_per_team, n_teams)
-                            .unwrap();
-
-                        /*
-                        let mut collect_pad = vec![BinnedDatum::zeroed(); n_members_per_team];
-                        restructured2_mean_unordered(
-                            stream,
-                            f,
-                            &accum,
-                            statepack,
-                            &mut scratch_statepacks,
-                            &mut collect_pad,
-                        );
-                        */
+                        executor.drive_reduce(
+                            binned_statepack,
+                            &reduce_spec,
+                            n_members_per_team,
+                            n_teams,
+                        )
                     }
+                };
+                if result.is_ok() {
+                    let out = get_output(&accum, binned_statepack);
+                    Ok(out)
+                } else {
+                    Err(WrapperError::Failure)
                 }
-                let out = get_output(&accum, statepack);
-                Ok(out)
             },
         ),
     );

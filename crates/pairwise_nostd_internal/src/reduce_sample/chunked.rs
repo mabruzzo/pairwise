@@ -26,7 +26,7 @@
 
 use crate::accumulator::{Accumulator, Datum, Mean};
 use crate::misc::segment_idx_bounds;
-//use crate::parallel::{BinnedDatum, MemberId, ReductionSpec, StandardTeamParam};
+use crate::parallel::{ReductionSpec, StandardTeamParam, TeamMemberProp};
 use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
     serial_merge_accum_states,
@@ -259,7 +259,7 @@ pub fn restructured1_mean_chunked(
             //   - this would involve some refactoring and statically encoding
             //     some assumptions about the alignment of data storage
             // - note: this change would only involve modifying implementation,
-            //   we wouldn't actually alter the implementation
+            //   we wouldn't actually alter the algorithm
             for offset in 0..n_tmp_accum_states {
                 let mut tmp_accum_state = tmp_accum_states.get_state_mut(offset);
                 let i_itr =
@@ -348,4 +348,125 @@ pub fn restructured2_mean_chunked(
         binned_statepack,
         scratch_binned_statepacks.first().unwrap(),
     );
+}
+
+pub struct MeanChunkedReduction<'a> {
+    stream: SampleDataStreamView<'a>,
+    stream_chunk_lens: &'a [usize],
+    f: QuadraticPolynomial,
+    accum: Mean,
+    n_bins: usize,
+}
+
+impl<'a> MeanChunkedReduction<'a> {
+    pub fn new(
+        stream: SampleDataStreamView<'a>,
+        f: QuadraticPolynomial,
+        accum: Mean,
+        n_bins: usize,
+    ) -> Self {
+        let Some(chunk_lens) = stream.chunk_lens else {
+            panic!("the data stream wasn't chunked!")
+        };
+        Self {
+            stream,
+            stream_chunk_lens: chunk_lens,
+            f,
+            accum,
+            n_bins,
+        }
+    }
+}
+
+impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
+    type AccumulatorType = Mean;
+
+    fn get_accum(&self) -> &Self::AccumulatorType {
+        &self.accum
+    }
+
+    fn n_bins(&self) -> usize {
+        self.n_bins
+    }
+
+    fn inner_team_loop_bounds(
+        &self,
+        _outer_index: usize,
+        team_id: usize,
+        team_info: &StandardTeamParam,
+    ) -> (usize, usize) {
+        segment_idx_bounds(self.stream_chunk_lens.len(), team_id, team_info.n_teams)
+    }
+
+    const NESTED_REDUCE: bool = true;
+
+    fn infer_bin_index(
+        &self,
+        _outer_index: usize,
+        inner_index: usize,
+        _team_info: &StandardTeamParam,
+    ) -> Option<usize> {
+        let chunk_index = inner_index;
+        if let Ok(stream_index) = self.stream.first_index_of_chunk(chunk_index) {
+            let bin_index = self.stream.bin_indices[stream_index];
+            if bin_index < self.n_bins {
+                Some(bin_index)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    fn compute_team_contrib_then_update<T: TeamMemberProp>(
+        &self,
+        accum_state_buf: &mut StatePackViewMut,
+        _outer_index: usize,
+        inner_index: usize,
+        member_prop: &T,
+        team_param: &StandardTeamParam,
+    ) {
+        let chunk_index = inner_index;
+        let i_global = self.stream.first_index_of_chunk(chunk_index).unwrap();
+        let chunk_len = self.stream_chunk_lens[chunk_index];
+
+        let do_work = |tmp_accum_state: &mut AccumStateViewMut, member_id: usize| {
+            let i_itr =
+                ((i_global + member_id)..(i_global + chunk_len)).step_by(team_param.n_teams);
+            for i in i_itr {
+                self.accum.consume(
+                    tmp_accum_state,
+                    &Datum {
+                        value: self.f.call(self.stream.x_array[i]),
+                        weight: self.stream.weights[i],
+                    },
+                );
+            }
+        };
+
+        if T::IS_VECTOR_PROCESSOR {
+            // to achieve auto-vectorization:
+            // - we'd probably need to massage the way this loop is implemented
+            //   so that we are updating the states of all tmp_accum_states in
+            //   a single operation.
+            //   - the easiest way to do this probably involves modifying
+            //     things so that an tmp_accum_state is implemented in terms
+            //     of something like a glam::DVec type and so that the accum
+            //     methods can operate on glam::DVec objects
+            //   - this would involve some refactoring and statically encoding
+            //     some assumptions about the alignment of data storage
+            // - note: this change would only involve modifying implementation,
+            //   we wouldn't actually alter the algorithm
+            assert_eq!(accum_state_buf.n_states(), team_param.n_teams);
+            for offset in 0..team_param.n_teams {
+                do_work(&mut accum_state_buf.get_state_mut(offset), offset);
+            }
+        } else {
+            do_work(
+                &mut accum_state_buf.get_state_mut(0),
+                member_prop.get_id().try_into().unwrap(),
+            );
+        }
+    }
 }
