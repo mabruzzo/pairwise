@@ -91,8 +91,6 @@ pub fn assert_consistent_results(
             );
         }
     }
-
-    // now move onto the actual comparison
 }
 
 // helper function that sets up the statepack, which holds one accum_state
