@@ -12,7 +12,7 @@ authors = ["Matthew W. Abruzzo", "Adam J. Wheeler"]
 #rust-version = "1.86"
 
 [workspace]
-# an empty workspace is neccessary to keep Cargo from getting confused!
+# an empty workspace is necessary to keep Cargo from getting confused!
 
 #[lib]
 #crate-type = ["cdylib", "rlib"]

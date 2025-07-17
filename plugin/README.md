@@ -13,4 +13,4 @@ Be aware that in addition to requiring LLVM-7, installing this stuff also
 requires a clang-compiler. These are used for totally distinct versions
 - LLVM-7 is used in the codegeneration process
 - the clang-compiler is used to generate bindings (via bindgen) for the CPU
-  functions for launching kernels, managing memeory, etc
+  functions for launching kernels, managing memory, etc
