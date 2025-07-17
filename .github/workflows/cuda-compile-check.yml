@@ -1,0 +1,37 @@
+name: cuda-compile-check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, cuda]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  Build:
+    name: Compilation-Check for ${{ matrix.container.name }}
+    runs-on: ubuntu-latest  # Choose OS/Runner
+    container:
+      image: ${{matrix.container.link}}
+    strategy:
+      matrix:
+        container:
+        - name: Ubuntu22 cuda12
+          link: ghcr.io/rust-gpu/rust-cuda-ubuntu22-cuda12:sha-62e4ac0
+        - name: Ubuntu24 cuda12
+          link: ghcr.io/rust-gpu/rust-cuda-ubuntu24-cuda12:sha-62e4ac0
+    steps:
+    - uses: actions/checkout@v4
+    - name: Verify CUDA
+      run: nvcc --version
+    - name: Verify Rust Installation
+      working-directory: ./plugin/pairwise_cuda
+      run: rustup show
+    - run: cargo fmt --all -- --check
+      working-directory: ./plugin/pairwise_cuda
+    - run: cargo clippy
+      working-directory: ./plugin/pairwise_cuda
+    - run: cargo build --verbose
+      working-directory: ./plugin/pairwise_cuda
