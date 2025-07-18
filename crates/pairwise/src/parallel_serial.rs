@@ -2,7 +2,8 @@
 
 use pairwise_nostd_internal::{
     Accumulator, BinnedDatum, Executor, ReductionSpec, StandardTeamParam, StatePackViewMut,
-    TeamProps, ThreadMember, fill_single_team_statepack,
+    TeamProps, ThreadMember, fill_single_team_statepack, reset_full_statepack,
+    serial_merge_accum_states,
 };
 use std::num::NonZeroU32;
 
@@ -34,19 +35,14 @@ impl TeamProps for SerialTeam {
     ) {
         let n_members = 1;
         let accum_state_size = accum.accum_state_size();
-        // we should really pre-allocate the memory in a constructor
 
-        // create a temporary StatePack that holds a temporary accumulator
-        // state so that can be filled by each team member (we should really
-        // pre-allocate this).
+        // create a StatePack that holds a separate, temporary accumulator
+        // state for each team member (should really pre-allocate this).
         let mut tmp_state_buffer = vec![0.0; n_members * accum_state_size];
         let mut tmp_statepack =
             StatePackViewMut::from_slice(n_members, accum_state_size, &mut tmp_state_buffer);
-
         // reset the state in the statepack
-        for i in 0..n_members {
-            accum.init_accum_state(&mut tmp_statepack.get_state_mut(i));
-        }
+        reset_full_statepack(accum, &mut tmp_statepack);
 
         // step 0: apply a barrier
         // (obviously this is a no-op for a serial implementation)
@@ -55,11 +51,9 @@ impl TeamProps for SerialTeam {
         get_member_contrib(&mut tmp_statepack, ThreadMember::new(0_u32));
 
         // step 2: perform a local reduction among all the team members
-        if n_members == 1 {
-            // no-op since tmp_statepack.get_state(0) already holds all
-            // contributions
-        } else {
-            panic!("not currently supported in a serial implementation")
+        // (ensure that tmp_statepack.get_state(0) holds all contributions)
+        if n_members > 1 {
+            serial_merge_accum_states(accum, &mut tmp_statepack);
         }
 
         // step 3: have the member holding the total contribution to update the

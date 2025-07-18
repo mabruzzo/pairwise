@@ -17,5 +17,5 @@ pub use parallel::{
     BinnedDatum, Executor, ReductionSpec, StandardTeamParam, TeamMemberProp, TeamProps,
     ThreadMember, fill_single_team_statepack,
 };
-pub use reduce_utils::reset_full_statepack;
+pub use reduce_utils::{reset_full_statepack, serial_merge_accum_states};
 pub use state::{AccumStateView, AccumStateViewMut, StatePackViewMut};
