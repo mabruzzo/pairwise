@@ -419,7 +419,7 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
         }
     }
 
-    fn compute_team_contrib_then_update<T: TeamMemberProp>(
+    fn compute_team_contrib<T: TeamMemberProp>(
         &self,
         accum_state_buf: &mut StatePackViewMut,
         _outer_index: usize,

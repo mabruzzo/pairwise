@@ -513,7 +513,7 @@ pub trait ReductionSpec {
     ///   for each vector lane. Each entry is expected to be filled with
     ///   contributions during a single call to this function.
     #[allow(unused)] // <- suppresses unused variable warnings
-    fn compute_team_contrib_then_update<T: TeamMemberProp>(
+    fn compute_team_contrib<T: TeamMemberProp>(
         &self,
         accum_state_buf: &mut StatePackViewMut,
         outer_index: usize,
@@ -656,7 +656,7 @@ pub fn fill_single_team_statepack<T, R>(
                         &|tmp_accum_states: &mut StatePackViewMut,
                           member_prop: T::MemberPropType| {
                             // we should make sure that reset_accum_state is called!!!!
-                            reduce_spec.compute_team_contrib_then_update(
+                            reduce_spec.compute_team_contrib(
                                 tmp_accum_states,
                                 outer_idx,
                                 inner_idx,
