@@ -1,11 +1,35 @@
-use cust::module;
-use cust::prelude::*;
-use cust::stream;
+use cust::{module, prelude::*, stream, util::SliceExt};
+
 use std::error::Error;
 
+static PTX: &str = include_str!(concat!(env!("OUT_DIR"), "/kernels.ptx"));
+
+/// This caches all of the information needed to execute a cuda kernel
+/// (this may not be an optimal abstraction)
+pub struct ExecContext {
+    stream: stream::Stream,
+    module: module::Module,
+    // We don't need the context for anything but it must be kept alive.
+    _context: Context,
+}
+
+impl ExecContext {
+    pub fn new() -> Result<ExecContext, Box<dyn Error>> {
+        let context = cust::quick_init()?;
+
+        Ok(ExecContext {
+            // make a CUDA stream to issue calls to
+            stream: Stream::new(StreamFlags::NON_BLOCKING, None)?,
+            // Make the CUDA module (a module holds the GPU code for the
+            // kernels) they can be made from PTX code, cubins, or fatbins.
+            module: Module::from_ptx(PTX, &[])?,
+            _context: context,
+        })
+    }
+}
+
 pub fn exec_vecadd(
-    stream: &stream::Stream,
-    module: &module::Module,
+    exec_context: &ExecContext,
     lhs: &[f32],
     rhs: &[f32],
 ) -> Result<Vec<f32>, Box<dyn Error>> {
@@ -23,7 +47,7 @@ pub fn exec_vecadd(
     let out_buf = out.as_slice().as_dbuf()?;
 
     // retrieve the `vecadd` kernel from the module so we can calculate the right launch config.
-    let vecadd = module.get_function("vecadd")?;
+    let vecadd = exec_context.module.get_function("vecadd")?;
 
     // use the CUDA occupancy API to find an optimal launch configuration for the grid and block size.
     // This will try to maximize how much of the GPU is used by finding the best launch configuration for the
@@ -34,8 +58,7 @@ pub fn exec_vecadd(
 
     println!("using {grid_size} blocks and {block_size} threads per block");
 
-    // Actually launch the GPU kernel. This will queue up the launch on the stream, it will
-    // not block the thread until the kernel is finished.
+    let stream = &exec_context.stream;
     unsafe {
         launch!(
             // slices are passed as two parameters, the pointer and the length.
