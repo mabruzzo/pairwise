@@ -18,7 +18,7 @@ authors = ["Matthew W. Abruzzo", "Adam J. Wheeler"]
 #crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cust = {git = "https://github.com/Rust-GPU/Rust-CUDA", revision = "3b646e6891dbe8dc1821d400f17d97716e931604"}
+cust = { git = "https://github.com/Rust-GPU/Rust-CUDA", rev = "3b646e6891dbe8dc1821d400f17d97716e931604" }
 
 [build-dependencies]
-cuda_builder = {git = "https://github.com/Rust-GPU/Rust-CUDA", revision = "3b646e6891dbe8dc1821d400f17d97716e931604"}
+cuda_builder = { git = "https://github.com/Rust-GPU/Rust-CUDA", rev = "3b646e6891dbe8dc1821d400f17d97716e931604" }

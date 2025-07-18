@@ -7,7 +7,7 @@ edition = "2024"
 # an empty workspace is needed to avoid confusion!
 
 [dependencies]
-cuda_std = {git = "https://github.com/Rust-GPU/Rust-CUDA", revision = "3b646e6891dbe8dc1821d400f17d97716e931604"}
+cuda_std = { git = "https://github.com/Rust-GPU/Rust-CUDA", rev = "3b646e6891dbe8dc1821d400f17d97716e931604" }
 
 [lib]
 crate-type = ["cdylib", "rlib"]

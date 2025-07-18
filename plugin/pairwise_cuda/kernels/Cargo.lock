@@ -58,7 +58,7 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 [[package]]
 name = "cuda_std"
 version = "0.2.2"
-source = "git+https://github.com/Rust-GPU/Rust-CUDA#3b646e6891dbe8dc1821d400f17d97716e931604"
+source = "git+https://github.com/Rust-GPU/Rust-CUDA?rev=3b646e6891dbe8dc1821d400f17d97716e931604#3b646e6891dbe8dc1821d400f17d97716e931604"
 dependencies = [
  "bitflags",
  "cuda_std_macros",
@@ -71,7 +71,7 @@ dependencies = [
 [[package]]
 name = "cuda_std_macros"
 version = "0.2.0"
-source = "git+https://github.com/Rust-GPU/Rust-CUDA#3b646e6891dbe8dc1821d400f17d97716e931604"
+source = "git+https://github.com/Rust-GPU/Rust-CUDA?rev=3b646e6891dbe8dc1821d400f17d97716e931604#3b646e6891dbe8dc1821d400f17d97716e931604"
 dependencies = [
  "proc-macro2",
  "quote",
