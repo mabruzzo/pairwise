@@ -14,8 +14,8 @@ authors = ["Matthew W. Abruzzo", "Adam J. Wheeler"]
 [workspace]
 # an empty workspace is necessary to keep Cargo from getting confused!
 
-#[lib]
-#crate-type = ["cdylib", "rlib"]
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 cust = { git = "https://github.com/Rust-GPU/Rust-CUDA", rev = "3b646e6891dbe8dc1821d400f17d97716e931604" }
