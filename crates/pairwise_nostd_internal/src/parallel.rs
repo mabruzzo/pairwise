@@ -10,8 +10,11 @@
 //! or "units of work":
 //! - we can distributed the units of work among 1 or more teams
 //! - a team is composed of 1 or more members. The members of a team work
-//!   together in a tightly-coupled, synchronous manner to collaboratively
-//!   complete a single task at a time.
+//!   together in a tightly-coupled, potentially synchronous manner to
+//!   collaboratively complete a single task at a time.
+//! - members of a multi-member teams may map to separate threads (fast on
+//!   GPUs) or (on CPUs) separate lanes involved in SIMD operations of a single
+//!   thread, or simply to serial execution on a single thread.
 //!
 //! This abstraction nicely maps to hardware:
 //! - on GPUs, you can imagine that each team-member corresponds to a separate
@@ -206,90 +209,43 @@ pub trait TeamProps {
     );
 }
 
-/// Used for specifying the details of a binned reduction.
-///
-/// <div class="warning">
-///
-/// **IMPORTANT**: I think this trait does too much and should probably be
-/// broken up. I go into more detail at the very end of the docstring
-///
-/// </div>
+/// Used for specifying the details of a binned reduction, providing an
+/// interface to for external code to carry it out (e.g.
+/// [`fill_single_team_statepack`]), potentially in parallel.
 ///
 /// At a high-level, types that implement this trait generally:
 /// 1. encode details about a binned reduction
 /// 2. have access to the data-source used in the binned reduction.
 /// 3. know how to best decompose the overall binned reduction into 1 or more
-///    smaller "units of work." We provide more detail momentarily (including a
-///    definition for a "unit of work").
+///    smaller "units of work."
 ///
-/// This trait essentially provides a standardized interface for external code
-/// to actually carry out the reduction. (e.g. [`fill_single_team_statepack`])
+/// TODO
+/// We provide more detail momentarily (including a definition for a "unit of work").
 ///
 /// # More detailed explanation
 ///
-/// As we talk through the properties of this trait, it may be useful to look
-/// at the implementation of [`fill_single_team_statepack`].
-///
 /// ## Broader Context
-/// Before we proceed, it's important to make sure we are on the same page
-/// about a few things.
+/// A _binned reduction_ is one where pairs are partitioned into bins (e.g. by
+/// distance), with separt `accum_state` for each. For example, when calculating
+/// the VSF, we partition pairs into distance bins. The collection of
+/// `accum_state`s for each bin is called a `statepack`.
 ///
-/// ### What a is a binned reduction
-/// Let's ensure that we are using consistent terminology to describe what
-/// happens in a binned reduction:
-/// - Types that implement this trait are implemented in terms of an
-///   [`Accumulator`] instances.
-/// - A simple reduction only involves 1 bin. In this scenario:
-///   - we track a single accumulator state (a single accumulator state is
-///     commonly called an `accum_state`)
-///   - to carry out the reduction, we simply generate every relevant datum
-///     (represented by [`Datum`]) from a data-source and use them to update
-///     the `accum_state`
-/// - This trait supports binned reductions. Consequently:
-///   - a separate `accum_state` is tracked for each bin. We refer to this
-///     collection of `accum_state`s as a `statepack`.
-///   - when we generate each datum from the data source, we also generate a
-///     bin index that specifies which `accum_state` will be updated that
-///     datum. We sometimes represent this pair of information with the
-///     [`BinnedDatum`] type.
+/// The work of a binned reduction consists of generating (datum, bin-index)
+/// pairs from the data source and using each to update the appropriate
+/// `accum_state`.
 ///
-/// ### How to we define a "unit of work?"
-/// As we've just said the overall work of a binned reduction consists of
-/// generating (datum, bin-index) pairs from the data source and using this
-/// information to update the appropriate `accum_state`.
+/// TODO Datum vs pair TODO mwa terminilogy: "unit of work" generating a unique
+/// subset of pairs
 ///
-/// When we decompose this process, each "unit of work" consists of generating
-/// a unique subsets of the (datum, bin-index) pairs and using them to update
-/// the appropriate `accum_state`s.
-///
-/// ### Parallelism Considerations
-/// It's also important to understand that this trait is usually used to
-/// parallelize operations using our "team." abstraction. The number of teams
-/// and the number of members per team are commonly encoded within instances
-/// of [`StandardTeamParam`].
-///
-/// Let's provide some basic intuition:
-/// - the simplest serial implementation of the algorithm is equivalent to
-///   having 1 team composed of a single member
-/// - if we totally ignore SIMD instructions for the moment, the most
-///   efficient CPU threading implementation will generally have `n` threads
-///   act operate as `n` single-member teams.
-/// - members of a multi-member teams may map to separate threads (fast on
-///   GPUs) or (on CPUs) separate lanes involved in SIMD operations of a single
-///   thread
-/// - we provide significantly more detail in other parts of this module
-///
-/// In more detail:
 /// - each team is assigned multiple independent "units of work"
 /// - For simplicity, it's convenient to think of separate teams as separate,
 ///   completely independent entities. We can combine the results of each
-///   team at the very end of a reduction after every team is done.
+///   team at the very end of a reduction after every team is done. TODO I don't get it
 ///
-/// **IMPORTANTLY:** all members of a given team work together on a
-/// single "unit of work" at a time. They do this work in a synchronized,
-/// lock-step manner. (So if a team is assigned 2 "units of work," the work
-/// together until the first unit is completely done before they all move onto
-/// the next unit). This is an important point that we will repeat.
+/// All members of a given team work together on a single "unit of work" at a
+/// time. They do this work in a synchronized, lock-step manner. If a team is
+/// assigned 2 "units of work," it's members work together until the first unit
+/// is completely done before they all move onto the next unit.
 ///
 /// ## Expressing the binned reduction details
 ///
@@ -323,11 +279,15 @@ pub trait TeamProps {
 /// to actually complete the work associated with this pair. We'll discuss
 /// those methods shortly.
 ///
-/// Developer Note: I really want to eliminate the outer loop and delete
+/// # Developer Notes
+/// I really want to eliminate the outer loop and delete
 /// [`outer_team_loop_bounds`]. I also want to replace
 /// [`inner_team_loop_bounds`] with a function that returns an iterator. The
 /// docstrings for both functions highlight considerations for doing those
 /// things.
+///
+/// The number of teams and the number of members per team are commonly encoded
+/// within instances of [`StandardTeamParam`].
 ///
 /// ## Completing a "Unit of Work"
 ///
