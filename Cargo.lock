@@ -21,6 +21,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
 
 [[package]]
+name = "cust_core"
+version = "0.1.1"
+source = "git+https://github.com/Rust-GPU/Rust-CUDA?rev=3b646e6891dbe8dc1821d400f17d97716e931604#3b646e6891dbe8dc1821d400f17d97716e931604"
+dependencies = [
+ "cust_derive",
+]
+
+[[package]]
+name = "cust_derive"
+version = "0.2.0"
+source = "git+https://github.com/Rust-GPU/Rust-CUDA?rev=3b646e6891dbe8dc1821d400f17d97716e931604#3b646e6891dbe8dc1821d400f17d97716e931604"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -104,6 +122,7 @@ dependencies = [
 name = "pairwise_nostd_internal"
 version = "0.1.0"
 dependencies = [
+ "cust_core",
  "ndarray",
 ]
 

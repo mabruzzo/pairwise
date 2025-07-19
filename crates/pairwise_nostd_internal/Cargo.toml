@@ -8,3 +8,7 @@ rust-version = "1.86"
 [dependencies]
 # we disable default-features since this crate is no-std
 ndarray = { version = "0.16", default-features = false }
+cust_core = { git = "https://github.com/Rust-GPU/Rust-CUDA", rev = "3b646e6891dbe8dc1821d400f17d97716e931604", optional = true }
+
+[features]
+cuda = ["dep:cust_core"]

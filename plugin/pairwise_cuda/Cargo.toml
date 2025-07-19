@@ -19,6 +19,9 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 cust = { git = "https://github.com/Rust-GPU/Rust-CUDA", rev = "3b646e6891dbe8dc1821d400f17d97716e931604" }
+pairwise_nostd_internal = { path = "../../crates/pairwise_nostd_internal", features = [
+    "cuda",
+] }
 
 [build-dependencies]
 cuda_builder = { git = "https://github.com/Rust-GPU/Rust-CUDA", rev = "3b646e6891dbe8dc1821d400f17d97716e931604" }
