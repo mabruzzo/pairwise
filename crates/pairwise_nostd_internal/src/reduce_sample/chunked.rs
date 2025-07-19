@@ -34,6 +34,9 @@ use crate::reduce_utils::{
 };
 use crate::state::{AccumStateViewMut, StatePackViewMut};
 
+#[cfg(feature = "cuda")]
+use cust_core::DeviceCopy;
+
 // Version 0: our simple naive implementation
 pub fn naive_mean_chunked(
     stream: &SampleDataStreamView,
