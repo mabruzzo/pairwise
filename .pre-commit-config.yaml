@@ -28,3 +28,24 @@ repos:
   hooks:
   - id: pretty-format-yaml
     args: [--autofix, --indent, '2']
+
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.5.0
+  hooks:
+  - id: ruff-format
+    types_or: [python, pyi, jupyter]
+  - id: ruff
+    types_or: [python, pyi, jupyter]
+    args: [--fix, --show-fixes]
+
+- repo: local
+  hooks:
+  - id: check_rust_cuda_version
+    name: Check consistency of Rust-CUDA packages (if pulled from git)
+    entry: tools/check_rust_cuda_version.py
+    language: python
+    args: [--root-path=.]  # pre-commit is run from the root. Doing this makes errors pretty
+    pass_filenames: false
+    types: [toml]
+    additional_dependencies: [tomli] # used by python < 3.11
+    require_serial: true
