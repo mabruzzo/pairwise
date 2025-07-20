@@ -1,6 +1,7 @@
 #![no_std]
 mod accumulator;
 mod apply_points;
+mod device_replicate_view;
 mod misc;
 mod parallel;
 mod reduce_utils;
