@@ -4,7 +4,7 @@
 use crate::accumulator::{Accumulator, Datum, Mean};
 use crate::misc::segment_idx_bounds;
 use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, TeamMemberProp};
-use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
+use crate::reduce_sample::common::{QuadraticPolynomial, SampleDataStreamView};
 use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
 };

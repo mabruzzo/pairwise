@@ -4,10 +4,10 @@ use pairwise_nostd_internal::{
     BinnedDatum,
     reduce_sample::{
         chunked::{
-            MeanChunkedReduction, QuadraticPolynomial, SampleDataStreamView,
-            accumulator_mean_chunked, naive_mean_chunked, restructured1_mean_chunked,
-            restructured2_mean_chunked,
+            MeanChunkedReduction, accumulator_mean_chunked, naive_mean_chunked,
+            restructured1_mean_chunked, restructured2_mean_chunked,
         },
+        common::{QuadraticPolynomial, SampleDataStreamView},
         unordered::{
             MeanUnorderedReduction, accumulator_mean_unordered, naive_mean_unordered,
             restructured1_mean_unordered, restructured2_mean_unordered,
