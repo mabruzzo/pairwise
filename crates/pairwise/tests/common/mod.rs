@@ -5,7 +5,7 @@
 // https://doc.rust-lang.org/book/ch11-03-test-organization.html#submodules-in-integration-tests
 
 use ndarray::Array2;
-use pairwise::{Accumulator, StatePackViewMut};
+use pairwise::{Reducer, StatePackViewMut};
 use std::collections::HashMap;
 
 pub type BinnedStatMap = HashMap<&'static str, Vec<f64>>;
@@ -95,12 +95,12 @@ pub fn assert_consistent_results(
 
 // helper function that sets up the statepack, which holds one accum_state
 // per spatial bin
-pub fn prepare_statepack(n_spatial_bins: usize, accum: &impl Accumulator) -> Array2<f64> {
+pub fn prepare_statepack(n_spatial_bins: usize, reducer: &impl Reducer) -> Array2<f64> {
     assert!(n_spatial_bins > 0);
-    let mut statepack = Array2::<f64>::zeros((accum.accum_state_size(), n_spatial_bins));
+    let mut statepack = Array2::<f64>::zeros((reducer.accum_state_size(), n_spatial_bins));
     let mut statepack_view = StatePackViewMut::from_array_view(statepack.view_mut());
     for i in 0..n_spatial_bins {
-        accum.init_accum_state(&mut statepack_view.get_state_mut(i));
+        reducer.init_accum_state(&mut statepack_view.get_state_mut(i));
     }
     statepack
 }

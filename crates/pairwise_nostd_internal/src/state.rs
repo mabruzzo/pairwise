@@ -185,7 +185,7 @@ impl<'a> IndexMut<usize> for AccumStateViewMut<'a> {
     }
 }
 
-/// Represents a collection of Accumulator States
+/// Represents a collection of accumulator States
 ///
 /// # Note
 /// There is some benefit to defining this even though it wraps ArrayViewMut2

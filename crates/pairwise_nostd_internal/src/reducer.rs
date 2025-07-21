@@ -17,7 +17,7 @@
 //! For simplicity, let's assume `𝒚ᵢ` is a scalar `yᵢ` (it may be useful to
 //! come back to this for longitudinal statistics and tensors).
 //!
-//! In practice, we use [`DataElement`] to package together `yᵢ` & `wᵢ`
+//! In practice, we use [`Datum`] to package together `yᵢ` & `wᵢ`
 //!
 //! If a statistic just summed the values of `wᵢ` and totally ignored `yᵢ`,
 //! that would be equivalent to a normal histogram. Other statistics that we
@@ -35,7 +35,7 @@
 //! - We refer to the current state of a single accumulator as the
 //!   `accum_state`.
 //! - The accumulation logic is encapsulated by the functions implemented by
-//!   the `Accumulator` trait. At the time of writing, an Accumulator
+//!   the `Reducer` trait. At the time of writing, a Reducer
 //!   implements logic for modifying a single `accum_state` at a time.
 //! - From the perspective of an accumulator, the `accum_state` is packaged
 //!   inside within the [`AccumStateView`] & [`AccumStateViewMut`] types (the
@@ -54,7 +54,7 @@
 use crate::state::{AccumStateView, AccumStateViewMut};
 use ndarray::ArrayViewMut1;
 
-/// Instances of this element are consumed by the Accumulator
+/// Instances of this element are consumed by the Reducer
 ///
 /// In the future, we might want to store vector components rather than the
 /// scalar (we can convert the vector components to a scalar as necessary
@@ -70,7 +70,7 @@ use ndarray::ArrayViewMut1;
 ///
 /// To support SIMD, we probably want to make this take a generic type (we'll
 /// need to define a trait for essential floating point operations) rather than
-/// hardcoding the struct members to floats and have the Accumulators operate
+/// hardcoding the struct members to floats and have the Reducers operate
 /// on these generic types. By doing this, we could pass in
 /// [`DVec2`](https://docs.rs/glam/latest/glam/f64/struct.DVec2.html) from the
 /// `glam` package or
@@ -81,7 +81,7 @@ use ndarray::ArrayViewMut1;
 /// support for doing this](https://doc.rust-lang.org/std/simd/struct.Simd.html#layout-1).
 ///
 /// # General Optimization Notes
-/// We probably want to ensure that the accumulator methods are inlined. If
+/// We probably want to ensure that the reducer methods are inlined. If
 /// they aren't inlined, then its conceivable that using a struct may
 /// introduce a performance penalty, especially if we start encoding
 /// (mathematical) vector components. In more detail, passing the values in
@@ -117,13 +117,25 @@ use ndarray::ArrayViewMut1;
 /// I think that there are significant advantages to improving the readability
 /// of the code and it would be relatively move away from using the struct
 /// representation later (it would be easier to do that before we start
-/// introducing more accumulators).
+/// introducing more Reducers).
+///
+/// I don't love that this defines copy, but it's important for examples
+#[derive(Clone, Copy)]
 pub struct Datum {
     pub value: f64,
     pub weight: f64,
 }
 
-/// describes the output components from a single Accumulator accum_state
+impl Datum {
+    pub fn zeroed() -> Self {
+        Datum {
+            value: 0.0,
+            weight: 0.0,
+        }
+    }
+}
+
+/// describes the output components from a single Reducer accum_state
 pub enum OutputDescr {
     MultiScalarComp(&'static [&'static str]),
     SingleVecComp { size: usize, name: &'static str },
@@ -139,39 +151,12 @@ impl OutputDescr {
     }
 }
 
-/// Accumulators generally operate on individual `accum_state`s.
+/// Reducers generally operate on individual `accum_state`s.
 ///
 /// The implementation is currently inefficient, but we will refactor and try
 /// to come up with better abstractions once we are done mapping out all the
 /// requirements.
-///
-/// # Note
-/// It might be elegant to:
-/// - introduce a separate, related trait, called `Consume` or `UpdateLeft`,
-///   which would look something like
-///   ```text
-///   pub trait UpdateLeft<Rhs> {
-///       fn update_left(accum_state: &mut ArrayViewMut1<f64>, right: Rhs);
-///   }
-///   ```
-/// - rename the current trait to something like `AccumMiscOps` and delete the
-///   `consume` and `merge` methods.
-/// - define the `Accumulator` trait as a super trait:
-///   ```text
-///   pub trait Accumulator:
-///       AccumMiscOps
-///       + UpdateLeft<&Self>
-///       + UpdateLeft<&DataElement>
-///   {}
-///   ```
-/// - thus for each Accumulator, we would be implementing `UpdateLeft<&Self>`
-///   (instead of `merge`) and `UpdateLeft<&DataElement>` (instead of
-///   `consume`).
-/// - The advantage to doing this is that `update_left` would be used for
-///   merges and consuming -- it's purely aesthetic. It may also be nice if we
-///   introduce the idea of partially digested data... (it probably isn't worth
-///   the effort)
-pub trait Accumulator {
+pub trait Reducer {
     /// the number of f64 elements needed to track the accumulator data
     fn accum_state_size(&self) -> usize;
 
@@ -189,7 +174,7 @@ pub trait Accumulator {
     /// organization of the storage used for accumulators.
     ///
     /// This design rationale makes slightly more sense in the context that
-    /// types implementing the [`Accumulator`] trait aren't themselves
+    /// types implementing the [`Reducer`] trait aren't themselves
     /// accumulators, but are instead objects that provide logic for working
     /// with accumulator-storage. Maybe a better abstraction will present
     /// itself?
@@ -215,6 +200,7 @@ pub trait Accumulator {
     fn output_descr(&self) -> OutputDescr;
 }
 
+#[derive(Clone, Copy)]
 pub struct Mean;
 
 impl Mean {
@@ -226,7 +212,7 @@ impl Mean {
     const OUTPUT_COMPONENTS: &'static [&'static str] = &["mean", "weight"];
 }
 
-impl Accumulator for Mean {
+impl Reducer for Mean {
     fn accum_state_size(&self) -> usize {
         2_usize
     }
