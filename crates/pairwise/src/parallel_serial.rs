@@ -16,7 +16,7 @@ impl TeamProps for SerialTeam {
     type SharedDataHandle<T> = DummyWrapper<T>;
     type MemberPropType = ThreadMember;
 
-    fn exec_if_root_member(
+    fn exec_once(
         &mut self,
         statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         f: &impl Fn(&mut StatePackViewMut),

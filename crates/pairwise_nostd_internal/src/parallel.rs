@@ -147,7 +147,7 @@ pub trait TeamProps {
     /// Has the root member of the team execute `f`, which modifies `statepack`
     ///
     /// The other team members do nothing during this function call.
-    fn exec_if_root_member(
+    fn exec_once(
         &mut self,
         statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         f: &impl Fn(&mut StatePackViewMut),
@@ -441,7 +441,7 @@ pub fn fill_single_team_statepack_batched<T>(
     let accum = reduce_spec.get_accum();
 
     // TODO: consider distributing work among team members
-    team.exec_if_root_member(binned_statepack, &|statepack: &mut StatePackViewMut| {
+    team.exec_once(binned_statepack, &|statepack: &mut StatePackViewMut| {
         reset_full_statepack(accum, statepack);
     });
 
@@ -493,7 +493,7 @@ pub fn fill_single_team_statepack_nested<T>(
     let accum = reduce_spec.get_accum();
 
     // TODO: consider distributing work among team members
-    team.exec_if_root_member(binned_statepack, &|statepack: &mut StatePackViewMut| {
+    team.exec_once(binned_statepack, &|statepack: &mut StatePackViewMut| {
         reset_full_statepack(accum, statepack);
     });
 
