@@ -1,15 +1,14 @@
-use pairwise::{Reducer, Executor, Mean, SerialExecutor, StatePackViewMut, get_output};
+use pairwise::{Executor, Mean, Reducer, SerialExecutor, StatePackViewMut, get_output};
 
 use pairwise_nostd_internal::{
     BinnedDatum,
     reduce_sample::{
         chunked::{
-            MeanChunkedReduction, QuadraticPolynomial, SampleDataStreamView,
-            accumulator_mean_chunked, naive_mean_chunked, restructured1_mean_chunked,
-            restructured2_mean_chunked,
+            MeanChunkedReduction, QuadraticPolynomial, SampleDataStreamView, naive_mean_chunked,
+            reducer_mean_chunked, restructured1_mean_chunked, restructured2_mean_chunked,
         },
         unordered::{
-            MeanUnorderedReduction, accumulator_mean_unordered, naive_mean_unordered,
+            MeanUnorderedReduction, naive_mean_unordered, reducer_mean_unordered,
             restructured1_mean_unordered, restructured2_mean_unordered,
         },
     },
@@ -157,15 +156,13 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
         String::from("accumulator"),
         Box::new(
             move |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
-                let accum = Mean;
-                reset_full_statepack(&accum, statepack);
+                let reducer = Mean;
+                reset_full_statepack(&reducer, statepack);
                 match version {
-                    StreamKind::Chunked => accumulator_mean_chunked(stream, f, &accum, statepack),
-                    StreamKind::Unordered => {
-                        accumulator_mean_unordered(stream, f, &accum, statepack)
-                    }
+                    StreamKind::Chunked => reducer_mean_chunked(stream, f, &reducer, statepack),
+                    StreamKind::Unordered => reducer_mean_unordered(stream, f, &reducer, statepack),
                 }
-                let out = get_output(&accum, statepack);
+                let out = get_output(&reducer, statepack);
                 Ok(out)
             },
         ),
@@ -180,21 +177,21 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                 // roughly approximates the case with
                 let n_members_per_team = 4;
 
-                let accum = Mean;
-                reset_full_statepack(&accum, binned_statepack);
+                let reducer = Mean;
+                reset_full_statepack(&reducer, binned_statepack);
                 match version {
                     StreamKind::Chunked => {
                         let mut tmp_buf =
                             vec![0.0; n_members_per_team * binned_statepack.total_size()];
                         let mut tmp_accum_states = StatePackViewMut::from_slice(
                             n_members_per_team,
-                            accum.accum_state_size(),
+                            reducer.accum_state_size(),
                             &mut tmp_buf,
                         );
                         restructured1_mean_chunked(
                             stream,
                             f,
-                            &accum,
+                            &reducer,
                             binned_statepack,
                             &mut tmp_accum_states,
                             None,
@@ -205,14 +202,14 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                         restructured1_mean_unordered(
                             stream,
                             f,
-                            &accum,
+                            &reducer,
                             binned_statepack,
                             &mut collect_pad,
                             None,
                         );
                     }
                 }
-                let out = get_output(&accum, binned_statepack);
+                let out = get_output(&reducer, binned_statepack);
                 Ok(out)
             },
         ),
@@ -224,8 +221,8 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
             move |stream: &SampleDataStreamView,
                   version,
                   binned_statepack: &mut StatePackViewMut| {
-                let accum = Mean;
-                reset_full_statepack(&accum, binned_statepack);
+                let reducer = Mean;
+                reset_full_statepack(&reducer, binned_statepack);
                 // we are going to break up the work in a way that is
                 // equivalent to having 3 thread teams with 8 members per team
                 let n_teams = 3;
@@ -250,13 +247,13 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                             vec![0.0; n_members_per_team * binned_statepack.total_size()];
                         let mut tmp_accum_states = StatePackViewMut::from_slice(
                             n_members_per_team,
-                            accum.accum_state_size(),
+                            reducer.accum_state_size(),
                             &mut tmp_buf,
                         );
                         restructured2_mean_chunked(
                             stream,
                             f,
-                            &accum,
+                            &reducer,
                             binned_statepack,
                             &mut scratch_binned_statepacks,
                             &mut tmp_accum_states,
@@ -267,14 +264,14 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                         restructured2_mean_unordered(
                             stream,
                             f,
-                            &accum,
+                            &reducer,
                             binned_statepack,
                             &mut scratch_binned_statepacks,
                             &mut collect_pad,
                         );
                     }
                 }
-                let out = get_output(&accum, binned_statepack);
+                let out = get_output(&reducer, binned_statepack);
                 Ok(out)
             },
         ),
@@ -287,8 +284,8 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
             move |stream: &SampleDataStreamView,
                   version,
                   binned_statepack: &mut StatePackViewMut| {
-                let accum = Mean;
-                reset_full_statepack(&accum, binned_statepack);
+                let reducer = Mean;
+                reset_full_statepack(&reducer, binned_statepack);
                 let n_bins = binned_statepack.n_states();
                 let n_members_per_team = NonZeroU32::new(1u32).unwrap();
                 let n_teams = NonZeroU32::new(1u32).unwrap();
@@ -296,7 +293,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                 let result = match version {
                     StreamKind::Chunked => {
                         let reduce_spec =
-                            MeanChunkedReduction::new(stream.clone(), f, accum, n_bins);
+                            MeanChunkedReduction::new(stream.clone(), f, reducer, n_bins);
                         executor.drive_reduce_nested(
                             binned_statepack,
                             &reduce_spec,
@@ -306,7 +303,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                     }
                     StreamKind::Unordered => {
                         let reduce_spec =
-                            MeanUnorderedReduction::new(stream.clone(), f, accum, n_bins);
+                            MeanUnorderedReduction::new(stream.clone(), f, reducer, n_bins);
                         executor.drive_reduce_batched(
                             binned_statepack,
                             &reduce_spec,
@@ -316,7 +313,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                     }
                 };
                 if result.is_ok() {
-                    let out = get_output(&accum, binned_statepack);
+                    let out = get_output(&reducer, binned_statepack);
                     Ok(out)
                 } else {
                     Err(WrapperError::Failure)

@@ -179,7 +179,7 @@ impl Executor for SerialExecutor {
     ) -> Result<(), &'static str> {
         self.drive_reduce_batched_or_nested(
             out,
-            reduction_spec.get_accum(),
+            reduction_spec.get_reducer(),
             reduction_spec.n_bins(),
             &|shared_statepack, team, team_param| {
                 fill_single_team_statepack_batched(
@@ -204,7 +204,7 @@ impl Executor for SerialExecutor {
     ) -> Result<(), &'static str> {
         self.drive_reduce_batched_or_nested(
             out,
-            reduction_spec.get_accum(),
+            reduction_spec.get_reducer(),
             reduction_spec.n_bins(),
             &|shared_statepack, team, team_param| {
                 fill_single_team_statepack_nested(

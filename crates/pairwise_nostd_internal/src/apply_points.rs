@@ -1,5 +1,5 @@
-use crate::accumulator::{Datum, Reducer};
 use crate::misc::{get_bin_idx, squared_diff_norm};
+use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
 use ndarray::ArrayView2;
 

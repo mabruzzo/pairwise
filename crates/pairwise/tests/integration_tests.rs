@@ -55,13 +55,13 @@ mod tests {
         )
         .unwrap();
 
-        let accum = Mean;
+        let reducer = Mean;
         let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut statepack = prepare_statepack(n_spatial_bins, &accum);
+        let mut statepack = prepare_statepack(n_spatial_bins, &reducer);
 
         let result = apply_accum(
             &mut StatePackViewMut::from_array_view(statepack.view_mut()),
-            &accum,
+            &reducer,
             &points,
             None,
             &squared_distance_bin_edges,
@@ -75,7 +75,7 @@ mod tests {
             distance_bin_edges.iter().map(|x| x.powi(2)).collect();
         let result = apply_accum(
             &mut StatePackViewMut::from_array_view(statepack.view_mut()),
-            &accum,
+            &reducer,
             &points,
             None,
             &squared_distance_bin_edges,
@@ -96,7 +96,7 @@ mod tests {
         .unwrap();
         let result = apply_accum(
             &mut StatePackViewMut::from_array_view(statepack.view_mut()),
-            &accum,
+            &reducer,
             &points,
             Some(&points_b),
             &[0.0, 3.0, 5.0],
@@ -115,7 +115,7 @@ mod tests {
         .unwrap();
         let result = apply_accum(
             &mut StatePackViewMut::from_array_view(statepack.view_mut()),
-            &accum,
+            &reducer,
             &points,
             Some(&points_b),
             &[0.0, 3.0, 5.0],
@@ -143,9 +143,9 @@ mod tests {
         // check the means (using results computed by pyvsf)
         let expected_mean = [8.41281820819169, 15.01110699893027, f64::NAN];
         let expected_weight = [7., 3., 0.];
-        let mean_accum = Mean;
+        let mean_reducer = Mean;
         let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_accum);
+        let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
         let points = PointProps::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
             ArrayView2::from_shape((3, 6), &values).unwrap(),
@@ -154,7 +154,7 @@ mod tests {
         .unwrap();
         let result = apply_accum(
             &mut StatePackViewMut::from_array_view(mean_statepack.view_mut()),
-            &mean_accum,
+            &mean_reducer,
             &points,
             None,
             &squared_distance_bin_edges,
@@ -163,7 +163,8 @@ mod tests {
         assert_eq!(result, Ok(()));
 
         // output buffers
-        let mean_result_map = get_output_from_statepack_array(&mean_accum, &mean_statepack.view());
+        let mean_result_map =
+            get_output_from_statepack_array(&mean_reducer, &mean_statepack.view());
 
         for i in 0..n_spatial_bins {
             // we might need to adopt an actual rtol
@@ -192,18 +193,19 @@ mod tests {
             4., 0., 0.,
             3., 2., 0.,
         ];
-        let hist_accum = Histogram::new(&hist_bin_edges).unwrap();
-        let mut hist_statepack = prepare_statepack(distance_bin_edges.len() - 1, &hist_accum);
+        let hist_reducer = Histogram::new(&hist_bin_edges).unwrap();
+        let mut hist_statepack = prepare_statepack(distance_bin_edges.len() - 1, &hist_reducer);
         let result = apply_accum(
             &mut StatePackViewMut::from_array_view(hist_statepack.view_mut()),
-            &hist_accum,
+            &hist_reducer,
             &points,
             None,
             &squared_distance_bin_edges,
             &diff_norm,
         );
         assert_eq!(result, Ok(()));
-        let hist_result_map = get_output_from_statepack_array(&hist_accum, &hist_statepack.view());
+        let hist_result_map =
+            get_output_from_statepack_array(&hist_reducer, &hist_statepack.view());
         for (i, expected) in expected_hist_weights.iter().enumerate() {
             assert_eq!(
                 hist_result_map["weight"][i], *expected,
@@ -262,13 +264,13 @@ mod tests {
         let expected_weight = [4., 6.];
 
         // perform the calculation!
-        let accum = Mean;
+        let reducer = Mean;
         let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut statepack = prepare_statepack(n_spatial_bins, &accum);
+        let mut statepack = prepare_statepack(n_spatial_bins, &reducer);
 
         let result = apply_accum(
             &mut StatePackViewMut::from_array_view(statepack.view_mut()),
-            &accum,
+            &reducer,
             &points_a,
             Some(&points_b),
             &squared_distance_bin_edges,
@@ -276,7 +278,7 @@ mod tests {
         );
         assert_eq!(result, Ok(()));
 
-        let output = get_output_from_statepack_array(&accum, &statepack.view());
+        let output = get_output_from_statepack_array(&reducer, &statepack.view());
 
         for i in 0..n_spatial_bins {
             assert!(
@@ -305,9 +307,9 @@ mod tests {
         // check the means (using results computed by pyvsf)
         let expected_mean = [284.57142857142856, 236.0, f64::NAN];
         let expected_weight = [7., 3., 0.];
-        let mean_accum = Mean;
+        let mean_reducer = Mean;
         let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_accum);
+        let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
 
         let points = PointProps::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
@@ -317,7 +319,7 @@ mod tests {
         .unwrap();
         let result = apply_accum(
             &mut StatePackViewMut::from_array_view(mean_statepack.view_mut()),
-            &mean_accum,
+            &mean_reducer,
             &points,
             None,
             &squared_distance_bin_edges,
@@ -325,7 +327,7 @@ mod tests {
         );
         assert_eq!(result, Ok(()));
 
-        let output = get_output_from_statepack_array(&mean_accum, &mean_statepack.view());
+        let output = get_output_from_statepack_array(&mean_reducer, &mean_statepack.view());
 
         for i in 0..3 {
             // we might need to adopt an actual rtol

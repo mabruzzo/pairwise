@@ -25,13 +25,13 @@
 //! comparisons
 
 use crate::NestedReduction;
-use crate::accumulator::{Reducer, Datum, Mean};
 use crate::misc::segment_idx_bounds;
 use crate::parallel::{ReductionCommon, StandardTeamParam, TeamMemberProp};
 use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
     serial_merge_accum_states,
 };
+use crate::reducer::{Datum, Mean, Reducer};
 use crate::state::{AccumStateViewMut, StatePackViewMut};
 
 // Defining some basic functionality for implementing this example:
@@ -142,10 +142,10 @@ pub fn naive_mean_chunked(
 }
 
 // Version 1: an implementation that uses accumulator machinery
-pub fn accumulator_mean_chunked(
+pub fn reducer_mean_chunked(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
-    accum: &Mean,
+    reducer: &Mean,
     binned_statepack: &mut StatePackViewMut,
 ) {
     let Some(chunk_lens) = stream.chunk_lens else {
@@ -153,8 +153,8 @@ pub fn accumulator_mean_chunked(
     };
 
     let n_bins = binned_statepack.n_states();
-    assert_eq!(accum.accum_state_size(), binned_statepack.state_size());
-    assert_eq!(accum.accum_state_size(), 2);
+    assert_eq!(reducer.accum_state_size(), binned_statepack.state_size());
+    assert_eq!(reducer.accum_state_size(), 2);
     let mut tmp_buffer = [0.0; 2];
     let mut tmp_accum_state = AccumStateViewMut::from_contiguous_slice(&mut tmp_buffer);
 
@@ -162,9 +162,9 @@ pub fn accumulator_mean_chunked(
     for chunk_len in chunk_lens.iter().cloned() {
         let bin_index = stream.bin_indices[i_global];
         if bin_index < n_bins {
-            accum.init_accum_state(&mut tmp_accum_state);
+            reducer.init_accum_state(&mut tmp_accum_state);
             for i in i_global..(i_global + chunk_len) {
-                accum.consume(
+                reducer.consume(
                     &mut tmp_accum_state,
                     &Datum {
                         value: f.call(stream.x_array[i]),
@@ -172,7 +172,7 @@ pub fn accumulator_mean_chunked(
                     },
                 );
             }
-            accum.merge(
+            reducer.merge(
                 &mut binned_statepack.get_state_mut(bin_index),
                 &tmp_accum_state.as_view(),
             );
@@ -220,7 +220,7 @@ pub fn accumulator_mean_chunked(
 pub fn restructured1_mean_chunked(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
-    accum: &Mean,
+    reducer: &Mean,
     binned_statepack: &mut StatePackViewMut,
     tmp_accum_states: &mut StatePackViewMut,
     start_stop_chunk_idx: Option<(usize, usize)>,
@@ -230,8 +230,8 @@ pub fn restructured1_mean_chunked(
     };
 
     let n_bins = binned_statepack.n_states();
-    assert_eq!(accum.accum_state_size(), binned_statepack.state_size());
-    assert_eq!(accum.accum_state_size(), tmp_accum_states.state_size());
+    assert_eq!(reducer.accum_state_size(), binned_statepack.state_size());
+    assert_eq!(reducer.accum_state_size(), tmp_accum_states.state_size());
 
     let n_tmp_accum_states = tmp_accum_states.n_states();
 
@@ -243,7 +243,7 @@ pub fn restructured1_mean_chunked(
         let bin_index = stream.bin_indices[i_global];
         if bin_index < n_bins {
             // reset the the state in each of our temporary states
-            reset_full_statepack(accum, tmp_accum_states);
+            reset_full_statepack(reducer, tmp_accum_states);
             // collect contributions in each of our temporary states
             // - currently, we gather all contributions for a single
             //   tmp_accum_state and then we move on to the next
@@ -266,7 +266,7 @@ pub fn restructured1_mean_chunked(
                 let i_itr =
                     ((i_global + offset)..(i_global + chunk_len)).step_by(n_tmp_accum_states);
                 for i in i_itr {
-                    accum.consume(
+                    reducer.consume(
                         &mut tmp_accum_state,
                         &Datum {
                             value: f.call(stream.x_array[i]),
@@ -277,9 +277,9 @@ pub fn restructured1_mean_chunked(
             }
             // now, we merge together the temporary accumulator states
             // tmp_accum_states.get_state(0) now holds the total contribution
-            serial_merge_accum_states(accum, tmp_accum_states);
+            serial_merge_accum_states(reducer, tmp_accum_states);
 
-            accum.merge(
+            reducer.merge(
                 &mut binned_statepack.get_state_mut(bin_index),
                 &tmp_accum_states.get_state(0),
             );
@@ -302,7 +302,7 @@ pub fn restructured1_mean_chunked(
 pub fn restructured2_mean_chunked(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
-    accum: &Mean,
+    reducer: &Mean,
     binned_statepack: &mut StatePackViewMut,
     scratch_binned_statepacks: &mut [StatePackViewMut],
     tmp_accum_states: &mut StatePackViewMut,
@@ -323,7 +323,7 @@ pub fn restructured2_mean_chunked(
     #[allow(clippy::needless_range_loop)]
     for seg_index in 0..n_segments {
         let local_binned_statepack = &mut scratch_binned_statepacks[seg_index];
-        reset_full_statepack(accum, local_binned_statepack);
+        reset_full_statepack(reducer, local_binned_statepack);
 
         // determine chunk indices to be processed in the current segment
         let chunk_idx_bounds = segment_idx_bounds(chunk_lens.len(), seg_index, n_segments);
@@ -332,7 +332,7 @@ pub fn restructured2_mean_chunked(
         restructured1_mean_chunked(
             stream,
             f,
-            accum,
+            reducer,
             local_binned_statepack,
             tmp_accum_states,
             Some(chunk_idx_bounds),
@@ -341,11 +341,11 @@ pub fn restructured2_mean_chunked(
 
     // after all the above loop is done, let's merge together our results such
     // that scratch_binned_statepacks[0] holds all the contributions
-    serial_consolidate_scratch_statepacks(accum, scratch_binned_statepacks);
+    serial_consolidate_scratch_statepacks(reducer, scratch_binned_statepacks);
 
     // finally add the contribution to binned_statepack
     merge_full_statepacks(
-        accum,
+        reducer,
         binned_statepack,
         scratch_binned_statepacks.first().unwrap(),
     );
@@ -355,7 +355,7 @@ pub struct MeanChunkedReduction<'a> {
     stream: SampleDataStreamView<'a>,
     stream_chunk_lens: &'a [usize],
     f: QuadraticPolynomial,
-    accum: Mean,
+    reducer: Mean,
     n_bins: usize,
 }
 
@@ -363,7 +363,7 @@ impl<'a> MeanChunkedReduction<'a> {
     pub fn new(
         stream: SampleDataStreamView<'a>,
         f: QuadraticPolynomial,
-        accum: Mean,
+        reducer: Mean,
         n_bins: usize,
     ) -> Self {
         let Some(chunk_lens) = stream.chunk_lens else {
@@ -373,17 +373,17 @@ impl<'a> MeanChunkedReduction<'a> {
             stream,
             stream_chunk_lens: chunk_lens,
             f,
-            accum,
+            reducer,
             n_bins,
         }
     }
 }
 
 impl<'a> ReductionCommon for MeanChunkedReduction<'a> {
-    type AccumulatorType = Mean;
+    type ReducerType = Mean;
 
-    fn get_accum(&self) -> &Self::AccumulatorType {
-        &self.accum
+    fn get_reducer(&self) -> &Self::ReducerType {
+        &self.reducer
     }
 
     fn n_bins(&self) -> usize {
@@ -436,7 +436,7 @@ impl<'a> NestedReduction for MeanChunkedReduction<'a> {
             let i_itr =
                 ((i_global + member_id)..(i_global + chunk_len)).step_by(team_param.n_teams);
             for i in i_itr {
-                self.accum.consume(
+                self.reducer.consume(
                     tmp_accum_state,
                     &Datum {
                         value: self.f.call(self.stream.x_array[i]),

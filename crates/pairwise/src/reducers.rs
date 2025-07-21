@@ -6,7 +6,7 @@ use pairwise_nostd_internal::{
     AccumStateView, AccumStateViewMut, Datum, OutputDescr, Reducer, StatePackViewMut, get_bin_idx,
 };
 
-/// compute the output quantities from an Accumulator's state properties and
+/// compute the output quantities from an accumulator's state properties and
 /// return the result in a HashMap.
 ///
 /// # Notes
@@ -16,7 +16,7 @@ use pairwise_nostd_internal::{
 ///       Before the 1.0 release, we should either move this to a private
 ///       testing_helpers crate OR we should explicitly decide to make this
 ///       part of the public API.
-/// compute the output quantities from an Accumulator's state properties and
+/// compute the output quantities from an accumulator's state properties and
 /// return the result in a HashMap.
 ///
 /// # Notes

@@ -1,7 +1,6 @@
 // this file is intended for illustrative purposes
 // see module-level documentation for chunked.rs for more detail
 
-use crate::accumulator::{Datum, Mean, Reducer};
 use crate::misc::segment_idx_bounds;
 use crate::parallel::{
     BatchedReduction, BinnedDatum, ReductionCommon, StandardTeamParam, TeamMemberProp,
@@ -10,6 +9,7 @@ use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
 use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
 };
+use crate::reducer::{Datum, Mean, Reducer};
 use crate::state::StatePackViewMut;
 
 // Version 0: our simple naive implementation
@@ -34,13 +34,13 @@ pub fn naive_mean_unordered(
 }
 
 // Version 1: an implementation that uses accumulator machinery
-pub fn accumulator_mean_unordered(
+pub fn reducer_mean_unordered(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
-    accum: &Mean,
+    reducer: &Mean,
     binned_statepack: &mut StatePackViewMut,
 ) {
-    assert_eq!(accum.accum_state_size(), binned_statepack.state_size());
+    assert_eq!(reducer.accum_state_size(), binned_statepack.state_size());
     let n_bins = binned_statepack.n_states();
 
     for i in 0..stream.len() {
@@ -50,7 +50,7 @@ pub fn accumulator_mean_unordered(
             weight: stream.weights[i],
         };
         if bin_index < n_bins {
-            accum.consume(&mut binned_statepack.get_state_mut(bin_index), &datum);
+            reducer.consume(&mut binned_statepack.get_state_mut(bin_index), &datum);
         }
     }
 }
@@ -102,14 +102,14 @@ pub fn accumulator_mean_unordered(
 pub fn restructured1_mean_unordered(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
-    accum: &Mean,
+    reducer: &Mean,
     binned_statepack: &mut StatePackViewMut,
     collect_pad: &mut [BinnedDatum],
     start_stop_idx: Option<(usize, usize)>,
 ) {
     let batch_size = collect_pad.len();
     assert!(batch_size > 0);
-    assert_eq!(accum.accum_state_size(), binned_statepack.state_size());
+    assert_eq!(reducer.accum_state_size(), binned_statepack.state_size());
     let n_bins = binned_statepack.n_states();
 
     let (i_start, i_stop) = start_stop_idx.unwrap_or((0, stream.len()));
@@ -147,7 +147,7 @@ pub fn restructured1_mean_unordered(
             let datum = &e.datum;
 
             if bin_index < n_bins {
-                accum.consume(&mut binned_statepack.get_state_mut(bin_index), datum);
+                reducer.consume(&mut binned_statepack.get_state_mut(bin_index), datum);
             }
         }
     }
@@ -167,7 +167,7 @@ pub fn restructured1_mean_unordered(
 pub fn restructured2_mean_unordered(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
-    accum: &Mean,
+    reducer: &Mean,
     binned_statepack: &mut StatePackViewMut,
     scratch_binned_statepacks: &mut [StatePackViewMut],
     collect_pad: &mut [BinnedDatum],
@@ -184,7 +184,7 @@ pub fn restructured2_mean_unordered(
     #[allow(clippy::needless_range_loop)]
     for seg_index in 0..n_segments {
         let local_binned_statepack = &mut scratch_binned_statepacks[seg_index];
-        reset_full_statepack(accum, local_binned_statepack);
+        reset_full_statepack(reducer, local_binned_statepack);
 
         // determine DataStream indices to be processed in the current segment
         let idx_bounds = segment_idx_bounds(stream.len(), seg_index, n_segments);
@@ -193,7 +193,7 @@ pub fn restructured2_mean_unordered(
         restructured1_mean_unordered(
             stream,
             f,
-            accum,
+            reducer,
             local_binned_statepack,
             collect_pad,
             Some(idx_bounds),
@@ -202,11 +202,11 @@ pub fn restructured2_mean_unordered(
 
     // after all the above loop is done, let's merge together our results such
     // that scratch_binned_statepacks[0] holds all the contributions
-    serial_consolidate_scratch_statepacks(accum, scratch_binned_statepacks);
+    serial_consolidate_scratch_statepacks(reducer, scratch_binned_statepacks);
 
     // finally add the contribution to binned_statepack
     merge_full_statepacks(
-        accum,
+        reducer,
         binned_statepack,
         scratch_binned_statepacks.first().unwrap(),
     );
@@ -215,7 +215,7 @@ pub fn restructured2_mean_unordered(
 pub struct MeanUnorderedReduction<'a> {
     stream: SampleDataStreamView<'a>,
     f: QuadraticPolynomial,
-    accum: Mean,
+    reducer: Mean,
     n_bins: usize,
 }
 
@@ -223,23 +223,23 @@ impl<'a> MeanUnorderedReduction<'a> {
     pub fn new(
         stream: SampleDataStreamView<'a>,
         f: QuadraticPolynomial,
-        accum: Mean,
+        reducer: Mean,
         n_bins: usize,
     ) -> Self {
         Self {
             stream,
             f,
-            accum,
+            reducer,
             n_bins,
         }
     }
 }
 
 impl<'a> ReductionCommon for MeanUnorderedReduction<'a> {
-    type AccumulatorType = Mean;
+    type ReducerType = Mean;
 
-    fn get_accum(&self) -> &Self::AccumulatorType {
-        &self.accum
+    fn get_reducer(&self) -> &Self::ReducerType {
+        &self.reducer
     }
 
     fn n_bins(&self) -> usize {

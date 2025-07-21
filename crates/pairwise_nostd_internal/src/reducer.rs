@@ -35,7 +35,7 @@
 //! - We refer to the current state of a single accumulator as the
 //!   `accum_state`.
 //! - The accumulation logic is encapsulated by the functions implemented by
-//!   the `Accumulator` trait. At the time of writing, an Accumulator
+//!   the `Reducer` trait. At the time of writing, a Reducer
 //!   implements logic for modifying a single `accum_state` at a time.
 //! - From the perspective of an accumulator, the `accum_state` is packaged
 //!   inside within the [`AccumStateView`] & [`AccumStateViewMut`] types (the
@@ -54,7 +54,7 @@
 use crate::state::{AccumStateView, AccumStateViewMut};
 use ndarray::ArrayViewMut1;
 
-/// Instances of this element are consumed by the Accumulator
+/// Instances of this element are consumed by the Reducer
 ///
 /// In the future, we might want to store vector components rather than the
 /// scalar (we can convert the vector components to a scalar as necessary
@@ -70,7 +70,7 @@ use ndarray::ArrayViewMut1;
 ///
 /// To support SIMD, we probably want to make this take a generic type (we'll
 /// need to define a trait for essential floating point operations) rather than
-/// hardcoding the struct members to floats and have the Accumulators operate
+/// hardcoding the struct members to floats and have the Reducers operate
 /// on these generic types. By doing this, we could pass in
 /// [`DVec2`](https://docs.rs/glam/latest/glam/f64/struct.DVec2.html) from the
 /// `glam` package or
@@ -81,7 +81,7 @@ use ndarray::ArrayViewMut1;
 /// support for doing this](https://doc.rust-lang.org/std/simd/struct.Simd.html#layout-1).
 ///
 /// # General Optimization Notes
-/// We probably want to ensure that the accumulator methods are inlined. If
+/// We probably want to ensure that the reducer methods are inlined. If
 /// they aren't inlined, then its conceivable that using a struct may
 /// introduce a performance penalty, especially if we start encoding
 /// (mathematical) vector components. In more detail, passing the values in
@@ -117,7 +117,7 @@ use ndarray::ArrayViewMut1;
 /// I think that there are significant advantages to improving the readability
 /// of the code and it would be relatively move away from using the struct
 /// representation later (it would be easier to do that before we start
-/// introducing more accumulators).
+/// introducing more Reducers).
 ///
 /// I don't love that this defines copy, but it's important for examples
 #[derive(Clone, Copy)]
@@ -135,7 +135,7 @@ impl Datum {
     }
 }
 
-/// describes the output components from a single Accumulator accum_state
+/// describes the output components from a single Reducer accum_state
 pub enum OutputDescr {
     MultiScalarComp(&'static [&'static str]),
     SingleVecComp { size: usize, name: &'static str },
@@ -174,7 +174,7 @@ pub trait Reducer {
     /// organization of the storage used for accumulators.
     ///
     /// This design rationale makes slightly more sense in the context that
-    /// types implementing the [`Accumulator`] trait aren't themselves
+    /// types implementing the [`Reducer`] trait aren't themselves
     /// accumulators, but are instead objects that provide logic for working
     /// with accumulator-storage. Maybe a better abstraction will present
     /// itself?

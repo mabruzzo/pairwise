@@ -3,7 +3,7 @@
 // But, in the short term, as we start to implement things, these are quite
 // useful utilities
 
-use crate::accumulator::Reducer;
+use crate::reducer::Reducer;
 use crate::state::{AccumStateViewMut, StatePackViewMut};
 use ndarray::s;
 

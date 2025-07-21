@@ -25,8 +25,8 @@
 //! Of course we also have flexibility to adjust the definition of this
 //! hardware mapping
 
-use crate::accumulator::{Datum, Reducer};
 use crate::reduce_utils::reset_full_statepack;
+use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
 use core::num::NonZeroU32;
 
@@ -250,10 +250,10 @@ pub trait ReductionCommon {
     //
     // Associated items that are always used
     // -------------------------------------
-    type AccumulatorType: Reducer;
+    type ReducerType: Reducer;
 
-    /// return a reference to the accumulator
-    fn get_accum(&self) -> &Self::AccumulatorType;
+    /// return a reference to the reducer
+    fn get_reducer(&self) -> &Self::ReducerType;
 
     /// The number of bins in this reduction.
     fn n_bins(&self) -> usize;
@@ -328,8 +328,8 @@ pub trait NestedReduction: ReductionCommon {
     ) -> Option<usize>; // TODO why option?
 
     /// Intended to be called collectively by the members of a team so that
-    /// each team member can compute a separate part of the accumulator
-    /// state contribution with the `(outer_index, inner_index)` pair.
+    /// each team member can compute a separate part of the accum_state
+    /// contribution with the `(outer_index, inner_index)` pair.
     ///
     /// Each member stores its contribution in the `accum_state_buf` variable.
     ///
@@ -438,11 +438,11 @@ pub fn fill_single_team_statepack_batched<T>(
 ) where
     T: TeamProps,
 {
-    let accum = reduce_spec.get_accum();
+    let reducer = reduce_spec.get_reducer();
 
     // TODO: consider distributing work among team members
     team.exec_once(binned_statepack, &|statepack: &mut StatePackViewMut| {
-        reset_full_statepack(accum, statepack);
+        reset_full_statepack(reducer, statepack);
     });
 
     let (outer_start, outer_stop) = reduce_spec.outer_team_loop_bounds(team_id, team_param);
@@ -463,7 +463,7 @@ pub fn fill_single_team_statepack_batched<T>(
             //    of `BinnedDatum` instances to update `binned_statepack`
             team.collect_pairs_then_apply(
                 binned_statepack,
-                reduce_spec.get_accum(),
+                reduce_spec.get_reducer(),
                 &|collect_pad: &mut [BinnedDatum], member_prop: T::MemberPropType| {
                     // we should make sure that reset_accum_state is called!!!!
                     reduce_spec.get_datum_index_pair(
@@ -490,11 +490,11 @@ pub fn fill_single_team_statepack_nested<T>(
 ) where
     T: TeamProps,
 {
-    let accum = reduce_spec.get_accum();
+    let reducer = reduce_spec.get_reducer();
 
     // TODO: consider distributing work among team members
     team.exec_once(binned_statepack, &|statepack: &mut StatePackViewMut| {
-        reset_full_statepack(accum, statepack);
+        reset_full_statepack(reducer, statepack);
     });
 
     // now let's move to the crux of the work that is done by the thread team
@@ -526,7 +526,7 @@ pub fn fill_single_team_statepack_nested<T>(
                 //    `bin_index` in `binned_statpack`
                 team.calccontribs_combine_apply(
                     binned_statepack,
-                    reduce_spec.get_accum(),
+                    reduce_spec.get_reducer(),
                     bin_index,
                     &|tmp_accum_states: &mut StatePackViewMut, member_prop: T::MemberPropType| {
                         // we should make sure that reset_accum_state is called!!!!
