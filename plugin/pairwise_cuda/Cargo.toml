@@ -1,0 +1,27 @@
+
+# If you see this, run `rustup self update` to get rustup 1.23 or newer.
+
+# NOTE: above comment is for older `rustup` (before TOML support was added),
+# which will treat the first line as the toolchain name, and therefore show it
+# to the user in the error, instead of "error: invalid channel name '[toolchain]'".
+[package]
+name = "pairwise_cuda"
+version = "0.1.0"
+edition = "2021"
+authors = ["Matthew W. Abruzzo", "Adam J. Wheeler"]
+#rust-version = "1.86"
+
+[workspace]
+# an empty workspace is necessary to keep Cargo from getting confused!
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cust = { git = "https://github.com/Rust-GPU/Rust-CUDA", rev = "3b646e6891dbe8dc1821d400f17d97716e931604" }
+pairwise_nostd_internal = { path = "../../crates/pairwise_nostd_internal", features = [
+    "cuda",
+] }
+
+[build-dependencies]
+cuda_builder = { git = "https://github.com/Rust-GPU/Rust-CUDA", rev = "3b646e6891dbe8dc1821d400f17d97716e931604" }

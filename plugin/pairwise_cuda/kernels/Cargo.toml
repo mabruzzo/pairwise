@@ -1,0 +1,17 @@
+[package]
+name = "vecadd-kernels"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+# an empty workspace is needed to avoid confusion!
+
+[dependencies]
+pairwise_nostd_internal = { path = "../../../crates/pairwise_nostd_internal", features = [
+    "cuda",
+] }
+cuda_std = { git = "https://github.com/Rust-GPU/Rust-CUDA", rev = "3b646e6891dbe8dc1821d400f17d97716e931604" }
+
+
+[lib]
+crate-type = ["cdylib", "rlib"]

@@ -17,7 +17,7 @@
 //! For simplicity, let's assume `𝒚ᵢ` is a scalar `yᵢ` (it may be useful to
 //! come back to this for longitudinal statistics and tensors).
 //!
-//! In practice, we use [`DataElement`] to package together `yᵢ` & `wᵢ`
+//! In practice, we use [`Datum`] to package together `yᵢ` & `wᵢ`
 //!
 //! If a statistic just summed the values of `wᵢ` and totally ignored `yᵢ`,
 //! that would be equivalent to a normal histogram. Other statistics that we
@@ -118,9 +118,21 @@ use ndarray::ArrayViewMut1;
 /// of the code and it would be relatively move away from using the struct
 /// representation later (it would be easier to do that before we start
 /// introducing more accumulators).
+///
+/// I don't love that this defines copy, but it's important for examples
+#[derive(Clone, Copy)]
 pub struct Datum {
     pub value: f64,
     pub weight: f64,
+}
+
+impl Datum {
+    pub fn zeroed() -> Self {
+        Datum {
+            value: 0.0,
+            weight: 0.0,
+        }
+    }
 }
 
 /// describes the output components from a single Accumulator accum_state
@@ -161,11 +173,11 @@ impl OutputDescr {
 ///   pub trait Accumulator:
 ///       AccumMiscOps
 ///       + UpdateLeft<&Self>
-///       + UpdateLeft<&DataElement>
+///       + UpdateLeft<&Datum>
 ///   {}
 ///   ```
 /// - thus for each Accumulator, we would be implementing `UpdateLeft<&Self>`
-///   (instead of `merge`) and `UpdateLeft<&DataElement>` (instead of
+///   (instead of `merge`) and `UpdateLeft<&Datum>` (instead of
 ///   `consume`).
 /// - The advantage to doing this is that `update_left` would be used for
 ///   merges and consuming -- it's purely aesthetic. It may also be nice if we
@@ -215,6 +227,7 @@ pub trait Accumulator {
     fn output_descr(&self) -> OutputDescr;
 }
 
+#[derive(Clone, Copy)]
 pub struct Mean;
 
 impl Mean {

@@ -3,8 +3,8 @@ mod common;
 use common::prepare_statepack;
 use ndarray::ArrayView2;
 use pairwise::{
-    Accumulator, Histogram, Mean, PointProps, StatePackViewMut, apply_accum, diff_norm,
-    dot_product, get_output_from_statepack_array,
+    Histogram, Mean, PointProps, StatePackViewMut, apply_accum, diff_norm, dot_product,
+    get_output_from_statepack_array,
 };
 
 // Things are a little unergonomic!
