@@ -95,7 +95,7 @@ impl BinnedDatum {
     }
 }
 
-/// A team (implementor of TeamProps) is composed of 1 or more members, who
+/// A team (implementer of TeamProps) is composed of 1 or more members, who
 /// work together in a tightly-coupled, synchronous manner to collaboratively
 /// complete a single unit of work at a time. This trait can describe:
 /// - a team of threads (fast on GPUs, used on CPUs for testing)
