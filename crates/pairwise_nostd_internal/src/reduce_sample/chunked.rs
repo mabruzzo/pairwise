@@ -24,9 +24,10 @@
 //! The logic has been separated between files to facilitate side-by-side
 //! comparisons
 
+use crate::NestedReduction;
 use crate::accumulator::{Accumulator, Datum, Mean};
 use crate::misc::segment_idx_bounds;
-use crate::parallel::{ReductionSpec, StandardTeamParam, TeamMemberProp};
+use crate::parallel::{ReductionCommon, StandardTeamParam, TeamMemberProp};
 use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
     serial_merge_accum_states,
@@ -378,7 +379,7 @@ impl<'a> MeanChunkedReduction<'a> {
     }
 }
 
-impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
+impl<'a> ReductionCommon for MeanChunkedReduction<'a> {
     type AccumulatorType = Mean;
 
     fn get_accum(&self) -> &Self::AccumulatorType {
@@ -397,9 +398,9 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
     ) -> (usize, usize) {
         segment_idx_bounds(self.stream_chunk_lens.len(), team_id, team_info.n_teams)
     }
+}
 
-    const NESTED_REDUCE: bool = true;
-
+impl<'a> NestedReduction for MeanChunkedReduction<'a> {
     fn infer_bin_index(
         &self,
         _outer_index: usize,

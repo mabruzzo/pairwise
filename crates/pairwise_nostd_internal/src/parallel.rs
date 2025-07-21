@@ -240,58 +240,9 @@ pub trait TeamProps {
 // The number of teams and the number of members per team are commonly encoded
 /// within instances of [`StandardTeamParam`].
 ///
-/// ## Completing a "Unit of Work"
-///
-/// We now discuss the methods used to complete a _unit of work_. We defined a
-/// this as the task of generating a series of (datum, bin-index) pairs from
-/// the data source and using this information to update the appropriate
-/// `accum_state`s.
-///
-/// Types that implement this trait fall into 2 categories. This category is
-/// specified by the [`ReductionSpec::NESTED_REDUCE`] associated constant and
-/// is constrained by the nature of the underlying data source. As we note at
-/// the very end of this docstring, this trait should probably be split off
-/// into separate traits to reflect these categories
-///
-/// when [`reductionspec::nested_reduce`] is `true`, then:
-/// - we know ahead of time that all datum generated in the "unit-of-work"
-///   share a common bin index.
-/// - the shared bin index is computed by [`infer_bin_index`].
-/// - the type provides the [`collect_team_contrib`] method to collect
-///   contributions for the team members.
-/// - the intention is to:
-///   1. Have the team collectively call [`collect_team_contrib`]. Each member
-///      will record contributions to a separate `accum_state`
-///   2. Then, these separate `accum_state` should be combined (in a "nested
-///      reduction") so that a single member knows the total contribution
-///      from the current unit of work.
-///   3. Finally, that single member will use the total contribution to update
-///      the accum_state from the appropriate statepack bin.
-///
-/// when [`reductionspec::nested_reduce`] is `false`, then:
-/// - we don't know of any relationship between the data elements and the
-///   associated bin indices in a "unit-of-work." This really restricts the
-///   level of parallelism, we can achieve.
-/// - The best we can do is adopt a "batching strategy," that has the
-///   has the team members use [`get_datum_index_pair`] to pre-generate a
-///   batch of (datum, bin-index) pairs from the data source. (the batch of
-///   entries is to be sequentially processed)
-/// - the intention is to:
-///    1. have the team members collectively call [`get_datum_index_pair`].
-///       Each member pre-generates a (datum, bin-index) pair from the data
-///       source, represented as a [`BinnedDatum`] instance
-///    2. Then the [`BinnedDatum`] instances should be gathered into a
-///       collection-pad accessible in the memory of a single team member
-///    3. have that team member process the batch of values in
-///       [`BinnedDatum`] values to sequentially update the binned
-///       statepack
-pub trait ReductionSpec {
-    // I really want to eliminate the outer loop and delete
-    // [`outer_team_loop_bounds`]. I also want to replace
-    // [`inner_team_loop_bounds`] with a function that returns an iterator. The
-    // docstrings for both functions highlight considerations for doing those
-    // things.
-
+/// Types that implement this trait should also implement either
+/// [`NestedReduce`] or [`BatchedReduce`].
+pub trait ReductionCommon {
     // An important premise is that you do error-checking while constructing
     // structs, and you design the logic such that you don't have to do **any**
     // error-handling in this trait's methods.
@@ -350,49 +301,43 @@ pub trait ReductionSpec {
         team_id: usize,
         team_info: &StandardTeamParam,
     ) -> (usize, usize);
+}
 
-    // Associated items that are conditionally used
-    // --------------------------------------------
-    // this is bad practice and is something we should fix (maybe we define
-    // separate traits). But I think we should wait until after we have
-    // implemented a real parallel backend (e.g. multithreading) and
-    // implemented the core algorithms
-
-    const NESTED_REDUCE: bool;
-
+/// Specifies how to compute a unit of work when we know ahead of time that
+/// all datums generated in the unit of work share a common bin index.
+///
+/// The shared bin index is computed by [`infer_bin_index`].
+///
+/// - the intention is to:
+///   1. Have the team collectively call [`collect_team_contrib`]. Each member
+///      will record contributions to a separate `accum_state`
+///   2. Then, these separate `accum_state` should be combined (in a "nested
+///      reduction") so that a single member knows the total contribution
+///      from the current unit of work.
+///   3. Finally, that single member will use the total contribution to update
+///      the accum_state from the appropriate statepack bin.
+pub trait NestedReduction: ReductionCommon {
     /// return the bin index shared by each datum that is generated from the
     /// data-source for the specified `(outer_index, inner_index)`
-    ///
-    /// **IMPORTANT:** DO NOT USE unless Self::NESTED_REDUCE holds `true`
     #[allow(unused)] // <- suppresses unused variable warnings
     fn infer_bin_index(
         &self,
         outer_index: usize,
         inner_index: usize,
         team_info: &StandardTeamParam,
-    ) -> Option<usize> {
-        // this **MUST** be overwritten when NESTED_REDUCE is true
-        None
-    }
+    ) -> Option<usize>; // TODO why option?
 
     /// Intended to be called collectively by the members of a team so that
     /// each team member can compute a separate part of the accumulator
     /// state contribution with the `(outer_index, inner_index)` pair.
     ///
-    /// Each datum considered within this calculation is associated with the
-    /// bin index returned by [`infer_bin_index`].
-    ///
     /// Each member stores its contribution in the `accum_state_buf` variable.
-    /// Below, we discuss the precise meaning of this variable.
-    ///
-    /// **IMPORTANT:** DO NOT USE unless Self::NESTED_REDUCE holds `true`
     ///
     /// <div class="warning">
     ///
-    /// `accum_states` has the type of `StatePackViewMut` purely because its
-    /// the appropriate type for tracking 1 or more accumulator states. This is
-    /// scratch space intended to be regularly overwritten. The memory used for
-    /// tracking binned accumulator states is totally distinct
+    /// `accum_states` is scratch space intended to be regularly overwritten. It
+    /// is not the memory used for tracking binned accumulator states is totally
+    /// distinct
     ///
     /// </div>
     ///
@@ -417,20 +362,20 @@ pub trait ReductionSpec {
         inner_index: usize,
         member_prop: &T,
         team_param: &StandardTeamParam,
-    ) {
-        // this **MUST** be overwritten when NESTED_REDUCE is true
-    }
+    );
+}
 
-    /// Intended to be called collectively by the members of a team so that
-    /// each team member can determine the (datum, bin-index) pair that was
-    /// reserved for it by the specified `(outer_index, inner_index)` pair.
+/// Specifies how to complete a unit of work for arbitrary
+/// (datum, bin_index) pairs.
+pub trait BatchedReduction: ReductionCommon {
+    /// Called by the members of a team in order to determine the
+    /// (datum, bin-index) pair that was specified by an
+    ///  `(outer_index, inner_index)` pair.
     ///
     /// Each member records its (datum, bin-index) pair to `collect_pad`.
     /// Below, we discuss the precise meaning of this variable. If a member
     /// doesn't have an associated datum, it records a datum with a finite
     /// value and a weight of 0 (since it won't influence the reduction).
-    ///
-    /// **IMPORTANT:** DO NOT USE unless Self::NESTED_REDUCE holds `false`
     ///
     /// # Note
     /// This function should display slightly specialized behavior based on the
@@ -460,9 +405,7 @@ pub trait ReductionSpec {
         member_prop: &T,
         team_id: usize, // <- primarily used in the sample problem
         team_param: &StandardTeamParam,
-    ) {
-        // this **MUST** be overwritten when NESTED_REDUCE is true
-    }
+    );
 }
 
 /// Initialize and fill a single Thread Team's `statepack`.
@@ -486,7 +429,7 @@ pub trait ReductionSpec {
 /// [^serial_exception]: There is a minor exception when using a special Serial
 ///     implementation of a thread team that can work with with an arbitrary
 ///     number of teams and members per team
-pub fn fill_single_team_statepack<T, R>(
+pub fn fill_single_team_statepack_batched<T, R>(
     binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
     team: &mut T,
     team_id: usize,
@@ -494,18 +437,61 @@ pub fn fill_single_team_statepack<T, R>(
     reduce_spec: &R,
 ) where
     T: TeamProps,
-    R: ReductionSpec,
+    R: ReductionCommon,
 {
-    // your mental picture should be that all threads in a given thread team
-    // advance thru this loop together in a synchronized manner
-    // - we will make it clear in the comment when the team-members behave
-    //   differently from each other
-    // - there is a bit of an exception with the way a "serial team" will
-
     let accum = reduce_spec.get_accum();
 
-    // To begin, let's ensure that each `accum_state` within `statepack` is
-    // consistent with having no contributions
+    // TODO: consider distributing work among team members
+    team.exec_if_root_member(binned_statepack, &|statepack: &mut StatePackViewMut| {
+        reset_full_statepack(accum, statepack);
+    });
+
+    let (outer_start, outer_stop) = reduce_spec.outer_team_loop_bounds(team_id, team_param);
+    for outer_idx in outer_start..outer_stop {
+        let (inner_start, inner_stop) =
+            reduce_spec.inner_team_loop_bounds(outer_idx, team_id, team_param);
+        for inner_idx in inner_start..inner_stop {
+            // Since the bin-index order is unpredictable, the best we can do
+            // is adopt a "batching" strategy.
+            // 1. the team collectively calls `get_datum_index_pair`, where
+            //    each member pre-generates a (datum, bin-index) pair from
+            //    the data-source. The pair is represented as a
+            //    `BinnedDatum` instance
+            // 2. then, these `BinnedDatum` instances are gathered into a
+            //    collection-pad that can be accessed by one of the team
+            //    members
+            // 3. finally, that team member sequentially uses the batch
+            //    of `BinnedDatum` instances to update `binned_statepack`
+            team.collect_pairs_then_apply(
+                binned_statepack,
+                reduce_spec.get_accum(),
+                &|collect_pad: &mut [BinnedDatum], member_prop: T::MemberPropType| {
+                    // we should make sure that reset_accum_state is called!!!!
+                    reduce_spec.get_datum_index_pair(
+                        collect_pad,
+                        outer_idx,
+                        inner_idx,
+                        &member_prop,
+                        team_id,
+                        team_param,
+                    );
+                },
+            );
+        }
+    }
+}
+
+pub fn fill_single_team_statepack_nested<T, R>(
+    binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
+    team: &mut T,
+    team_id: usize,
+    team_param: &StandardTeamParam,
+    reduce_spec: &R,
+) where
+    T: TeamProps,
+    R: ReductionCommon,
+{
+    let accum = reduce_spec.get_accum();
 
     // TODO: consider distributing work among team members
     team.exec_if_root_member(binned_statepack, &|statepack: &mut StatePackViewMut| {
@@ -513,85 +499,45 @@ pub fn fill_single_team_statepack<T, R>(
     });
 
     // now let's move to the crux of the work that is done by the thread team
-    // - As we know, the overall task of performing a reduction can be broken
-    //   into smaller units of work
-    //
-    // in the reduction. A ReductionSpec organizes
     let (outer_start, outer_stop) = reduce_spec.outer_team_loop_bounds(team_id, team_param);
     for outer_idx in outer_start..outer_stop {
         let (inner_start, inner_stop) =
             reduce_spec.inner_team_loop_bounds(outer_idx, team_id, team_param);
         for inner_idx in inner_start..inner_stop {
-            // the if-statement depends on the properties of the underlying data source
+            // in this case, each considered datum in the current unit of work
+            // shares a common bin_index. That bin_index is specified by
+            let bin_index = reduce_spec.infer_bin_index(outer_idx, inner_idx, team_param);
 
-            if R::NESTED_REDUCE {
-                // in this case, each considered datum in the current unit of work
-                // shares a common bin_index. That bin_index is specified by
-                let bin_index = reduce_spec.infer_bin_index(outer_idx, inner_idx, team_param);
-
-                // bin_index will be None if the data isn't relevat for the current task
-                if let Some(bin_index) = bin_index {
-                    // the next function call does 3 things
-                    // 1. the team members call [`collect_team_contrib`]. They
-                    //    each store the contributions from this call in a
-                    //    distinct region of memory
-                    //    - that memory is provided by `team` via the
-                    //      `tmp_accum_states` argument
-                    //    - to be completely clear, the memory referenced in
-                    //      `tmp_accum_states` is COMPLETELY distinct from
-                    //      `binned_statepack`
-                    // 2. `team` performs a nested reduction to combine
-                    //    together all the contributions from each of the
-                    //    temporary variables into a total contribution
-                    // 3. Finally, `team` has a single member use this total
-                    //    contribution to update the `accum_state` stored at
-                    //    `bin_index` in `binned_statpack`
-                    team.calccontribs_combine_apply(
-                        binned_statepack,
-                        reduce_spec.get_accum(),
-                        bin_index,
-                        &|tmp_accum_states: &mut StatePackViewMut,
-                          member_prop: T::MemberPropType| {
-                            // we should make sure that reset_accum_state is called!!!!
-                            reduce_spec.compute_team_contrib(
-                                tmp_accum_states,
-                                outer_idx,
-                                inner_idx,
-                                &member_prop,
-                                team_param,
-                            )
-                        },
-                    );
-                }
-            } else {
-                // in this case, the bin-index order is unpredictable.
-                // The best we can do is adopt a "batching strategy." We split
-                // the "unit of work" into 2 parts. The first part is
-                // parallelized by team-members & the second part is sequential
-                // In the next function call:
-                // 1. the team collectively calls `get_datum_index_pair`, where
-                //    each member pre-generates a (datum, bin-index) pair from
-                //    the data-source. The pair is represented as a
-                //    `BinnedDatum` instance
-                // 2. then, these `BinnedDatum` instances are gathered into a
-                //    collection-pad that can be accessed by one of the team
-                //    members
-                // 3. finally, that team member sequentially uses the batch
-                //    of `BinnedDatum` instances to update
-                //    `binned_statepack`
-                team.collect_pairs_then_apply(
+            // bin_index will be None if the data isn't relevat for the current task
+            if let Some(bin_index) = bin_index {
+                // the next function call does 3 things
+                // 1. the team members call [`collect_team_contrib`]. They
+                //    each store the contributions from this call in a
+                //    distinct region of memory
+                //    - that memory is provided by `team` via the
+                //      `tmp_accum_states` argument
+                //    - to be completely clear, the memory referenced in
+                //      `tmp_accum_states` is COMPLETELY distinct from
+                //      `binned_statepack`
+                // 2. `team` performs a nested reduction to combine
+                //    together all the contributions from each of the
+                //    temporary variables into a total contribution
+                // 3. Finally, `team` has a single member use this total
+                //    contribution to update the `accum_state` stored at
+                //    `bin_index` in `binned_statpack`
+                team.calccontribs_combine_apply(
                     binned_statepack,
                     reduce_spec.get_accum(),
-                    &|collect_pad: &mut [BinnedDatum], member_prop: T::MemberPropType| {
+                    bin_index,
+                    &|tmp_accum_states: &mut StatePackViewMut, member_prop: T::MemberPropType| {
                         // we should make sure that reset_accum_state is called!!!!
-                        reduce_spec.get_datum_index_pair(
-                            collect_pad,
+                        reduce_spec.compute_team_contrib(
+                            tmp_accum_states,
                             outer_idx,
                             inner_idx,
                             &member_prop,
-                            team_id,
                             team_param,
-                        );
+                        )
                     },
                 );
             }

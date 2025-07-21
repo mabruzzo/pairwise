@@ -3,7 +3,9 @@
 
 use crate::accumulator::{Accumulator, Datum, Mean};
 use crate::misc::segment_idx_bounds;
-use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, TeamMemberProp};
+use crate::parallel::{
+    BatchedReduction, BinnedDatum, ReductionCommon, StandardTeamParam, TeamMemberProp,
+};
 use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
 use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
@@ -233,7 +235,7 @@ impl<'a> MeanUnorderedReduction<'a> {
     }
 }
 
-impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
+impl<'a> ReductionCommon for MeanUnorderedReduction<'a> {
     type AccumulatorType = Mean;
 
     fn get_accum(&self) -> &Self::AccumulatorType {
@@ -256,9 +258,9 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
         let n_batches = n_stream_indices.div_ceil(batch_size);
         (0, n_batches)
     }
+}
 
-    const NESTED_REDUCE: bool = false;
-
+impl<'a> BatchedReduction for MeanUnorderedReduction<'a> {
     fn get_datum_index_pair<T: TeamMemberProp>(
         &self,
         collect_pad: &mut [BinnedDatum],
