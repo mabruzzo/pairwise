@@ -25,7 +25,7 @@
 //! comparisons
 
 use crate::NestedReduction;
-use crate::accumulator::{Accumulator, Datum, Mean};
+use crate::accumulator::{Reducer, Datum, Mean};
 use crate::misc::segment_idx_bounds;
 use crate::parallel::{ReductionCommon, StandardTeamParam, TeamMemberProp};
 use crate::reduce_utils::{

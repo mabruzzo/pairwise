@@ -3,15 +3,15 @@
 // But, in the short term, as we start to implement things, these are quite
 // useful utilities
 
-use crate::accumulator::Accumulator;
+use crate::accumulator::Reducer;
 use crate::state::{AccumStateViewMut, StatePackViewMut};
 use ndarray::s;
 
 // not sure if this should actually be part of the public API, but it's useful
 // in a handful of cases
-pub fn reset_full_statepack(accum: &impl Accumulator, statepack: &mut StatePackViewMut) {
+pub fn reset_full_statepack(reducer: &impl Reducer, statepack: &mut StatePackViewMut) {
     for i in 0..statepack.n_states() {
-        accum.init_accum_state(&mut statepack.get_state_mut(i));
+        reducer.init_accum_state(&mut statepack.get_state_mut(i));
     }
 }
 
@@ -21,14 +21,14 @@ pub fn reset_full_statepack(accum: &impl Accumulator, statepack: &mut StatePackV
 // not sure if this should actually be part of the public API, but it's useful
 // in a handful of cases
 pub fn merge_full_statepacks(
-    accum: &impl Accumulator,
+    reducer: &impl Reducer,
     statepack: &mut StatePackViewMut,
     other: &StatePackViewMut,
 ) {
     let n_bins = statepack.n_states();
     assert_eq!(n_bins, other.n_states());
     for i in 0..statepack.n_states() {
-        accum.merge(&mut statepack.get_state_mut(i), &other.get_state(i));
+        reducer.merge(&mut statepack.get_state_mut(i), &other.get_state(i));
     }
 }
 
@@ -41,7 +41,7 @@ pub fn merge_full_statepacks(
 // not sure if this should actually be part of the public API, but it's useful
 // in a handful of cases
 pub fn serial_consolidate_scratch_statepacks(
-    accum: &impl Accumulator,
+    reducer: &impl Reducer,
     scratch_statepacks: &mut [StatePackViewMut],
 ) {
     // if we wanted to simulate parallelism, then the way this loop works is
@@ -49,7 +49,7 @@ pub fn serial_consolidate_scratch_statepacks(
     // to serial_merge_accum_states
     for i in 1..scratch_statepacks.len() {
         let [main, other] = scratch_statepacks.get_disjoint_mut([0, i]).unwrap();
-        merge_full_statepacks(accum, main, other);
+        merge_full_statepacks(reducer, main, other);
     }
 }
 
@@ -59,7 +59,7 @@ pub fn serial_consolidate_scratch_statepacks(
 //
 // not sure if this should actually be part of the public API, but it's useful
 // in a handful of cases
-pub fn serial_merge_accum_states(accum: &impl Accumulator, statepack: &mut StatePackViewMut) {
+pub fn serial_merge_accum_states(reducer: &impl Reducer, statepack: &mut StatePackViewMut) {
     let n_states = statepack.n_states();
 
     // we currently need to access the underlying array view in order to safely
@@ -78,7 +78,7 @@ pub fn serial_merge_accum_states(accum: &impl Accumulator, statepack: &mut State
             let (left_buf, right_buf) =
                 statepack_buf.multi_slice_mut((s![.., i], s![.., i + remaining_pairs]));
 
-            accum.merge(
+            reducer.merge(
                 &mut AccumStateViewMut::from_array_view(left_buf),
                 &AccumStateViewMut::from_array_view(right_buf).as_view(),
             );

@@ -1,7 +1,7 @@
 //! Implements the "serial" backend for running thread teams
 
 use pairwise_nostd_internal::{
-    Accumulator, BatchedReduction, BinnedDatum, Executor, StandardTeamParam, StatePackViewMut,
+    BatchedReduction, BinnedDatum, Executor, Reducer, StandardTeamParam, StatePackViewMut,
     TeamProps, ThreadMember, fill_single_team_statepack_batched, fill_single_team_statepack_nested,
 };
 use std::num::NonZeroU32;
@@ -28,12 +28,12 @@ impl TeamProps for SerialTeam {
     fn calccontribs_combine_apply(
         &mut self,
         binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
-        accum: &impl Accumulator,
+        reducer: &impl Reducer,
         bin_index: usize,
         get_member_contrib: &impl Fn(&mut StatePackViewMut, ThreadMember),
     ) {
         let n_members = 1;
-        let accum_state_size = accum.accum_state_size();
+        let accum_state_size = reducer.accum_state_size();
         // we should really pre-allocate the memory in a constructor
 
         // create a temporary StatePack that holds a temporary accumulator
@@ -45,7 +45,7 @@ impl TeamProps for SerialTeam {
 
         // reset the state in the statepack
         for i in 0..n_members {
-            accum.init_accum_state(&mut tmp_statepack.get_state_mut(i));
+            reducer.init_accum_state(&mut tmp_statepack.get_state_mut(i));
         }
 
         // step 0: apply a barrier
@@ -65,7 +65,7 @@ impl TeamProps for SerialTeam {
         // step 3: have the member holding the total contribution to update the
         //         `accum_state` stored at `bin_index` in `statpack`
         if binned_statepack.0.n_states() > bin_index {
-            accum.merge(
+            reducer.merge(
                 &mut binned_statepack.0.get_state_mut(bin_index),
                 &tmp_statepack.get_state(0),
             );
@@ -75,7 +75,7 @@ impl TeamProps for SerialTeam {
     fn collect_pairs_then_apply(
         &mut self,
         binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
-        accum: &impl Accumulator,
+        reducer: &impl Reducer,
         get_datum_bin_pair: &impl Fn(&mut [BinnedDatum], ThreadMember),
     ) {
         // step 0: apply a barrier
@@ -95,7 +95,7 @@ impl TeamProps for SerialTeam {
         //         them to update statepack
         let bin_index = collect_pad[0].bin_index;
         if binned_statepack.0.n_states() > bin_index {
-            accum.consume(
+            reducer.consume(
                 &mut binned_statepack.0.get_state_mut(bin_index),
                 &collect_pad[0].datum,
             );
@@ -109,7 +109,7 @@ impl SerialExecutor {
     fn drive_reduce_batched_or_nested(
         &mut self,
         out: &mut StatePackViewMut,
-        accum: &impl Accumulator,
+        reducer: &impl Reducer,
         n_bins: usize,
         // lets us abstract over batched and nested
         reduction_callback: &impl Fn(
@@ -130,7 +130,7 @@ impl SerialExecutor {
         } else if team_param.n_teams != 1 {
             // todo: we should add support for n_teams (that's straight-forward)
             return Err("only supports 1 team");
-        } else if (out.n_states() != n_bins) || (out.state_size() != accum.accum_state_size()) {
+        } else if (out.n_states() != n_bins) || (out.state_size() != reducer.accum_state_size()) {
             return Err("out has the wrong shape");
         }
 
@@ -141,7 +141,7 @@ impl SerialExecutor {
 
         // now we initialize statepack (this is inefficient!)
         for i in 0..tmp_statepack.n_states() {
-            accum.init_accum_state(&mut tmp_statepack.get_state_mut(i));
+            reducer.init_accum_state(&mut tmp_statepack.get_state_mut(i));
         }
 
         // if we had multiple teams this would theoretically be a for loop
@@ -163,7 +163,7 @@ impl SerialExecutor {
 
         // finally, update out
         for i in 0..out.n_states() {
-            accum.merge(&mut out.get_state_mut(i), &tmp_statepack.get_state(i));
+            reducer.merge(&mut out.get_state_mut(i), &tmp_statepack.get_state(i));
         }
         Ok(())
     }

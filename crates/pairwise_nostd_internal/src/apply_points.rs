@@ -1,4 +1,4 @@
-use crate::accumulator::{Accumulator, Datum};
+use crate::accumulator::{Datum, Reducer};
 use crate::misc::{get_bin_idx, squared_diff_norm};
 use crate::state::StatePackViewMut;
 use ndarray::ArrayView2;
@@ -68,7 +68,7 @@ impl<'a> PointProps<'a> {
 
 fn apply_accum_helper<const CROSS: bool>(
     statepack: &mut StatePackViewMut,
-    accum: &impl Accumulator,
+    reducer: &impl Reducer,
     points_a: &PointProps,
     points_b: &PointProps,
     squared_bin_edges: &[f64],
@@ -91,7 +91,7 @@ fn apply_accum_helper<const CROSS: bool>(
                     weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
                 };
 
-                accum.consume(&mut statepack.get_state_mut(distance_bin_idx), &datum);
+                reducer.consume(&mut statepack.get_state_mut(distance_bin_idx), &datum);
             }
         }
     }
@@ -122,7 +122,7 @@ fn apply_accum_helper<const CROSS: bool>(
 ///       should revisit!
 pub fn apply_accum(
     statepack: &mut StatePackViewMut,
-    accum: &impl Accumulator,
+    reducer: &impl Reducer,
     points_a: &PointProps,
     points_b: Option<&PointProps>,
     squared_distance_bin_edges: &[f64],
@@ -152,7 +152,7 @@ pub fn apply_accum(
     if let Some(points_b) = points_b {
         apply_accum_helper::<false>(
             statepack,
-            accum,
+            reducer,
             points_a,
             points_b,
             squared_distance_bin_edges,
@@ -161,7 +161,7 @@ pub fn apply_accum(
     } else {
         apply_accum_helper::<true>(
             statepack,
-            accum,
+            reducer,
             points_a,
             points_a,
             squared_distance_bin_edges,

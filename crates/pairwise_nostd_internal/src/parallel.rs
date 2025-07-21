@@ -25,7 +25,7 @@
 //! Of course we also have flexibility to adjust the definition of this
 //! hardware mapping
 
-use crate::accumulator::{Accumulator, Datum};
+use crate::accumulator::{Datum, Reducer};
 use crate::reduce_utils::reset_full_statepack;
 use crate::state::StatePackViewMut;
 use core::num::NonZeroU32;
@@ -166,7 +166,7 @@ pub trait TeamProps {
     fn calccontribs_combine_apply(
         &mut self,
         binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
-        accum: &impl Accumulator,
+        reducer: &impl Reducer,
         bin_index: usize,
         get_member_contrib: &impl Fn(&mut StatePackViewMut, Self::MemberPropType),
     );
@@ -182,7 +182,7 @@ pub trait TeamProps {
     fn collect_pairs_then_apply(
         &mut self,
         binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
-        accum: &impl Accumulator,
+        reducer: &impl Reducer,
         get_datum_bin_pair: &impl Fn(&mut [BinnedDatum], Self::MemberPropType),
     );
 }
@@ -250,7 +250,7 @@ pub trait ReductionCommon {
     //
     // Associated items that are always used
     // -------------------------------------
-    type AccumulatorType: Accumulator;
+    type AccumulatorType: Reducer;
 
     /// return a reference to the accumulator
     fn get_accum(&self) -> &Self::AccumulatorType;

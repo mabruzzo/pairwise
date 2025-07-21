@@ -1,7 +1,7 @@
 // this file is intended for illustrative purposes
 // see module-level documentation for chunked.rs for more detail
 
-use crate::accumulator::{Accumulator, Datum, Mean};
+use crate::accumulator::{Datum, Mean, Reducer};
 use crate::misc::segment_idx_bounds;
 use crate::parallel::{
     BatchedReduction, BinnedDatum, ReductionCommon, StandardTeamParam, TeamMemberProp,

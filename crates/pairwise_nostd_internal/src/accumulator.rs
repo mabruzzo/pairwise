@@ -151,39 +151,12 @@ impl OutputDescr {
     }
 }
 
-/// Accumulators generally operate on individual `accum_state`s.
+/// Reducers generally operate on individual `accum_state`s.
 ///
 /// The implementation is currently inefficient, but we will refactor and try
 /// to come up with better abstractions once we are done mapping out all the
 /// requirements.
-///
-/// # Note
-/// It might be elegant to:
-/// - introduce a separate, related trait, called `Consume` or `UpdateLeft`,
-///   which would look something like
-///   ```text
-///   pub trait UpdateLeft<Rhs> {
-///       fn update_left(accum_state: &mut ArrayViewMut1<f64>, right: Rhs);
-///   }
-///   ```
-/// - rename the current trait to something like `AccumMiscOps` and delete the
-///   `consume` and `merge` methods.
-/// - define the `Accumulator` trait as a super trait:
-///   ```text
-///   pub trait Accumulator:
-///       AccumMiscOps
-///       + UpdateLeft<&Self>
-///       + UpdateLeft<&Datum>
-///   {}
-///   ```
-/// - thus for each Accumulator, we would be implementing `UpdateLeft<&Self>`
-///   (instead of `merge`) and `UpdateLeft<&Datum>` (instead of
-///   `consume`).
-/// - The advantage to doing this is that `update_left` would be used for
-///   merges and consuming -- it's purely aesthetic. It may also be nice if we
-///   introduce the idea of partially digested data... (it probably isn't worth
-///   the effort)
-pub trait Accumulator {
+pub trait Reducer {
     /// the number of f64 elements needed to track the accumulator data
     fn accum_state_size(&self) -> usize;
 
@@ -239,7 +212,7 @@ impl Mean {
     const OUTPUT_COMPONENTS: &'static [&'static str] = &["mean", "weight"];
 }
 
-impl Accumulator for Mean {
+impl Reducer for Mean {
     fn accum_state_size(&self) -> usize {
         2_usize
     }

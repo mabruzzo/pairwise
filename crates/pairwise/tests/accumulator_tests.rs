@@ -1,5 +1,5 @@
 use ndarray::{NewAxis, s};
-use pairwise::{Accumulator, Histogram, Mean, get_output_from_statepack_array};
+use pairwise::{Histogram, Mean, Reducer, get_output_from_statepack_array};
 use pairwise_nostd_internal::{AccumStateView, AccumStateViewMut, Datum};
 use std::collections::HashMap;
 
@@ -7,10 +7,10 @@ use std::collections::HashMap;
 //
 // this is probably an indication that we could improve the Accumulator API
 fn _get_output_single(
-    accum: &impl Accumulator,
+    reducer: &impl Reducer,
     stateprop: &AccumStateView,
 ) -> HashMap<&'static str, Vec<f64>> {
-    get_output_from_statepack_array(accum, &stateprop.as_array_view().slice(s![.., NewAxis]))
+    get_output_from_statepack_array(reducer, &stateprop.as_array_view().slice(s![.., NewAxis]))
 }
 
 // TODO: factor out this function and the get_output function from

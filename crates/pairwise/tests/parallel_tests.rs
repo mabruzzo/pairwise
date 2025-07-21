@@ -1,4 +1,4 @@
-use pairwise::{Accumulator, Executor, Mean, SerialExecutor, StatePackViewMut, get_output};
+use pairwise::{Reducer, Executor, Mean, SerialExecutor, StatePackViewMut, get_output};
 
 use pairwise_nostd_internal::{
     BinnedDatum,
