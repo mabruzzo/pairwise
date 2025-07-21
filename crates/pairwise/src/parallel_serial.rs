@@ -1,8 +1,8 @@
 //! Implements the "serial" backend for running thread teams
 
 use pairwise_nostd_internal::{
-    Accumulator, BinnedDatum, Executor, ReductionSpec, StandardTeamParam, StatePackViewMut,
-    TeamProps, ThreadMember, fill_single_team_statepack,
+    Accumulator, BatchedReduction, BinnedDatum, Executor, StandardTeamParam, StatePackViewMut,
+    TeamProps, ThreadMember, fill_single_team_statepack_batched, fill_single_team_statepack_nested,
 };
 use std::num::NonZeroU32;
 
@@ -105,11 +105,18 @@ impl TeamProps for SerialTeam {
 
 pub struct SerialExecutor;
 
-impl Executor for SerialExecutor {
-    fn drive_reduce(
+impl SerialExecutor {
+    fn drive_reduce_batched_or_nested(
         &mut self,
         out: &mut StatePackViewMut,
-        reduction_spec: &impl ReductionSpec,
+        accum: &impl Accumulator,
+        n_bins: usize,
+        // lets us abstract over batched and nested
+        reduction_callback: &impl Fn(
+            &mut DummyWrapper<StatePackViewMut<'_>>,
+            &mut SerialTeam,
+            &StandardTeamParam,
+        ),
         n_members_per_team: NonZeroU32,
         n_teams: NonZeroU32,
     ) -> Result<(), &'static str> {
@@ -118,59 +125,98 @@ impl Executor for SerialExecutor {
             n_teams: n_teams.get() as usize,
         };
 
-        let accum = reduction_spec.get_accum();
-
         if team_param.n_members_per_team != 1 {
-            Err("only supports 1 member per team")
+            return Err("only supports 1 member per team");
         } else if team_param.n_teams != 1 {
             // todo: we should add support for n_teams (that's straight-forward)
-            Err("only supports 1 team")
-        } else if (out.n_states() != reduction_spec.n_bins())
-            || (out.state_size() != accum.accum_state_size())
-        {
-            Err("out has the wrong shape")
-        } else {
-            // allocate a temporary statepack
-            let mut tmp = vec![0.0; out.total_size()];
-            let mut tmp_statepack =
-                StatePackViewMut::from_slice(out.n_states(), out.state_size(), &mut tmp);
-
-            // now we initialize statepack (this is inefficient!)
-            for i in 0..tmp_statepack.n_states() {
-                accum.init_accum_state(&mut tmp_statepack.get_state_mut(i));
-            }
-
-            // if we had multiple teams this would theoretically be a for loop
-            {
-                // move tmp_statepack into the shared_statepack variable
-                let mut shared_statepack = DummyWrapper(tmp_statepack);
-
-                fill_single_team_statepack(
-                    &mut shared_statepack,
-                    &mut SerialTeam,
-                    0, // <- the team_id,
-                    &team_param,
-                    reduction_spec,
-                );
-
-                // move the contents of shared_statepack back to tmp_statepack
-                // (if something goes wrong, it's probably due to an error
-                // right here)
-                tmp_statepack = shared_statepack.0;
-            }
-
-            // if we supported multiple teams, we'd perform a reduction here
-            // to consolidate all of the temporary statepacks
-
-            // finally, update out
-            for i in 0..out.n_states() {
-                accum.merge(&mut out.get_state_mut(i), &tmp_statepack.get_state(i));
-            }
-            Ok(())
+            return Err("only supports 1 team");
+        } else if (out.n_states() != n_bins) || (out.state_size() != accum.accum_state_size()) {
+            return Err("out has the wrong shape");
         }
+
+        // allocate a temporary statepack
+        let mut tmp = vec![0.0; out.total_size()];
+        let mut tmp_statepack =
+            StatePackViewMut::from_slice(out.n_states(), out.state_size(), &mut tmp);
+
+        // now we initialize statepack (this is inefficient!)
+        for i in 0..tmp_statepack.n_states() {
+            accum.init_accum_state(&mut tmp_statepack.get_state_mut(i));
+        }
+
+        // if we had multiple teams this would theoretically be a for loop
+        {
+            // move tmp_statepack into the shared_statepack variable
+            let mut shared_statepack = DummyWrapper(tmp_statepack);
+
+            // either fill_single_team_nested or fill_single_team_batched
+            reduction_callback(&mut shared_statepack, &mut SerialTeam, &team_param);
+
+            // move the contents of shared_statepack back to tmp_statepack
+            // (if something goes wrong, it's probably due to an error
+            // right here)
+            tmp_statepack = shared_statepack.0;
+        }
+
+        // if we supported multiple teams, we'd perform a reduction here
+        // to consolidate all of the temporary statepacks
+
+        // finally, update out
+        for i in 0..out.n_states() {
+            accum.merge(&mut out.get_state_mut(i), &tmp_statepack.get_state(i));
+        }
+        Ok(())
     }
 }
 
-// we may want to look back at older commits for inspiration for implementing
-// a serial executor that can simulate teams with arbitrary sizes and arbitrary
-// numbers of threads
+impl Executor for SerialExecutor {
+    fn drive_reduce_batched(
+        &mut self,
+        out: &mut StatePackViewMut,
+        reduction_spec: &impl BatchedReduction,
+        team_size: NonZeroU32,
+        league_size: NonZeroU32,
+    ) -> Result<(), &'static str> {
+        self.drive_reduce_batched_or_nested(
+            out,
+            reduction_spec.get_accum(),
+            reduction_spec.n_bins(),
+            &|shared_statepack, team, team_param| {
+                fill_single_team_statepack_batched(
+                    shared_statepack,
+                    team,
+                    0,
+                    team_param,
+                    reduction_spec,
+                );
+            },
+            team_size,
+            league_size,
+        )
+    }
+
+    fn drive_reduce_nested(
+        &mut self,
+        out: &mut StatePackViewMut,
+        reduction_spec: &impl pairwise_nostd_internal::NestedReduction,
+        team_size: NonZeroU32,
+        league_size: NonZeroU32,
+    ) -> Result<(), &'static str> {
+        self.drive_reduce_batched_or_nested(
+            out,
+            reduction_spec.get_accum(),
+            reduction_spec.n_bins(),
+            &|shared_statepack, team, team_param| {
+                fill_single_team_statepack_nested(
+                    shared_statepack,
+                    team,
+                    0,
+                    team_param,
+                    reduction_spec,
+                );
+            },
+            team_size,
+            league_size,
+        )
+    }
+}

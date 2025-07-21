@@ -297,7 +297,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                     StreamKind::Chunked => {
                         let reduce_spec =
                             MeanChunkedReduction::new(stream.clone(), f, accum, n_bins);
-                        executor.drive_reduce(
+                        executor.drive_reduce_nested(
                             binned_statepack,
                             &reduce_spec,
                             n_members_per_team,
@@ -307,7 +307,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                     StreamKind::Unordered => {
                         let reduce_spec =
                             MeanUnorderedReduction::new(stream.clone(), f, accum, n_bins);
-                        executor.drive_reduce(
+                        executor.drive_reduce_batched(
                             binned_statepack,
                             &reduce_spec,
                             n_members_per_team,

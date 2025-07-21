@@ -429,15 +429,14 @@ pub trait BatchedReduction: ReductionCommon {
 /// [^serial_exception]: There is a minor exception when using a special Serial
 ///     implementation of a thread team that can work with with an arbitrary
 ///     number of teams and members per team
-pub fn fill_single_team_statepack_batched<T, R>(
+pub fn fill_single_team_statepack_batched<T>(
     binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
     team: &mut T,
     team_id: usize,
     team_param: &StandardTeamParam,
-    reduce_spec: &R,
+    reduce_spec: &impl BatchedReduction,
 ) where
     T: TeamProps,
-    R: ReductionCommon,
 {
     let accum = reduce_spec.get_accum();
 
@@ -481,15 +480,15 @@ pub fn fill_single_team_statepack_batched<T, R>(
     }
 }
 
-pub fn fill_single_team_statepack_nested<T, R>(
+// TODO should this (and batched version) be a method of ReductionCommon?
+pub fn fill_single_team_statepack_nested<T>(
     binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
     team: &mut T,
     team_id: usize,
     team_param: &StandardTeamParam,
-    reduce_spec: &R,
+    reduce_spec: &impl NestedReduction,
 ) where
     T: TeamProps,
-    R: ReductionCommon,
 {
     let accum = reduce_spec.get_accum();
 
@@ -555,12 +554,23 @@ pub fn fill_single_team_statepack_nested<T, R>(
 /// the CPU. A GPU backend would provide a type that implements this crate in
 /// order to execute the CPU calls that are needed for managing memory and
 /// launching GPU calculations
+///
+/// This isn't a method of ReduceCommon, because it may be helpful to separate
+/// out some of the GPU interop stuff.
 pub trait Executor {
     // I suspect that we may want to set up team_size & league_size elsewhere
-    fn drive_reduce(
+    fn drive_reduce_nested(
         &mut self,
         out: &mut StatePackViewMut,
-        reduction_spec: &impl ReductionSpec,
+        reduction_spec: &impl NestedReduction,
+        team_size: NonZeroU32,
+        league_size: NonZeroU32,
+    ) -> Result<(), &'static str>;
+
+    fn drive_reduce_batched(
+        &mut self,
+        out: &mut StatePackViewMut,
+        reduction_spec: &impl BatchedReduction,
         team_size: NonZeroU32,
         league_size: NonZeroU32,
     ) -> Result<(), &'static str>;
