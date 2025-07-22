@@ -1,5 +1,6 @@
 #![no_std]
 mod apply_points;
+mod bins;
 mod misc;
 mod parallel;
 mod reduce_utils;
