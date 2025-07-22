@@ -1,29 +1,5 @@
 use ndarray::ArrayView2;
 
-// TODO use binary search, and have specialized version for regularly spaced bins?
-/// Get the index of the bin that the squared distance falls into.
-/// Returns None if its out of bounds.
-///
-/// # Note
-/// This is only public so that it can be used in other files. It's not
-/// intended to be used outside ofpublic
-pub fn get_bin_idx(distance_squared: f64, squared_bin_edges: &[f64]) -> Option<usize> {
-    // index of first element greater than distance_squared
-    // (or squared_bin_edges.len() if none are greater)
-    let mut first_greater = 0;
-    for &edge in squared_bin_edges.iter() {
-        if distance_squared < edge {
-            break;
-        }
-        first_greater += 1;
-    }
-    if (first_greater == squared_bin_edges.len()) || (first_greater == 0) {
-        None
-    } else {
-        Some(first_greater - 1)
-    }
-}
-
 /// calculate the squared norm of the difference between two (mathematical) vectors
 /// which are part of rust vecs that encodes a list of vectors with dimension on
 /// the "slow axis"

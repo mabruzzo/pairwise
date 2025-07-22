@@ -47,47 +47,16 @@ mod tests {
              3.,  4.
         ];
 
-        let distance_bin_edges = [10.0_f64, 5.0, 3.0];
-        let squared_distance_bin_edges: Vec<f64> =
-            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
+        let squared_distance_bin_edges = [0.0, 1.0, 9.0, 16.0];
+        let squared_distance_bins = IrregularBins::new(&squared_distance_bin_edges).unwrap();
+        let reducer = Mean;
+        let mut statepack = prepare_statepack(squared_distance_bin_edges.len(), &reducer);
         let points = PointProps::new(
             ArrayView2::from_shape((3, 2), &positions).unwrap(),
             ArrayView2::from_shape((3, 2), &values).unwrap(),
             None,
         )
         .unwrap();
-
-        let reducer = Mean;
-        let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut statepack = prepare_statepack(n_spatial_bins, &reducer);
-
-        let result = apply_accum(
-            &mut StatePackViewMut::from_array_view(statepack.view_mut()),
-            &reducer,
-            &points,
-            None,
-            &squared_distance_bin_edges,
-            &diff_norm,
-        );
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("monotonic"));
-
-        let distance_bin_edges: [f64; 3] = [3.0, 5.0, 0.0];
-        let squared_distance_bin_edges: Vec<f64> =
-            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
-        let result = apply_accum(
-            &mut StatePackViewMut::from_array_view(statepack.view_mut()),
-            &reducer,
-            &points,
-            None,
-            &squared_distance_bin_edges,
-            &diff_norm,
-        );
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("monotonic"));
-
-        // TODO: this should be an error
-        // let bin_edges = vec![0.0, 3.0, 3.0];
 
         // should fail for mismatched spatial dimensions
         let points_b = PointProps::new(
@@ -101,7 +70,7 @@ mod tests {
             &reducer,
             &points,
             Some(&points_b),
-            &[0.0, 3.0, 5.0],
+            &squared_distance_bins,
             &diff_norm,
         );
         assert!(result.is_err());
@@ -120,7 +89,7 @@ mod tests {
             &reducer,
             &points,
             Some(&points_b),
-            &[0.0, 3.0, 5.0],
+            &squared_distance_bins,
             &diff_norm,
         );
         assert!(result.is_err());
@@ -139,8 +108,8 @@ mod tests {
         // the bin edges are chosen so that some values don't fit
         // inside the bottom bin
         let distance_bin_edges: [f64; 4] = [2.0, 6., 10., 15.];
-        let squared_distance_bin_edges: Vec<f64> =
-            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
+        let squared_bin_edges = distance_bin_edges.map(|x| x.powi(2));
+        let squared_distance_bins = IrregularBins::new(&squared_bin_edges).unwrap();
 
         // check the means (using results computed by pyvsf)
         let expected_mean = [8.41281820819169, 15.01110699893027, f64::NAN];
@@ -159,7 +128,7 @@ mod tests {
             &mean_reducer,
             &points,
             None,
-            &squared_distance_bin_edges,
+            &squared_distance_bins,
             &diff_norm,
         );
         assert_eq!(result, Ok(()));
@@ -202,7 +171,7 @@ mod tests {
             &hist_reducer,
             &points,
             None,
-            &squared_distance_bin_edges,
+            &squared_distance_bins,
             &diff_norm,
         );
         assert_eq!(result, Ok(()));
@@ -258,8 +227,8 @@ mod tests {
         .unwrap();
 
         let distance_bin_edges: [f64; 3] = [17., 21., 25.];
-        let squared_distance_bin_edges: Vec<f64> =
-            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
+        let squared_bin_edges = distance_bin_edges.map(|x| x.powi(2));
+        let square_distance_bins = IrregularBins::new(&squared_bin_edges).unwrap();
 
         // the expected results were printed by pyvsf
         let expected_mean = [6.274664681905207, 6.068727871100932];
@@ -275,7 +244,7 @@ mod tests {
             &reducer,
             &points_a,
             Some(&points_b),
-            &squared_distance_bin_edges,
+            &square_distance_bins,
             &diff_norm,
         );
         assert_eq!(result, Ok(()));
@@ -303,8 +272,8 @@ mod tests {
         // the bin edges are chosen so that some values don't fit
         // inside the bottom bin
         let distance_bin_edges: [f64; 4] = [2., 6., 10., 15.];
-        let squared_distance_bin_edges: Vec<f64> =
-            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
+        let squared_bin_edges = distance_bin_edges.map(|x| x.powi(2));
+        let squared_distance_bins = IrregularBins::new(&squared_bin_edges).unwrap();
 
         // check the means (using results computed by pyvsf)
         let expected_mean = [284.57142857142856, 236.0, f64::NAN];
@@ -324,7 +293,7 @@ mod tests {
             &mean_reducer,
             &points,
             None,
-            &squared_distance_bin_edges,
+            &squared_distance_bins,
             &dot_product,
         );
         assert_eq!(result, Ok(()));

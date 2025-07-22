@@ -134,6 +134,7 @@ mod tests {
 
         // unsorted bin edges
         assert!(IrregularBins::new(&[2.0, 1.0]).is_err());
+        assert!(IrregularBins::new(&[0.0, 3.0, 2.0]).is_err());
 
         // Non-finite values
         assert!(IrregularBins::new(&[f64::NAN, 10.0]).is_err());
