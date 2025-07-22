@@ -21,6 +21,7 @@ fn _get_output_single(
 mod tests {
 
     use super::*;
+    use pairwise_nostd_internal::{IrregularBins, RegularBins};
 
     #[test]
     fn mean_consume_once() {
@@ -119,17 +120,8 @@ mod tests {
     }
 
     #[test]
-    fn hist_invalid_hist_edges() {
-        assert!(Histogram::new(&[0.0]).is_err());
-    }
-    #[test]
-    fn hist_nonmonotonic() {
-        assert!(Histogram::new(&[1.0, 0.0]).is_err());
-    }
-
-    #[test]
     fn hist_consume() {
-        let reducer = Histogram::new(&[0.0, 1.0, 2.0]).unwrap();
+        let reducer = Histogram::from_bins(RegularBins::new(0.0, 2.0, 2).unwrap());
 
         let mut storage = [0.0, 0.0];
         let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);

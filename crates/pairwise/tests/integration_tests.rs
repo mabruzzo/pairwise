@@ -11,6 +11,8 @@ use pairwise::{
 
 #[cfg(test)]
 mod tests {
+    use pairwise_nostd_internal::IrregularBins;
+
     use super::*;
 
     // based on numpy!
@@ -182,18 +184,18 @@ mod tests {
 
         // check the histograms (using results computed by pyvsf)
 
-        // the hist_bin_edges were picked such that:
+        // the hist_buckets were picked such that:
         // - the number of bins is unequal to the distance bin count
         // - there would be a value smaller than the leftmost bin-edge
         // - there would be a value larger than the leftmost bin-edge
-        let hist_bin_edges = [6.0, 10.0, 14.0];
+        let hist_buckets = IrregularBins::new(&[6.0, 10.0, 14.0]).unwrap();
 
         #[rustfmt::skip]
         let expected_hist_weights = [
             4., 0., 0.,
             3., 2., 0.,
         ];
-        let hist_reducer = Histogram::new(&hist_bin_edges).unwrap();
+        let hist_reducer = Histogram::from_bins(hist_buckets);
         let mut hist_statepack = prepare_statepack(distance_bin_edges.len() - 1, &hist_reducer);
         let result = apply_accum(
             &mut StatePackViewMut::from_array_view(hist_statepack.view_mut()),

@@ -12,6 +12,7 @@ mod state;
 pub mod reduce_sample;
 
 pub use apply_points::{PointProps, apply_accum};
+pub use bins::*;
 pub use misc::{dot_product, get_bin_idx, squared_diff_norm};
 pub use parallel::{
     BatchedReduction, BinnedDatum, Executor, NestedReduction, ReductionCommon, StandardTeamParam,
@@ -19,5 +20,5 @@ pub use parallel::{
     fill_single_team_statepack_nested,
 };
 pub use reduce_utils::reset_full_statepack;
-pub use reducer::{Datum, Mean, OutputDescr, Reducer};
+pub use reducer::{Datum, Histogram, Mean, OutputDescr, Reducer};
 pub use state::{AccumStateView, AccumStateViewMut, StatePackViewMut};

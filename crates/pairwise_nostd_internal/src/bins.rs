@@ -9,6 +9,12 @@ pub trait Bins {
     /// Calculate the bin index for a given value. Values which are equal to
     /// boundary values are considered part of the higher bin.
     fn bin_index(&self, value: f64) -> Option<usize>;
+
+    fn len(&self) -> usize;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Regular bins with uniform spacing
@@ -17,11 +23,12 @@ pub struct RegularBins {
     min: f64,
     max: f64,
     bin_size: f64,
+    n_bins: usize,
 }
 impl RegularBins {
     /// Note that we initialize with num_bins rather than bin_size
-    pub fn new(min: f64, max: f64, num_bins: usize) -> Result<Self, &'static str> {
-        if num_bins == 0 {
+    pub fn new(min: f64, max: f64, n_bins: usize) -> Result<Self, &'static str> {
+        if n_bins == 0 {
             Err("Number of bins must be greater than zero")
         } else if max <= min {
             Err("Maximum value must be greater than minimum value")
@@ -31,7 +38,8 @@ impl RegularBins {
             Ok(Self {
                 min,
                 max,
-                bin_size: (max - min) / num_bins as f64,
+                bin_size: (max - min) / n_bins as f64,
+                n_bins,
             })
         }
     }
@@ -46,9 +54,13 @@ impl Bins for RegularBins {
         let index = ((value - self.min) / self.bin_size).floor() as usize;
         Some(index)
     }
+
+    fn len(&self) -> usize {
+        self.n_bins
+    }
 }
 
-struct IrregularBins<'a> {
+pub struct IrregularBins<'a> {
     bin_edges: &'a [f64],
 }
 
@@ -60,7 +72,7 @@ impl<'a> IrregularBins<'_> {
 
         // Check that all bin_edges are finite
         // It may be worth supporting -inf and +inf as first and last bin edges
-        // at some point.
+
         if bin_edges.iter().any(|&x| !x.is_finite()) {
             return Err("Bin edges must be finite");
         }
@@ -90,6 +102,10 @@ impl Bins for IrregularBins<'_> {
             .unwrap_or_else(|i| i - 1);
 
         Some(index)
+    }
+
+    fn len(&self) -> usize {
+        self.bin_edges.len() - 1
     }
 }
 
@@ -128,9 +144,12 @@ mod tests {
     fn regular_and_irregular_bin_indexing() {
         let rbins = RegularBins::new(0.0, 10.0, 5).unwrap();
         let ibins = IrregularBins::new(&[0.0, 2.0, 4.0, 6.0, 8.0, 10.0]).unwrap();
+
         let bins_list: [&dyn Bins; 2] = [&rbins, &ibins];
 
         for bins in &bins_list {
+            assert_eq!(bins.len(), 5);
+
             // Test valid values
             assert_eq!(bins.bin_index(0.0), Some(0));
             assert_eq!(bins.bin_index(1.9), Some(0));
@@ -150,6 +169,9 @@ mod tests {
     #[test]
     fn irregular_bins_bin_indexing() {
         let bins = IrregularBins::new(&[-5.0, 0.0, 2.0, 3.0]).unwrap();
+
+        assert_eq!(bins.len(), 3);
+
         // Test valid values
         assert_eq!(bins.bin_index(-5.0), Some(0));
         assert_eq!(bins.bin_index(-2.5), Some(0));

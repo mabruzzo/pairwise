@@ -51,6 +51,7 @@
 //! We will revisit this in the future once we are done architecting other
 //! parts of the design.
 
+use crate::bins::{self, IrregularBins};
 use crate::state::{AccumStateView, AccumStateViewMut};
 use ndarray::ArrayViewMut1;
 
@@ -239,5 +240,58 @@ impl Reducer for Mean {
     fn value_from_accum_state(&self, value: &mut ArrayViewMut1<f64>, accum_state: &AccumStateView) {
         value[[Mean::VALUE_MEAN]] = accum_state[Mean::TOTAL] / accum_state[Mean::WEIGHT];
         value[[Mean::VALUE_WEIGHT]] = accum_state[Mean::WEIGHT];
+    }
+}
+
+// TODO: refactor so that Histogram doesn't hold a vector and move to
+//       pairwise_internal/accumulator.rs (to )
+pub struct Histogram<BinsType: bins::Bins> {
+    bins: BinsType,
+}
+
+// I think it's good form to have this constructor but I'm not sure that we
+// really need it?
+impl<'a, B: bins::Bins> Histogram<B> {
+    pub fn from_bins(bins: B) -> Histogram<B> {
+        Histogram { bins }
+    }
+}
+
+impl<B: bins::Bins> Reducer for Histogram<B> {
+    fn accum_state_size(&self) -> usize {
+        self.bins.len()
+    }
+
+    /// initializes the storage tracking the acumulator's state
+    fn init_accum_state(&self, accum_state: &mut AccumStateViewMut) {
+        accum_state.fill(0.0);
+    }
+
+    /// consume the value and weight to update the accum_state
+    fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &Datum) {
+        if let Some(hist_bin_idx) = self.bins.bin_index(datum.value) {
+            accum_state[hist_bin_idx] += datum.weight;
+        }
+    }
+
+    /// merge the state information tracked by `accum_state` and `other`, and
+    /// update `accum_state` accordingly
+    fn merge(&self, accum_state: &mut AccumStateViewMut, other: &AccumStateView) {
+        for i in 0..self.bins.len() {
+            accum_state[i] += other[i];
+        }
+    }
+
+    fn output_descr(&self) -> OutputDescr {
+        OutputDescr::SingleVecComp {
+            size: self.bins.len(),
+            name: "weight",
+        }
+    }
+
+    fn value_from_accum_state(&self, value: &mut ArrayViewMut1<f64>, accum_state: &AccumStateView) {
+        for i in 0..self.bins.len() {
+            value[[i]] = accum_state[i];
+        }
     }
 }
