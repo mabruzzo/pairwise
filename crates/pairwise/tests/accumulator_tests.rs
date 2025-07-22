@@ -21,7 +21,7 @@ fn _get_output_single(
 mod tests {
 
     use super::*;
-    use pairwise_nostd_internal::RegularBins;
+    use pairwise_nostd_internal::RegularBinEdges;
 
     #[test]
     fn mean_consume_once() {
@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn hist_consume() {
-        let reducer = Histogram::from_bins(RegularBins::new(0.0, 2.0, 2).unwrap());
+        let reducer = Histogram::from_bin_edges(RegularBinEdges::new(0.0, 2.0, 2).unwrap());
 
         let mut storage = [0.0, 0.0];
         let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);

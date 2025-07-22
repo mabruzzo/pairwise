@@ -11,7 +11,7 @@ use pairwise::{
 
 #[cfg(test)]
 mod tests {
-    use pairwise_nostd_internal::IrregularBins;
+    use pairwise_nostd_internal::IrregularBinEdges;
 
     use super::*;
 
@@ -48,7 +48,7 @@ mod tests {
         ];
 
         let squared_distance_bin_edges = [0.0, 1.0, 9.0, 16.0];
-        let squared_distance_bins = IrregularBins::new(&squared_distance_bin_edges).unwrap();
+        let squared_distance_bins = IrregularBinEdges::new(&squared_distance_bin_edges).unwrap();
         let reducer = Mean;
         let mut statepack = prepare_statepack(squared_distance_bin_edges.len(), &reducer);
         let points = PointProps::new(
@@ -109,7 +109,7 @@ mod tests {
         // inside the bottom bin
         let distance_bin_edges: [f64; 4] = [2.0, 6., 10., 15.];
         let squared_bin_edges = distance_bin_edges.map(|x| x.powi(2));
-        let squared_distance_bins = IrregularBins::new(&squared_bin_edges).unwrap();
+        let squared_distance_bins = IrregularBinEdges::new(&squared_bin_edges).unwrap();
 
         // check the means (using results computed by pyvsf)
         let expected_mean = [8.41281820819169, 15.01110699893027, f64::NAN];
@@ -157,14 +157,14 @@ mod tests {
         // - the number of bins is unequal to the distance bin count
         // - there would be a value smaller than the leftmost bin-edge
         // - there would be a value larger than the leftmost bin-edge
-        let hist_buckets = IrregularBins::new(&[6.0, 10.0, 14.0]).unwrap();
+        let hist_buckets = IrregularBinEdges::new(&[6.0, 10.0, 14.0]).unwrap();
 
         #[rustfmt::skip]
         let expected_hist_weights = [
             4., 0., 0.,
             3., 2., 0.,
         ];
-        let hist_reducer = Histogram::from_bins(hist_buckets);
+        let hist_reducer = Histogram::from_bin_edges(hist_buckets);
         let mut hist_statepack = prepare_statepack(distance_bin_edges.len() - 1, &hist_reducer);
         let result = apply_accum(
             &mut StatePackViewMut::from_array_view(hist_statepack.view_mut()),
@@ -228,7 +228,7 @@ mod tests {
 
         let distance_bin_edges: [f64; 3] = [17., 21., 25.];
         let squared_bin_edges = distance_bin_edges.map(|x| x.powi(2));
-        let square_distance_bins = IrregularBins::new(&squared_bin_edges).unwrap();
+        let square_distance_bins = IrregularBinEdges::new(&squared_bin_edges).unwrap();
 
         // the expected results were printed by pyvsf
         let expected_mean = [6.274664681905207, 6.068727871100932];
@@ -273,7 +273,7 @@ mod tests {
         // inside the bottom bin
         let distance_bin_edges: [f64; 4] = [2., 6., 10., 15.];
         let squared_bin_edges = distance_bin_edges.map(|x| x.powi(2));
-        let squared_distance_bins = IrregularBins::new(&squared_bin_edges).unwrap();
+        let squared_distance_bins = IrregularBinEdges::new(&squared_bin_edges).unwrap();
 
         // check the means (using results computed by pyvsf)
         let expected_mean = [284.57142857142856, 236.0, f64::NAN];

@@ -5,7 +5,7 @@
 //! bin index for a given value.
 
 /// Super simple. This can be expanded as needed.
-pub trait Bins {
+pub trait BinEdges {
     /// Calculate the bin index for a given value. Values which are equal to
     /// boundary values are considered part of the higher bin.
     fn bin_index(&self, value: f64) -> Option<usize>;
@@ -19,13 +19,13 @@ pub trait Bins {
 
 /// Regular bins with uniform spacing
 #[derive(Clone)]
-pub struct RegularBins {
+pub struct RegularBinEdges {
     min: f64,
     max: f64,
     bin_size: f64,
     n_bins: usize,
 }
-impl RegularBins {
+impl RegularBinEdges {
     /// Note that we initialize with num_bins rather than bin_size
     pub fn new(min: f64, max: f64, n_bins: usize) -> Result<Self, &'static str> {
         if n_bins == 0 {
@@ -45,7 +45,7 @@ impl RegularBins {
     }
 }
 
-impl Bins for RegularBins {
+impl BinEdges for RegularBinEdges {
     fn bin_index(&self, value: f64) -> Option<usize> {
         if value < self.min || value >= self.max {
             return None;
@@ -60,12 +60,12 @@ impl Bins for RegularBins {
     }
 }
 
-pub struct IrregularBins<'a> {
+pub struct IrregularBinEdges<'a> {
     bin_edges: &'a [f64],
 }
 
-impl<'a> IrregularBins<'_> {
-    pub fn new(bin_edges: &'a [f64]) -> Result<IrregularBins<'a>, &'static str> {
+impl<'a> IrregularBinEdges<'_> {
+    pub fn new(bin_edges: &'a [f64]) -> Result<IrregularBinEdges<'a>, &'static str> {
         if bin_edges.len() < 2 {
             return Err("A minimum of two bin edges are required");
         }
@@ -84,11 +84,11 @@ impl<'a> IrregularBins<'_> {
             }
         }
 
-        Ok(IrregularBins { bin_edges })
+        Ok(IrregularBinEdges { bin_edges })
     }
 }
 
-impl Bins for IrregularBins<'_> {
+impl BinEdges for IrregularBinEdges<'_> {
     fn bin_index(&self, value: f64) -> Option<usize> {
         if value < self.bin_edges[0] || value >= self.bin_edges[self.bin_edges.len() - 1] {
             return None;
@@ -116,37 +116,37 @@ mod tests {
     #[test]
     fn regular_bins_invalid_creation() {
         // Zero bins
-        assert!(RegularBins::new(0.0, 10.0, 0).is_err());
+        assert!(RegularBinEdges::new(0.0, 10.0, 0).is_err());
 
         // Max <= min
-        assert!(RegularBins::new(10.0, 10.0, 5).is_err());
-        assert!(RegularBins::new(10.0, 5.0, 5).is_err());
+        assert!(RegularBinEdges::new(10.0, 10.0, 5).is_err());
+        assert!(RegularBinEdges::new(10.0, 5.0, 5).is_err());
 
         // Non-finite values
-        assert!(RegularBins::new(f64::NAN, 10.0, 5).is_err());
-        assert!(RegularBins::new(0.0, f64::INFINITY, 5).is_err());
+        assert!(RegularBinEdges::new(f64::NAN, 10.0, 5).is_err());
+        assert!(RegularBinEdges::new(0.0, f64::INFINITY, 5).is_err());
     }
 
     #[test]
     fn irregular_bins_invalid_creation() {
         // not enough edges
-        assert!(IrregularBins::new(&[0.0]).is_err());
+        assert!(IrregularBinEdges::new(&[0.0]).is_err());
 
         // unsorted bin edges
-        assert!(IrregularBins::new(&[2.0, 1.0]).is_err());
-        assert!(IrregularBins::new(&[0.0, 3.0, 2.0]).is_err());
+        assert!(IrregularBinEdges::new(&[2.0, 1.0]).is_err());
+        assert!(IrregularBinEdges::new(&[0.0, 3.0, 2.0]).is_err());
 
         // Non-finite values
-        assert!(IrregularBins::new(&[f64::NAN, 10.0]).is_err());
-        assert!(IrregularBins::new(&[0.0, f64::INFINITY]).is_err());
+        assert!(IrregularBinEdges::new(&[f64::NAN, 10.0]).is_err());
+        assert!(IrregularBinEdges::new(&[0.0, f64::INFINITY]).is_err());
     }
 
     #[test]
     fn regular_and_irregular_bin_indexing() {
-        let rbins = RegularBins::new(0.0, 10.0, 5).unwrap();
-        let ibins = IrregularBins::new(&[0.0, 2.0, 4.0, 6.0, 8.0, 10.0]).unwrap();
+        let rbins = RegularBinEdges::new(0.0, 10.0, 5).unwrap();
+        let ibins = IrregularBinEdges::new(&[0.0, 2.0, 4.0, 6.0, 8.0, 10.0]).unwrap();
 
-        let bins_list: [&dyn Bins; 2] = [&rbins, &ibins];
+        let bins_list: [&dyn BinEdges; 2] = [&rbins, &ibins];
 
         for bins in &bins_list {
             assert_eq!(bins.len(), 5);
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn irregular_bins_bin_indexing() {
-        let bins = IrregularBins::new(&[-5.0, 0.0, 2.0, 3.0]).unwrap();
+        let bins = IrregularBinEdges::new(&[-5.0, 0.0, 2.0, 3.0]).unwrap();
 
         assert_eq!(bins.len(), 3);
 

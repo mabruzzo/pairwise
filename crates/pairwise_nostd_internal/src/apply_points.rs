@@ -1,4 +1,4 @@
-use crate::bins::Bins;
+use crate::bins::BinEdges;
 use crate::misc::squared_diff_norm;
 use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
@@ -95,7 +95,7 @@ pub fn apply_accum(
     reducer: &impl Reducer,
     points_a: &PointProps,
     points_b: Option<&PointProps>,
-    squared_distance_bins: &impl Bins,
+    squared_distance_bin_edges: &impl BinEdges,
     pairwise_fn: &impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
 ) -> Result<(), &'static str> {
     // maybe we make separate functions for auto-stats vs cross-stats?
@@ -120,7 +120,7 @@ pub fn apply_accum(
             reducer,
             points_a,
             points_b,
-            squared_distance_bins,
+            squared_distance_bin_edges,
             pairwise_fn,
         )
     } else {
@@ -129,7 +129,7 @@ pub fn apply_accum(
             reducer,
             points_a,
             points_a,
-            squared_distance_bins,
+            squared_distance_bin_edges,
             pairwise_fn,
         )
     }
@@ -141,7 +141,7 @@ fn apply_accum_helper<const CROSS: bool>(
     reducer: &impl Reducer,
     points_a: &PointProps,
     points_b: &PointProps,
-    squared_distance_bins: &impl Bins,
+    squared_distance_bin_edges: &impl BinEdges,
     pairwise_fn: impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
 ) {
     for i_a in 0..points_a.n_points {
@@ -155,7 +155,7 @@ fn apply_accum_helper<const CROSS: bool>(
                 i_b,
                 points_a.n_spatial_dims,
             );
-            if let Some(distance_bin_idx) = squared_distance_bins.bin_index(distance_squared) {
+            if let Some(distance_bin_idx) = squared_distance_bin_edges.bin_index(distance_squared) {
                 let datum = Datum {
                     value: pairwise_fn(points_a.values, points_b.values, i_a, i_b),
                     weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),

@@ -245,19 +245,19 @@ impl Reducer for Mean {
 
 // TODO: refactor so that Histogram doesn't hold a vector and move to
 //       pairwise_internal/accumulator.rs (to )
-pub struct Histogram<BinsType: bins::Bins> {
+pub struct Histogram<BinsType: bins::BinEdges> {
     bins: BinsType,
 }
 
 // I think it's good form to have this constructor but I'm not sure that we
 // really need it?
-impl<B: bins::Bins> Histogram<B> {
-    pub fn from_bins(bins: B) -> Histogram<B> {
+impl<B: bins::BinEdges> Histogram<B> {
+    pub fn from_bin_edges(bins: B) -> Histogram<B> {
         Histogram { bins }
     }
 }
 
-impl<B: bins::Bins> Reducer for Histogram<B> {
+impl<B: bins::BinEdges> Reducer for Histogram<B> {
     fn accum_state_size(&self) -> usize {
         self.bins.len()
     }
