@@ -67,6 +67,7 @@ impl<'a> PointProps<'a> {
     }
 }
 
+/// TODO
 /// Computes contributions to binned statistics from values computed from the
 /// specified pairs of points.
 ///
@@ -82,14 +83,9 @@ impl<'a> PointProps<'a> {
 /// - The bin the value is contributed to is determined by the distance between
 ///   the points and the `squared_distance_bin_edges` argument
 ///
-/// Details about the considered statistics are encapsulated by `accum`.
-/// Statistical contributions (for all bins) are tracked within `stateprops`.
 ///
-/// TODO: I don't love that we are directly accepting
-///       `squared_distance_bin_edges`. Frankly it seems like a recipe for
-///       disaster (I myself could imagine forgetting to square things). I
-///       think this is Ok while we get everything working, but we definitely
-///       should revisit!
+// TODO starting with squared distance bins is a major footgun.
+// TODO make sure there are tests with incorrect statepack size, and ensure errors are handled well
 pub fn apply_accum(
     statepack: &mut StatePackViewMut,
     reducer: &impl Reducer,
@@ -99,7 +95,7 @@ pub fn apply_accum(
     pairwise_fn: &impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
 ) -> Result<(), &'static str> {
     // maybe we make separate functions for auto-stats vs cross-stats?
-    // TODO: check size of output buffers
+    // TODO check size of output buffers
 
     //  if points_b is not None, make sure a and b have the same number of
     // spatial dimensions
