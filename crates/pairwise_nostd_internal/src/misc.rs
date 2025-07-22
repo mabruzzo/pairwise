@@ -70,6 +70,123 @@ pub fn segment_idx_bounds(n_indices: usize, seg_index: usize, n_segments: usize)
     (start, stop)
 }
 
+/// Check if a 3D array shape (for a View3DProps) is valid
+fn check_shape(shape_zyx: &[usize; 3]) -> Result<(), &'static str> {
+    if shape_zyx.contains(&0) {
+        Err("shape_zyx must not hold 0")
+    } else {
+        Ok(())
+    }
+}
+
+/// View3DProps specifies how a "3D" array is laid out in memory. It _must_ be
+/// contiguous along the fast axis, which is axis 2.
+///
+/// For concreteness, an array with shape `[a, b, c]`, has `a` elements along
+/// axis 0 and `c` elements along axis 2.
+#[allow(dead_code)] // this is a temporary stopgap solution
+#[derive(Clone)]
+pub struct View3DProps {
+    // Developer Notes
+    // ---------------
+    // - I suspect that we'll probably want to reuse this for 2D arrays (at
+    //   least initially - if performance is a problem, we can always add a
+    //   type specialized for 2D at a later date)
+    //   - you would represent a 2d array by setting the length along axis 0
+    //     to always be 1
+    //   - writing a specialized 2d version would probably only be marginally
+    //     faster for most methods (the exception is `reverse_map_idx`, which
+    //     could be significantly faster, but we don't need it in most cases)
+    // - we use signed ints because we do a lot of math with negative offsets
+    //   and want to avoid excessive casts
+    // - we should consider moving away from using z, y, and x since those can
+    //   be mapped arbitrarily. Instead I think we should talk about axis-0,
+    //   axis-1, and axis-2 (the way numpy does it)
+    shape_zyx: [isize; 3],
+    strides_zyx: [isize; 3],
+}
+
+#[allow(dead_code)] // <- this is a temporary stopgap solution
+impl View3DProps {
+    /// Create a contiguous-in-memory View3DProps from shape_zyx alone
+    pub fn from_shape_contiguous(shape_zyx: [usize; 3]) -> Result<View3DProps, &'static str> {
+        check_shape(&shape_zyx)?;
+        Ok(Self {
+            shape_zyx: [
+                shape_zyx[0] as isize,
+                shape_zyx[1] as isize,
+                shape_zyx[2] as isize,
+            ],
+            strides_zyx: [
+                (shape_zyx[1] * shape_zyx[2]) as isize,
+                shape_zyx[2] as isize,
+                1_isize,
+            ],
+        })
+    }
+
+    /// Create a View3DProps from shape_zyx and strides_zyx
+    pub fn from_shape_strides(
+        shape_zyx: [usize; 3],
+        strides_zyx: [usize; 3],
+    ) -> Result<View3DProps, &'static str> {
+        check_shape(&shape_zyx)?;
+
+        if strides_zyx[2] != 1 {
+            Err("the blocks must be contiguous along the fast axis")
+        } else if strides_zyx[1] < shape_zyx[2] * strides_zyx[2] {
+            Err("the length of the contiguous axis can't exceed strides_zyx[1]")
+        } else if strides_zyx[0] < shape_zyx[1] * strides_zyx[1] {
+            Err("the length of axis 1 can't exceed strides_zyx[0]")
+        } else if strides_zyx[0] < strides_zyx[1] {
+            Err("strides_zyx[1] must not exceed strides_zyx[0]")
+        } else {
+            Ok(Self {
+                shape_zyx: [
+                    shape_zyx[0] as isize,
+                    shape_zyx[1] as isize,
+                    shape_zyx[2] as isize,
+                ],
+                strides_zyx: [
+                    strides_zyx[0] as isize,
+                    strides_zyx[1] as isize,
+                    strides_zyx[2] as isize,
+                ],
+            })
+        }
+    }
+
+    /// returns the number of elements that a slice must have to be described
+    /// by self
+    pub fn contiguous_length(&self) -> usize {
+        let max_idx_1d = self.map_idx(
+            self.shape_zyx[0] - 1,
+            self.shape_zyx[1] - 1,
+            self.shape_zyx[2] - 1,
+        );
+        // based on the invariants enforced by the constructor, tmp is always
+        // always be positive. Thus, it can be losslessly converted to usize
+        (max_idx_1d as usize) + 1_usize
+    }
+
+    pub fn shape(&self) -> &[isize; 3] {
+        &self.shape_zyx
+    }
+
+    /// map a 3D index to 1D
+    pub fn map_idx(&self, iz: isize, iy: isize, ix: isize) -> isize {
+        iz * self.strides_zyx[0] + iy * self.strides_zyx[1] + ix
+    }
+
+    /// map a 1D index to a 3D index
+    pub fn reverse_map_idx(&self, idx: isize) -> [isize; 3] {
+        let iz = idx / self.strides_zyx[0];
+        let iy = (idx - iz * self.strides_zyx[0]) / self.strides_zyx[1];
+        let ix = idx - iz * self.strides_zyx[0] - iy * self.strides_zyx[1];
+        [iz, iy, ix]
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -135,5 +252,79 @@ mod tests {
                 n_indices, seg_index, n_segments
             )
         }
+    }
+
+    // maps between a 3D & 1D index
+    struct IdxMappingPair([isize; 3], isize);
+
+    fn check_index_mapping(idx_props: &View3DProps, pairs: &[IdxMappingPair]) {
+        for IdxMappingPair(idx_3d, idx_1d) in pairs {
+            // try 3D to 1D:
+            assert_eq!(
+                idx_props.map_idx(idx_3d[0], idx_3d[1], idx_3d[2]),
+                *idx_1d,
+                "3D index, {:?}, was mapped to the wrong value",
+                idx_3d,
+            );
+            // try 1D to 3D:
+            assert_eq!(
+                idx_props.reverse_map_idx(*idx_1d),
+                idx_3d.as_slice(),
+                "1D index, {}, was mapped to the wrong 3D index",
+                idx_1d
+            );
+        }
+    }
+
+    #[test]
+    fn idx_props_simple() {
+        let idx_props = View3DProps::from_shape_strides([2, 3, 4], [18, 6, 1]).unwrap();
+        assert_eq!(idx_props.shape(), [2, 3, 4].as_slice());
+        assert_eq!(idx_props.contiguous_length(), 34);
+        check_index_mapping(
+            &idx_props,
+            &[
+                IdxMappingPair([0, 0, 0], 0),
+                IdxMappingPair([0, 0, 3], 3),
+                IdxMappingPair([0, 1, 0], 6),
+                IdxMappingPair([0, 2, 0], 12),
+                IdxMappingPair([0, 2, 3], 15),
+                IdxMappingPair([1, 0, 0], 18),
+                IdxMappingPair([1, 1, 0], 24),
+                IdxMappingPair([1, 2, 3], 33),
+            ],
+        );
+    }
+
+    #[test]
+    fn idx_props_contig() {
+        let idx_props = View3DProps::from_shape_contiguous([2, 3, 4]).unwrap();
+        assert_eq!(idx_props.shape(), [2, 3, 4].as_slice());
+        assert_eq!(idx_props.contiguous_length(), 24);
+        check_index_mapping(
+            &idx_props,
+            &[
+                IdxMappingPair([0, 0, 0], 0),
+                IdxMappingPair([0, 0, 3], 3),
+                IdxMappingPair([0, 1, 0], 4),
+                IdxMappingPair([0, 2, 0], 8),
+                IdxMappingPair([0, 2, 3], 11),
+                IdxMappingPair([1, 0, 0], 12),
+                IdxMappingPair([1, 1, 0], 16),
+                IdxMappingPair([1, 2, 3], 23),
+            ],
+        );
+    }
+
+    #[test]
+    fn idx_props_errs() {
+        assert!(View3DProps::from_shape_contiguous([2, 3, 0]).is_err());
+        assert!(View3DProps::from_shape_contiguous([2, 0, 4]).is_err());
+        assert!(View3DProps::from_shape_contiguous([0, 3, 4]).is_err());
+
+        assert!(View3DProps::from_shape_strides([2, 3, 4], [18, 6, 0]).is_err());
+        assert!(View3DProps::from_shape_strides([2, 3, 4], [18, 3, 1]).is_err());
+        assert!(View3DProps::from_shape_strides([2, 3, 4], [18, 20, 1]).is_err());
+        assert!(View3DProps::from_shape_strides([2, 3, 4], [11, 4, 1]).is_err());
     }
 }
