@@ -51,7 +51,9 @@ impl BinEdges for RegularBinEdges {
             return None;
         }
 
-        let index = ((value - self.min) / self.bin_size).floor() as usize;
+        // this cast handles the truncation
+        let index = ((value - self.min) / self.bin_size) as usize;
+
         Some(index)
     }
 
