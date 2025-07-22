@@ -48,12 +48,57 @@ impl Bins for RegularBins {
     }
 }
 
+struct IrregularBins<'a> {
+    bin_edges: &'a [f64],
+}
+
+impl<'a> IrregularBins<'_> {
+    pub fn new(bin_edges: &'a [f64]) -> Result<IrregularBins<'a>, &'static str> {
+        if bin_edges.len() < 2 {
+            return Err("A minimum of two bin edges are required");
+        }
+
+        // Check that all bin_edges are finite
+        // It may be worth supporting -inf and +inf as first and last bin edges
+        // at some point.
+        if bin_edges.iter().any(|&x| !x.is_finite()) {
+            return Err("Bin edges must be finite");
+        }
+
+        // Check if bin_edges are in strictly increasing order
+        for i in 1..bin_edges.len() {
+            if bin_edges[i] <= bin_edges[i - 1] {
+                return Err("Bin edges must be in strictly increasing order");
+            }
+        }
+
+        Ok(IrregularBins { bin_edges })
+    }
+}
+
+impl Bins for IrregularBins<'_> {
+    fn bin_index(&self, value: f64) -> Option<usize> {
+        if value < self.bin_edges[0] || value >= self.bin_edges[self.bin_edges.len() - 1] {
+            return None;
+        }
+
+        let index = self
+            .bin_edges
+            // There may be downsides to using total_cmp (perf?)
+            .binary_search_by(|probe| probe.total_cmp(&value))
+            // Ok is used for an exact match, Err for a lower bound
+            .unwrap_or_else(|i| i - 1);
+
+        Some(index)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_regular_bins_invalid_creation() {
+    fn regular_bins_invalid_creation() {
         // Zero bins
         assert!(RegularBins::new(0.0, 10.0, 0).is_err());
 
@@ -67,21 +112,58 @@ mod tests {
     }
 
     #[test]
-    fn test_regular_bins_bin_index() {
-        let bins = RegularBins::new(0.0, 10.0, 5).unwrap();
+    fn irregular_bins_invalid_creation() {
+        // not enough edges
+        assert!(IrregularBins::new(&[0.0]).is_err());
 
+        // unsorted bin edges
+        assert!(IrregularBins::new(&[2.0, 1.0]).is_err());
+
+        // Non-finite values
+        assert!(IrregularBins::new(&[f64::NAN, 10.0]).is_err());
+        assert!(IrregularBins::new(&[0.0, f64::INFINITY]).is_err());
+    }
+
+    #[test]
+    fn regular_and_irregular_bin_indexing() {
+        let rbins = RegularBins::new(0.0, 10.0, 5).unwrap();
+        let ibins = IrregularBins::new(&[0.0, 2.0, 4.0, 6.0, 8.0, 10.0]).unwrap();
+        let bins_list: [&dyn Bins; 2] = [&rbins, &ibins];
+
+        for bins in &bins_list {
+            // Test valid values
+            assert_eq!(bins.bin_index(0.0), Some(0));
+            assert_eq!(bins.bin_index(1.9), Some(0));
+            assert_eq!(bins.bin_index(2.0), Some(1));
+            assert_eq!(bins.bin_index(3.9), Some(1));
+            assert_eq!(bins.bin_index(4.0), Some(2));
+            assert_eq!(bins.bin_index(8.0), Some(4));
+            assert_eq!(bins.bin_index(9.9), Some(4));
+
+            // Test boundary conditions
+            assert_eq!(bins.bin_index(10.0), None); // max is exclusive
+            assert_eq!(bins.bin_index(-0.1), None); // below min
+            assert_eq!(bins.bin_index(10.1), None); // above max
+        }
+    }
+
+    #[test]
+    fn irregular_bins_bin_indexing() {
+        let bins = IrregularBins::new(&[-5.0, 0.0, 2.0, 3.0]).unwrap();
         // Test valid values
-        assert_eq!(bins.bin_index(0.0), Some(0));
-        assert_eq!(bins.bin_index(1.9), Some(0));
-        assert_eq!(bins.bin_index(2.0), Some(1));
-        assert_eq!(bins.bin_index(3.9), Some(1));
-        assert_eq!(bins.bin_index(4.0), Some(2));
-        assert_eq!(bins.bin_index(8.0), Some(4));
-        assert_eq!(bins.bin_index(9.9), Some(4));
+        assert_eq!(bins.bin_index(-5.0), Some(0));
+        assert_eq!(bins.bin_index(-2.5), Some(0));
+        assert_eq!(bins.bin_index(-0.1), Some(0));
+        assert_eq!(bins.bin_index(0.0), Some(1));
+        assert_eq!(bins.bin_index(1.0), Some(1));
+        assert_eq!(bins.bin_index(1.9), Some(1));
+        assert_eq!(bins.bin_index(2.0), Some(2));
+        assert_eq!(bins.bin_index(2.5), Some(2));
+        assert_eq!(bins.bin_index(2.9), Some(2));
 
         // Test boundary conditions
-        assert_eq!(bins.bin_index(10.0), None); // max is exclusive
-        assert_eq!(bins.bin_index(-0.1), None); // below min
-        assert_eq!(bins.bin_index(10.1), None); // above max
+        assert_eq!(bins.bin_index(3.0), None); // max is exclusive
+        assert_eq!(bins.bin_index(-5.1), None); // below min
+        assert_eq!(bins.bin_index(3.1), None); // above max
     }
 }
