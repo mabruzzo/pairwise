@@ -1,5 +1,5 @@
 //! Implements types to represent "bins", used for Histogram buckets and for
-//!  distance binning of accumulators.  The Bins trait provides a common
+//! distance binning of accumulators.  The Bins trait provides a common
 //! interface which is implemented by RegularBins and IrrigularBins. These
 //! types do NOT "hold" data, they only define the bin edges and determine the
 //! bin index for a given value.

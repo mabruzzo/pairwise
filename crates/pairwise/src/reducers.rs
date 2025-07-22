@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 
-use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
+use ndarray::{ArrayView1, ArrayView2, ArrayViewMut2, Axis};
 
-use pairwise_nostd_internal::{
-    AccumStateView, AccumStateViewMut, Datum, OutputDescr, Reducer, StatePackViewMut,
-};
+use pairwise_nostd_internal::{AccumStateView, OutputDescr, Reducer, StatePackViewMut};
 
 /// compute the output quantities from an accumulator's state properties and
 /// return the result in a HashMap.

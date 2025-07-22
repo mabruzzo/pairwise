@@ -51,7 +51,7 @@
 //! We will revisit this in the future once we are done architecting other
 //! parts of the design.
 
-use crate::bins::{self, IrregularBins};
+use crate::bins;
 use crate::state::{AccumStateView, AccumStateViewMut};
 use ndarray::ArrayViewMut1;
 
@@ -251,7 +251,7 @@ pub struct Histogram<BinsType: bins::Bins> {
 
 // I think it's good form to have this constructor but I'm not sure that we
 // really need it?
-impl<'a, B: bins::Bins> Histogram<B> {
+impl<B: bins::Bins> Histogram<B> {
     pub fn from_bins(bins: B) -> Histogram<B> {
         Histogram { bins }
     }

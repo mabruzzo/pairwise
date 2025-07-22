@@ -21,7 +21,7 @@ fn _get_output_single(
 mod tests {
 
     use super::*;
-    use pairwise_nostd_internal::{IrregularBins, RegularBins};
+    use pairwise_nostd_internal::RegularBins;
 
     #[test]
     fn mean_consume_once() {
