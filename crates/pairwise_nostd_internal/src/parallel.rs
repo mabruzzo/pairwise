@@ -5,6 +5,8 @@
 //! computed simultaneously, and each of the partial results can be combined
 //! together into a single result.
 //!
+//! # What is a Team?
+//!
 //! The idea of a "team" is an abstraction that we define in the context of
 //! describing parallelism. When we decompose a parallel reduction into pieces
 //! or "units of work":
@@ -24,6 +26,8 @@
 //!
 //! Of course we also have flexibility to adjust the definition of this
 //! hardware mapping
+//!
+//!
 
 use crate::reduce_utils::reset_full_statepack;
 use crate::reducer::{Datum, Reducer};
@@ -193,14 +197,21 @@ pub trait TeamProps {
 ///
 /// At a high-level, types that implement this trait generally:
 ///
-/// 1. encode details about a _binned reduction_, wherein  pairs are
-///    partitioned into bins (e.g. by distance), with separt `accum_state`s
-///    for each. For example, when calculating the VSF, we partition pairs
-///    into distance bins. The collection of `accum_state`s for each bin is
-///    called a `statepack`.
+/// 1. encode details about a _binned reduction_, wherein data elements are
+///    partitioned into bins, with separate `accum_state`s for each bin. The
+///    collection of `accum_state`s for each bin is called a `statepack`.
 ///    Executing a binned reduction consists of generating (datum, bin-index)
 ///    pairs from the data source and using each to update the appropriate
 ///    `accum_state`.
+///    - This trait commonly has multiple types that implement this trait
+///      in order to compute 2-point correlation functions or structure
+///      functions.
+///    - In this scenario:
+///      - each data element, or [`Datum`] is computed from a unique pair of
+///        points.
+///      - in this scenario, the
+///    - each data element, or Datum  when calculating the VSF, we partition pairs
+///    into distance bins.
 ///
 /// 2. have access to the data-source used in the binned reduction, from which
 ///    (datum, bin-index) pairs from the are drawn.
@@ -237,7 +248,7 @@ pub trait TeamProps {
 /// to actually complete the work associated with this pair.
 /// those methods shortly.
 ///
-// The number of teams and the number of members per team are commonly encoded
+/// The number of teams and the number of members per team are commonly encoded
 /// within instances of [`StandardTeamParam`].
 ///
 /// Types that implement this trait should also implement either
@@ -247,9 +258,6 @@ pub trait ReductionCommon {
     // structs, and you design the logic such that you don't have to do **any**
     // error-handling in this trait's methods.
 
-    //
-    // Associated items that are always used
-    // -------------------------------------
     type ReducerType: Reducer;
 
     /// return a reference to the reducer
