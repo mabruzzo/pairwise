@@ -79,11 +79,19 @@ fn check_shape(shape_zyx: &[usize; 3]) -> Result<(), &'static str> {
     }
 }
 
-/// View3DSpec specifies how a "3D" array is laid out in memory. It _must_ be
-/// contiguous along the fast axis, which is axis 2.
+/// View3DSpec specifies how a "3D" array is laid out in memory.
 ///
-/// For concreteness, an array with shape `[a, b, c]`, has `a` elements along
-/// axis 0 and `c` elements along axis 2.
+/// The array _must_ be contiguous along the fast axis, which is axis 2. For
+/// concreteness, an array with shape `[a, b, c]`, has `a` elements along axis
+/// 0 and `c` elements along axis 2.
+///
+/// # How it's Intended to be Used
+/// The basic premise is that an instance of this type is used alongside a
+/// slice and maps 3D indices to the slice's 1d index. This type is most
+/// useful, compared to say using a full blow multidimensional view type
+/// (e.g. ndarray::ArrayView3), when working with multiple separate slices
+/// that are all interpreted as multidimensional arrays that all share a
+/// common shape and data layout.
 #[allow(dead_code)] // this is a temporary stopgap solution
 #[derive(Clone)]
 pub struct View3DSpec {
@@ -156,10 +164,20 @@ impl View3DSpec {
         }
     }
 
-    /// returns the number of elements that a slice must have to be described
-    /// by self
-    pub fn contiguous_length(&self) -> usize {
-        let max_idx_1d = self.map_idx(
+    /// the number of elements a slice must have to be described by `&self`
+    ///
+    /// This method is primarily intended for error checks.
+    ///
+    /// In more detail, the number of elements that a given instance,
+    /// `idx_spec`, supports accessing with 3D indices is given by
+    /// `idx_spec.shape().iter().product()`. If `idx_spec` describes a fully
+    /// contiguous 3D array, that value is also returned by this method. While
+    /// this type _does_ require the fast axis (i.e. axis-2) to be contiguous,
+    /// it provides flexibility for the other axes. When `idx_spec` doesn't
+    /// describe a fully contiguous array, the value that this method returns
+    /// will exceed `idx_spec.shape().iter().product()`.
+    pub fn required_length(&self) -> usize {
+        let max_idx_1d = self.map_idx3d_to_1d(
             self.shape_zyx[0] - 1,
             self.shape_zyx[1] - 1,
             self.shape_zyx[2] - 1,
@@ -174,12 +192,12 @@ impl View3DSpec {
     }
 
     /// map a 3D index to 1D
-    pub fn map_idx(&self, iz: isize, iy: isize, ix: isize) -> isize {
+    pub fn map_idx3d_to_1d(&self, iz: isize, iy: isize, ix: isize) -> isize {
         iz * self.strides_zyx[0] + iy * self.strides_zyx[1] + ix
     }
 
     /// map a 1D index to a 3D index
-    pub fn reverse_map_idx(&self, idx: isize) -> [isize; 3] {
+    pub fn map_idx1d_to_3d(&self, idx: isize) -> [isize; 3] {
         let iz = idx / self.strides_zyx[0];
         let iy = (idx - iz * self.strides_zyx[0]) / self.strides_zyx[1];
         let ix = idx - iz * self.strides_zyx[0] - iy * self.strides_zyx[1];
@@ -261,14 +279,14 @@ mod tests {
         for IdxMappingPair(idx_3d, idx_1d) in pairs {
             // try 3D to 1D:
             assert_eq!(
-                idx_spec.map_idx(idx_3d[0], idx_3d[1], idx_3d[2]),
+                idx_spec.map_idx3d_to_1d(idx_3d[0], idx_3d[1], idx_3d[2]),
                 *idx_1d,
                 "3D index, {:?}, was mapped to the wrong value",
                 idx_3d,
             );
             // try 1D to 3D:
             assert_eq!(
-                idx_spec.reverse_map_idx(*idx_1d),
+                idx_spec.map_idx1d_to_3d(*idx_1d),
                 idx_3d.as_slice(),
                 "1D index, {}, was mapped to the wrong 3D index",
                 idx_1d
@@ -280,7 +298,7 @@ mod tests {
     fn idx_spec_simple() {
         let idx_spec = View3DSpec::from_shape_strides([2, 3, 4], [18, 6, 1]).unwrap();
         assert_eq!(idx_spec.shape(), [2, 3, 4].as_slice());
-        assert_eq!(idx_spec.contiguous_length(), 34);
+        assert_eq!(idx_spec.required_length(), 34);
         check_index_mapping(
             &idx_spec,
             &[
@@ -300,7 +318,7 @@ mod tests {
     fn idx_spec_contig() {
         let idx_spec = View3DSpec::from_shape_contiguous([2, 3, 4]).unwrap();
         assert_eq!(idx_spec.shape(), [2, 3, 4].as_slice());
-        assert_eq!(idx_spec.contiguous_length(), 24);
+        assert_eq!(idx_spec.required_length(), 24);
         check_index_mapping(
             &idx_spec,
             &[
