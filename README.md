@@ -8,6 +8,17 @@ Ideally, the goal is to replace the C++ code within [pyvsf](https://github.com/m
 > [!NOTE]
 > The remainder of this document describes some assorted ideas. They probably need to be distributed within actual documentation before we make a formal release.
 
+# Generating Documentation Locally
+
+After cloning the repository, navigate to the root of the repository and invoke
+
+```shell
+$ cargo doc
+```
+
+You can find the generated documentation within **target/doc**. You can manually open the docs for the ``pairwise`` crate, **OR**, you can invoke ``cargo doc --open``.
+
+
 # Design Considerations
 
 This package's design is influenced by the different contexts where you might compute such two-point statistics.
