@@ -70,7 +70,7 @@ pub fn segment_idx_bounds(n_indices: usize, seg_index: usize, n_segments: usize)
     (start, stop)
 }
 
-/// Check if a 3D array shape (for a View3DProps) is valid
+/// Check if a 3D array shape (for a View3DSpec) is valid
 fn check_shape(shape_zyx: &[usize; 3]) -> Result<(), &'static str> {
     if shape_zyx.contains(&0) {
         Err("shape_zyx must not hold 0")
@@ -79,14 +79,14 @@ fn check_shape(shape_zyx: &[usize; 3]) -> Result<(), &'static str> {
     }
 }
 
-/// View3DProps specifies how a "3D" array is laid out in memory. It _must_ be
+/// View3DSpec specifies how a "3D" array is laid out in memory. It _must_ be
 /// contiguous along the fast axis, which is axis 2.
 ///
 /// For concreteness, an array with shape `[a, b, c]`, has `a` elements along
 /// axis 0 and `c` elements along axis 2.
 #[allow(dead_code)] // this is a temporary stopgap solution
 #[derive(Clone)]
-pub struct View3DProps {
+pub struct View3DSpec {
     // Developer Notes
     // ---------------
     // - I suspect that we'll probably want to reuse this for 2D arrays (at
@@ -107,9 +107,9 @@ pub struct View3DProps {
 }
 
 #[allow(dead_code)] // <- this is a temporary stopgap solution
-impl View3DProps {
-    /// Create a contiguous-in-memory View3DProps from shape_zyx alone
-    pub fn from_shape_contiguous(shape_zyx: [usize; 3]) -> Result<View3DProps, &'static str> {
+impl View3DSpec {
+    /// Create a contiguous-in-memory View3DSpec from shape_zyx alone
+    pub fn from_shape_contiguous(shape_zyx: [usize; 3]) -> Result<View3DSpec, &'static str> {
         check_shape(&shape_zyx)?;
         Ok(Self {
             shape_zyx: [
@@ -125,11 +125,11 @@ impl View3DProps {
         })
     }
 
-    /// Create a View3DProps from shape_zyx and strides_zyx
+    /// Create a View3DSpec from shape_zyx and strides_zyx
     pub fn from_shape_strides(
         shape_zyx: [usize; 3],
         strides_zyx: [usize; 3],
-    ) -> Result<View3DProps, &'static str> {
+    ) -> Result<View3DSpec, &'static str> {
         check_shape(&shape_zyx)?;
 
         if strides_zyx[2] != 1 {
@@ -257,18 +257,18 @@ mod tests {
     // maps between a 3D & 1D index
     struct IdxMappingPair([isize; 3], isize);
 
-    fn check_index_mapping(idx_props: &View3DProps, pairs: &[IdxMappingPair]) {
+    fn check_index_mapping(idx_spec: &View3DSpec, pairs: &[IdxMappingPair]) {
         for IdxMappingPair(idx_3d, idx_1d) in pairs {
             // try 3D to 1D:
             assert_eq!(
-                idx_props.map_idx(idx_3d[0], idx_3d[1], idx_3d[2]),
+                idx_spec.map_idx(idx_3d[0], idx_3d[1], idx_3d[2]),
                 *idx_1d,
                 "3D index, {:?}, was mapped to the wrong value",
                 idx_3d,
             );
             // try 1D to 3D:
             assert_eq!(
-                idx_props.reverse_map_idx(*idx_1d),
+                idx_spec.reverse_map_idx(*idx_1d),
                 idx_3d.as_slice(),
                 "1D index, {}, was mapped to the wrong 3D index",
                 idx_1d
@@ -277,12 +277,12 @@ mod tests {
     }
 
     #[test]
-    fn idx_props_simple() {
-        let idx_props = View3DProps::from_shape_strides([2, 3, 4], [18, 6, 1]).unwrap();
-        assert_eq!(idx_props.shape(), [2, 3, 4].as_slice());
-        assert_eq!(idx_props.contiguous_length(), 34);
+    fn idx_spec_simple() {
+        let idx_spec = View3DSpec::from_shape_strides([2, 3, 4], [18, 6, 1]).unwrap();
+        assert_eq!(idx_spec.shape(), [2, 3, 4].as_slice());
+        assert_eq!(idx_spec.contiguous_length(), 34);
         check_index_mapping(
-            &idx_props,
+            &idx_spec,
             &[
                 IdxMappingPair([0, 0, 0], 0),
                 IdxMappingPair([0, 0, 3], 3),
@@ -297,12 +297,12 @@ mod tests {
     }
 
     #[test]
-    fn idx_props_contig() {
-        let idx_props = View3DProps::from_shape_contiguous([2, 3, 4]).unwrap();
-        assert_eq!(idx_props.shape(), [2, 3, 4].as_slice());
-        assert_eq!(idx_props.contiguous_length(), 24);
+    fn idx_spec_contig() {
+        let idx_spec = View3DSpec::from_shape_contiguous([2, 3, 4]).unwrap();
+        assert_eq!(idx_spec.shape(), [2, 3, 4].as_slice());
+        assert_eq!(idx_spec.contiguous_length(), 24);
         check_index_mapping(
-            &idx_props,
+            &idx_spec,
             &[
                 IdxMappingPair([0, 0, 0], 0),
                 IdxMappingPair([0, 0, 3], 3),
@@ -318,13 +318,13 @@ mod tests {
 
     #[test]
     fn idx_props_errs() {
-        assert!(View3DProps::from_shape_contiguous([2, 3, 0]).is_err());
-        assert!(View3DProps::from_shape_contiguous([2, 0, 4]).is_err());
-        assert!(View3DProps::from_shape_contiguous([0, 3, 4]).is_err());
+        assert!(View3DSpec::from_shape_contiguous([2, 3, 0]).is_err());
+        assert!(View3DSpec::from_shape_contiguous([2, 0, 4]).is_err());
+        assert!(View3DSpec::from_shape_contiguous([0, 3, 4]).is_err());
 
-        assert!(View3DProps::from_shape_strides([2, 3, 4], [18, 6, 0]).is_err());
-        assert!(View3DProps::from_shape_strides([2, 3, 4], [18, 3, 1]).is_err());
-        assert!(View3DProps::from_shape_strides([2, 3, 4], [18, 20, 1]).is_err());
-        assert!(View3DProps::from_shape_strides([2, 3, 4], [11, 4, 1]).is_err());
+        assert!(View3DSpec::from_shape_strides([2, 3, 4], [18, 6, 0]).is_err());
+        assert!(View3DSpec::from_shape_strides([2, 3, 4], [18, 3, 1]).is_err());
+        assert!(View3DSpec::from_shape_strides([2, 3, 4], [18, 20, 1]).is_err());
+        assert!(View3DSpec::from_shape_strides([2, 3, 4], [11, 4, 1]).is_err());
     }
 }
