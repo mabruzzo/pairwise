@@ -95,11 +95,11 @@ pub fn assert_consistent_results(
 
 // helper function that sets up the statepack, which holds one accum_state
 // per spatial bin
-pub fn prepare_statepack(n_spatial_bins: usize, reducer: &impl Reducer) -> Array2<f64> {
-    assert!(n_spatial_bins > 0);
-    let mut statepack = Array2::<f64>::zeros((reducer.accum_state_size(), n_spatial_bins));
+pub fn prepare_statepack(n_bins: usize, reducer: &impl Reducer) -> Array2<f64> {
+    assert!(n_bins > 0);
+    let mut statepack = Array2::<f64>::zeros((reducer.accum_state_size(), n_bins));
     let mut statepack_view = StatePackViewMut::from_array_view(statepack.view_mut());
-    for i in 0..n_spatial_bins {
+    for i in 0..n_bins {
         reducer.init_accum_state(&mut statepack_view.get_state_mut(i));
     }
     statepack

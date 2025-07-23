@@ -1,4 +1,5 @@
-use crate::misc::{get_bin_idx, squared_diff_norm};
+use crate::bins::BinEdges;
+use crate::misc::squared_diff_norm;
 use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
 use ndarray::ArrayView2;
@@ -66,37 +67,6 @@ impl<'a> PointProps<'a> {
     }
 }
 
-fn apply_accum_helper<const CROSS: bool>(
-    statepack: &mut StatePackViewMut,
-    reducer: &impl Reducer,
-    points_a: &PointProps,
-    points_b: &PointProps,
-    squared_bin_edges: &[f64],
-    pairwise_fn: impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
-) {
-    for i_a in 0..points_a.n_points {
-        let i_b_start = if CROSS { i_a + 1 } else { 0 };
-        for i_b in i_b_start..points_b.n_points {
-            // compute the distance between the points, then the distance bin
-            let distance_squared = squared_diff_norm(
-                points_a.positions,
-                points_b.positions,
-                i_a,
-                i_b,
-                points_a.n_spatial_dims,
-            );
-            if let Some(distance_bin_idx) = get_bin_idx(distance_squared, squared_bin_edges) {
-                let datum = Datum {
-                    value: pairwise_fn(points_a.values, points_b.values, i_a, i_b),
-                    weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
-                };
-
-                reducer.consume(&mut statepack.get_state_mut(distance_bin_idx), &datum);
-            }
-        }
-    }
-}
-
 /// Computes contributions to binned statistics from values computed from the
 /// specified pairs of points.
 ///
@@ -125,16 +95,11 @@ pub fn apply_accum(
     reducer: &impl Reducer,
     points_a: &PointProps,
     points_b: Option<&PointProps>,
-    squared_distance_bin_edges: &[f64],
+    squared_distance_bin_edges: &impl BinEdges,
     pairwise_fn: &impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
 ) -> Result<(), &'static str> {
     // maybe we make separate functions for auto-stats vs cross-stats?
     // TODO: check size of output buffers
-
-    // Check that bin_edges are monotonically increasing
-    if !squared_distance_bin_edges.is_sorted() {
-        return Err("squared_distance_bin_edges must monotonically increase");
-    }
 
     //  if points_b is not None, make sure a and b have the same number of
     // spatial dimensions
@@ -169,4 +134,35 @@ pub fn apply_accum(
         )
     }
     Ok(())
+}
+
+fn apply_accum_helper<const CROSS: bool>(
+    statepack: &mut StatePackViewMut,
+    reducer: &impl Reducer,
+    points_a: &PointProps,
+    points_b: &PointProps,
+    squared_distance_bin_edges: &impl BinEdges,
+    pairwise_fn: impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
+) {
+    for i_a in 0..points_a.n_points {
+        let i_b_start = if CROSS { i_a + 1 } else { 0 };
+        for i_b in i_b_start..points_b.n_points {
+            // compute the distance between the points, then the distance bin
+            let distance_squared = squared_diff_norm(
+                points_a.positions,
+                points_b.positions,
+                i_a,
+                i_b,
+                points_a.n_spatial_dims,
+            );
+            if let Some(distance_bin_idx) = squared_distance_bin_edges.bin_index(distance_squared) {
+                let datum = Datum {
+                    value: pairwise_fn(points_a.values, points_b.values, i_a, i_b),
+                    weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
+                };
+
+                reducer.consume(&mut statepack.get_state_mut(distance_bin_idx), &datum);
+            }
+        }
+    }
 }

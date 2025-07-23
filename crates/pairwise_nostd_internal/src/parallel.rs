@@ -103,7 +103,7 @@ impl BinnedDatum {
 ///   testing purposes. (basically it goes through and does the work of 1
 ///   member at a time)
 /// - a team where each member corresponds to a SIMD vector lane (invoked by a
-///  single thread at a time)
+///   single thread at a time)
 ///
 /// The methods are all designed to be entered by all members of a team the
 /// same time. Calls to these methods should be written *as if* there is a
