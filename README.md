@@ -34,7 +34,7 @@ For the sake of clarity, let's provide some concrete details about this scenario
 - we are just interested in the auto-correlation **NOTE:** it doesn't actually matter whether we want to know about correlation or structure functions (it is slightly more convenient to describe correlation since auto-correlation and cross-correlation are familiar topics).
 - the simulation is 2D. **NOTE:** the more common scenario is probably 3D. We consider 2D for pedagogical purposes (i.e. the "bookkeeping" is simpler), but all the concepts generalize to 3D as well.
 - the domain is split into 12 rectangular tiles, where each tiles holds data representing a spatial region with width `tile_width` and a height `tile_height`. The tiles are organized such that the domain's total width is `3*tile_width` and the height is `4*tile_height`.
-- we are only interested in the structure function for gas in a particular temperature range (say, `5e3K <= t < 2e4`). **NOTE:**
+- we are only interested in the structure function for gas in a particular temperature range (say, `5e3K <= t < 2e4`).
 
 
 We provide an illustration of the domain down below. In this illustrate, we assign each tile a name of the form `t[a,b]`.
