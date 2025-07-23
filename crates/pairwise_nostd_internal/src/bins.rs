@@ -10,10 +10,6 @@ pub trait BinEdges {
     fn bin_index(&self, value: f64) -> Option<usize>;
 
     fn n_bins(&self) -> usize;
-
-    fn is_empty(&self) -> bool {
-        self.n_bins() == 0
-    }
 }
 
 /// Regular bins with uniform spacing
