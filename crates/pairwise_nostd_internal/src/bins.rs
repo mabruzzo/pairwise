@@ -5,13 +5,14 @@
 /// Super simple. This can be expanded as needed.
 pub trait BinEdges {
     /// Calculate the bin index for a given value. Values which are equal to
-    /// boundary values are considered part of the higher bin.
+    /// boundary values are considered part of the higher bin, i.e. intervals
+    /// do not include the right edge.
     fn bin_index(&self, value: f64) -> Option<usize>;
 
-    fn len(&self) -> usize;
+    fn n_bins(&self) -> usize;
 
     fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.n_bins() == 0
     }
 }
 
@@ -55,7 +56,7 @@ impl BinEdges for RegularBinEdges {
         Some(index)
     }
 
-    fn len(&self) -> usize {
+    fn n_bins(&self) -> usize {
         self.n_bins
     }
 }
@@ -104,7 +105,7 @@ impl BinEdges for IrregularBinEdges<'_> {
         Some(index)
     }
 
-    fn len(&self) -> usize {
+    fn n_bins(&self) -> usize {
         self.bin_edges.len() - 1
     }
 }
@@ -149,7 +150,7 @@ mod tests {
         let bins_list: [&dyn BinEdges; 2] = [&rbins, &ibins];
 
         for bins in &bins_list {
-            assert_eq!(bins.len(), 5);
+            assert_eq!(bins.n_bins(), 5);
 
             // Test valid values
             assert_eq!(bins.bin_index(0.0), Some(0));
@@ -171,7 +172,7 @@ mod tests {
     fn irregular_bins_bin_indexing() {
         let bins = IrregularBinEdges::new(&[-5.0, 0.0, 2.0, 3.0]).unwrap();
 
-        assert_eq!(bins.len(), 3);
+        assert_eq!(bins.n_bins(), 3);
 
         // Test valid values
         assert_eq!(bins.bin_index(-5.0), Some(0));

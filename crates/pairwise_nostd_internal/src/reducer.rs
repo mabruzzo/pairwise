@@ -243,8 +243,6 @@ impl Reducer for Mean {
     }
 }
 
-// TODO: refactor so that Histogram doesn't hold a vector and move to
-//       pairwise_internal/accumulator.rs (to )
 pub struct Histogram<BinsType: bins::BinEdges> {
     bins: BinsType,
 }
@@ -259,7 +257,7 @@ impl<B: bins::BinEdges> Histogram<B> {
 
 impl<B: bins::BinEdges> Reducer for Histogram<B> {
     fn accum_state_size(&self) -> usize {
-        self.bins.len()
+        self.bins.n_bins()
     }
 
     /// initializes the storage tracking the acumulator's state
@@ -277,20 +275,20 @@ impl<B: bins::BinEdges> Reducer for Histogram<B> {
     /// merge the state information tracked by `accum_state` and `other`, and
     /// update `accum_state` accordingly
     fn merge(&self, accum_state: &mut AccumStateViewMut, other: &AccumStateView) {
-        for i in 0..self.bins.len() {
+        for i in 0..self.bins.n_bins() {
             accum_state[i] += other[i];
         }
     }
 
     fn output_descr(&self) -> OutputDescr {
         OutputDescr::SingleVecComp {
-            size: self.bins.len(),
+            size: self.bins.n_bins(),
             name: "weight",
         }
     }
 
     fn value_from_accum_state(&self, value: &mut ArrayViewMut1<f64>, accum_state: &AccumStateView) {
-        for i in 0..self.bins.len() {
+        for i in 0..self.bins.n_bins() {
             value[[i]] = accum_state[i];
         }
     }
