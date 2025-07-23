@@ -1,8 +1,6 @@
-//! Implements types to represent "bins", used for Histogram buckets and for
-//! distance binning of accumulators.  The Bins trait provides a common
-//! interface which is implemented by RegularBins and IrregularBins. These
-//! types do NOT "hold" data, they only define the bin edges and determine the
-//! bin index for a given value.
+//! Implements types to represent "bin edges", used for Histogram buckets and for
+//! distance binning of accumulators.  The [`BinEdges`] trait provides a common
+//! interface that is implemented by [`RegularBinEdges`] and [`IrregularBinEdges`]
 
 /// Super simple. This can be expanded as needed.
 pub trait BinEdges {
