@@ -8,11 +8,8 @@ use pairwise_nostd_internal::{
             reducer_mean_chunked, restructured1_mean_chunked, restructured2_mean_chunked,
         },
         unordered::{
-            //MeanUnorderedReduction,
-            naive_mean_unordered,
-            reducer_mean_unordered,
-            restructured1_mean_unordered,
-            restructured2_mean_unordered,
+            MeanUnorderedReduction, naive_mean_unordered, reducer_mean_unordered,
+            restructured1_mean_unordered, restructured2_mean_unordered,
         },
     },
     reset_full_statepack,
@@ -305,17 +302,14 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                         )
                     }
                     StreamKind::Unordered => {
-                        return Err(WrapperError::Unimplemented);
-                        /*
                         let reduce_spec =
                             MeanUnorderedReduction::new(stream.clone(), f, reducer, n_bins);
-                        executor.drive_reduce_batched(
+                        executor.drive_reduce(
                             binned_statepack,
                             &reduce_spec,
                             n_members_per_team,
                             n_teams,
                         )
-                        */
                     }
                 };
                 if result.is_ok() {

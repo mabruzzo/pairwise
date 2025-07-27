@@ -442,10 +442,10 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
                     //   implementation, we wouldn't actually alter the
                     //   underlying algorithm
                     assert_eq!(tmp_accum_states.n_states(), team_param.n_teams);
-                    for offset in 0..team_param.n_teams {
+                    for offset in 0..team_param.n_members_per_team {
                         let mut tmp_accum_state = tmp_accum_states.get_state_mut(offset);
                         let i_itr = ((i_global + member_id.0)..(i_global + chunk_len))
-                            .step_by(team_param.n_teams);
+                            .step_by(team_param.n_members_per_team);
                         for i in i_itr {
                             self.reducer.consume(
                                 &mut tmp_accum_state,
@@ -468,7 +468,7 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
                     let mut tmp_accum_state = tmp_accum_states.get_state_mut(0);
 
                     let i_itr = ((i_global + member_id.0)..(i_global + chunk_len))
-                        .step_by(team_param.n_teams);
+                        .step_by(team_param.n_members_per_team);
                     for i in i_itr {
                         self.reducer.consume(
                             &mut tmp_accum_state,
