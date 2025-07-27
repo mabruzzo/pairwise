@@ -67,6 +67,5 @@ jobs:
       uses: dtolnay/rust-toolchain@master
       with:
         toolchain: stable
-        components: rustdoc
     - name: build docs
       run: cargo doc
