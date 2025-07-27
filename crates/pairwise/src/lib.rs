@@ -257,6 +257,8 @@ these categories _"Nested"_ and _"Batched"_.
     associative. This is especially relevant for floating point numbers.
 */
 
+#![deny(rustdoc::broken_intra_doc_links)]
+
 // inform build-system of the crates in this package
 mod misc;
 mod parallel_serial;

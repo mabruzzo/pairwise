@@ -58,3 +58,15 @@ jobs:
         components: rustfmt
     - name: Check formatting
       run: cargo fmt --all --check
+
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust and rustfmt
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        components: rustdoc
+    - name: build docs
+      run: cargo doc

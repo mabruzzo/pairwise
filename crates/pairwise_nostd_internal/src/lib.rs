@@ -1,4 +1,6 @@
 #![no_std]
+#![deny(rustdoc::broken_intra_doc_links)]
+
 mod apply_points;
 mod bins;
 mod misc;
