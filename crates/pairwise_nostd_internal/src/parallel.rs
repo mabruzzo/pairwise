@@ -40,7 +40,7 @@ impl BinnedDatum {
     }
 }
 
-/// A team (implementer of TeamProps) is composed of 1 or more members, who
+/// A team (implementer of Team) is composed of 1 or more members, who
 /// work together in a tightly-coupled, synchronous manner to collaboratively
 /// complete a single unit of work at a time. This trait can describe:
 /// - a team of threads (fast on GPUs, used on CPUs for testing)
@@ -64,14 +64,14 @@ impl BinnedDatum {
 /// exposes member_id, then the majority of non-trivial code using that method
 /// would be only be compatible with a serial implementation when the number of
 /// threads per team is 1.
-pub trait TeamProps {
+pub trait Team {
     const IS_VECTOR_PROCESSOR: bool;
     /// This is a TeamProp-specific type for protecting shared data (i.e. to
     /// prevent multiple members of a thread-team from accessing the data at
     /// the same time).
     ///
     /// `std::sync::Mutex<T>` might be a good choice for an initial
-    /// implementation of TeamProps that uses `std::thread`.
+    /// implementation of Team that uses `std::thread`.
     ///
     /// # Optimization Considerations
     /// In practice, use of a type like `std::sync::Mutex<T>` is suboptimal
@@ -247,15 +247,15 @@ pub trait ReductionSpec {
     /// [`super#kinds-of-parallel-binned-reductions`].
     ///
     /// More concretely, the value of this program is a promise about the
-    /// [`TeamProps`] method used by [`Self::add_contributions`]:
+    /// [`Team`] method used by [`Self::add_contributions`]:
     /// - when `true`, the type implementing trait promises that
     ///   [`Self::add_contributions`] will call
-    ///   [`TeamProps::calccontribs_combine_apply`] (importantly, it won't
-    ///   call [`TeamProps::collect_pairs_then_apply`]).
+    ///   [`Team::calccontribs_combine_apply`] (importantly, it won't
+    ///   call [`Team::collect_pairs_then_apply`]).
     /// - when `false`, the type implementing trait promises that
     ///   [`Self::add_contributions`] will call
-    ///   [`TeamProps::collect_pairs_then_apply`] (importantly, it won't call
-    ///   [`TeamProps::calccontribs_combine_apply`])
+    ///   [`Team::collect_pairs_then_apply`] (importantly, it won't call
+    ///   [`Team::calccontribs_combine_apply`])
     ///
     /// This promise gives us the ability to control how we allocate memory.
     /// Violating this promise produces undefined behavior.
@@ -274,7 +274,7 @@ pub trait ReductionSpec {
     ///
     /// # Note
     /// This function should display slightly specialized behavior based on the
-    /// value of [`TeamProps::IS_VECTOR_PROCESSOR`]
+    /// value of [`Team::IS_VECTOR_PROCESSOR`]
     /// - when `false`: team members essentially correspond to threads. Each
     ///   thread in a given team will execute this function at the same time.
     ///   In this case, you can assume that `accum_state_buf` holds just a
@@ -285,7 +285,7 @@ pub trait ReductionSpec {
     ///   case, you can assume that the `accum_state_buf` argument has an entry
     ///   for each vector lane. Each entry is expected to be filled with
     ///   contributions during a single call to this function.
-    fn add_contributions<T: TeamProps>(
+    fn add_contributions<T: Team>(
         &self,
         binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
         outer_index: usize,
@@ -320,7 +320,7 @@ pub fn fill_single_team_binned_statepack<T>(
     team: &mut T,
     reduce_spec: &impl ReductionSpec,
 ) where
-    T: TeamProps,
+    T: Team,
 {
     let reducer = reduce_spec.get_reducer();
     let team_param = team.standard_team_info();

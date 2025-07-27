@@ -2,7 +2,7 @@
 
 use pairwise_nostd_internal::{
     BinnedDatum, Executor, MemberID, Reducer, ReductionSpec, StandardTeamParam, StatePackViewMut,
-    TeamProps, fill_single_team_binned_statepack,
+    Team, fill_single_team_binned_statepack,
 };
 use std::num::NonZeroU32;
 
@@ -15,7 +15,7 @@ struct SerialTeam {
 
 struct DummyWrapper<T>(T);
 
-impl TeamProps for SerialTeam {
+impl Team for SerialTeam {
     const IS_VECTOR_PROCESSOR: bool = false;
     type SharedDataHandle<T> = DummyWrapper<T>;
 

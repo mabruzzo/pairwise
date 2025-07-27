@@ -3,7 +3,7 @@
 
 use crate::MemberID;
 use crate::misc::segment_idx_bounds;
-use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, TeamProps};
+use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, Team};
 use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
 use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
@@ -260,7 +260,7 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
 
     const NESTED_REDUCE: bool = false;
 
-    fn add_contributions<T: TeamProps>(
+    fn add_contributions<T: Team>(
         &self,
         binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
         _outer_index: usize,
