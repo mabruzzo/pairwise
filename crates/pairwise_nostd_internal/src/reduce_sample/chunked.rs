@@ -412,7 +412,7 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
         let chunk_index = inner_index;
         let i_global = self.stream.first_index_of_chunk(chunk_index).unwrap();
         let bin_index = self.stream.bin_indices[i_global];
-        if bin_index < self.n_bins {
+        if bin_index >= self.n_bins {
             return;
         }
         let chunk_len = self.stream_chunk_lens[chunk_index];
