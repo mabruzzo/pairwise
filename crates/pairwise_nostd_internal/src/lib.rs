@@ -252,9 +252,8 @@ pub use apply_points::{PointProps, apply_accum};
 pub use bins::*;
 pub use misc::{dot_product, squared_diff_norm};
 pub use parallel::{
-    BatchedReduction, BinnedDatum, Executor, NestedReduction, ReductionCommon, StandardTeamParam,
-    TeamMemberProp, TeamProps, ThreadMember, fill_single_team_statepack_batched,
-    fill_single_team_statepack_nested,
+    BinnedDatum, Executor, MemberID, ReductionSpec, StandardTeamParam, TeamProps,
+    fill_single_team_binned_statepack,
 };
 pub use reduce_utils::reset_full_statepack;
 pub use reducer::{Datum, Histogram, Mean, OutputDescr, Reducer};

@@ -3,7 +3,8 @@
 
 use crate::misc::segment_idx_bounds;
 use crate::parallel::{
-    BatchedReduction, BinnedDatum, ReductionCommon, StandardTeamParam, TeamMemberProp,
+    BinnedDatum,
+    //ReductionSpec, StandardTeamParam, TeamMemberProp,
 };
 use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
 use crate::reduce_utils::{
@@ -211,7 +212,7 @@ pub fn restructured2_mean_unordered(
         scratch_binned_statepacks.first().unwrap(),
     );
 }
-
+/*
 pub struct MeanUnorderedReduction<'a> {
     stream: SampleDataStreamView<'a>,
     f: QuadraticPolynomial,
@@ -307,3 +308,4 @@ impl<'a> BatchedReduction for MeanUnorderedReduction<'a> {
         }
     }
 }
+*/
