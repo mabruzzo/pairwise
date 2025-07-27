@@ -175,15 +175,6 @@ pub trait TeamProps {
 ///    Executing a binned reduction consists of generating (datum, bin-index)
 ///    pairs from the data source and using each to update the appropriate
 ///    `accum_state`.
-///    - This trait commonly has multiple types that implement this trait
-///      in order to compute 2-point correlation functions or structure
-///      functions.
-///    - In this scenario:
-///      - each data element, or [`Datum`] is computed from a unique pair of
-///        points.
-///      - in this scenario, the
-///    - each data element, or Datum  when calculating the VSF, we partition pairs
-///    into distance bins.
 ///
 /// 2. have access to the data-source used in the binned reduction, from which
 ///    (datum, bin-index) pairs from the are drawn.
@@ -266,7 +257,6 @@ pub trait ReductionCommon {
 
     /// Provides the bounds of the inner loop that all members of a team share
     /// in a given call to the [`fill_single_team_statepack_batched`] function
-    ///
     ///
     /// # Preference for iterators
     /// move to using iterators rather than this
