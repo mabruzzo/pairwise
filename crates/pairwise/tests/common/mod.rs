@@ -1,3 +1,6 @@
+// do we have to use this to silence warnings?
+#![allow(dead_code)]
+
 // the reason this is named mod.rs has to do with some complexities of how
 // testing is handled
 //
