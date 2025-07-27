@@ -1,5 +1,5 @@
 //! This module defines parallelism abstractions. If you aren't familiar with
-//! our high-level concepts, please go see [`pairwise#Overview`]
+//! our high-level concepts, please go see the [developer guide](`super#parallelism-overview`)
 
 use crate::reduce_utils::reset_full_statepack;
 use crate::reducer::{Datum, Reducer};
