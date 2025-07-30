@@ -39,8 +39,8 @@ pieces of data:
   [`Datum`] type.
 * We generally say that we produce  [`Datum`]
   instances from a __data source__.  Importantly, the term, _data source_, is
-  an abstract concept; the way it is represented in a given implementation
-  totally depends on the context
+  an abstract concept; corresponding types and functions depend on context.
+  
 * We're only interested in calculations that can be implemented
   as a [one-pass algorithm](https://en.wikipedia.org/wiki/One-pass_algorithm)
   (in principle, we could add support for multi-pass algorithms).
@@ -72,7 +72,7 @@ a __data source__.
 
 *(Let's continue ignoring parallelism, for the moment)*
 
-In practice, this crate is focused on computing "Binned Reductions." The basic
+This crate is focused on computing "Binned Reductions." The basic
 premise is that each [`Datum`] instance taken from a
 data source is partitioned into a separate bin. In other words, we generate a
 set of `(bin index, datum)` pairs from the data source. In some parts of the
