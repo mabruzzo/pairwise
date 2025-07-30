@@ -29,7 +29,14 @@ to a single result. This comes up in parallel programming because the repeated
 operation is associative and commutative, in a mathematical
 sense.[^finite_precision]
 
+#### Fleshing things out
+
 <font color="red"> We should consider whether there is a better way to present this information! </font>
+
+**Key Takeaway:** We implement a reduction in terms of a [`Reducer`] type
+that stores incremental contribution, in a separately tracked `accum_state`,
+from each [`Datum`] instance that is produced from
+a __data source__.
 
 For the sake of concreteness, and to introduce some basic terminology, let's
 describe a hypothetical calculation that we consider a reductions. This
@@ -40,14 +47,14 @@ pieces of data:
 * We generally say that we produce  [`Datum`]
   instances from a __data source__.  Importantly, the term, _data source_, is
   an abstract concept; corresponding types and functions depend on context.
-  
 * We're only interested in calculations that can be implemented
   as a [one-pass algorithm](https://en.wikipedia.org/wiki/One-pass_algorithm)
   (in principle, we could add support for multi-pass algorithms).
   * as the algorithm considers each [`Datum`]
     instance, it repeatedly applies some operation that modifies some temporary
     state that represents the accumulated contributions from all instances
-    considered "so far."
+    considered "so far." (In the context of two-point statistics, a `Datum`
+    corresponds to a value computed from a pair of points.)
   * importantly, we require that this logic is mathematically associative
     and commutative (i.e. we can work on arbitrary subsets of the data in an
     arbitrary order and merge the results together later)
@@ -63,10 +70,6 @@ pieces of data:
   * also encodes logic for initializing/resetting an `accum_state` and for
     computing the final result(s) from an `accum_state`
 
-**Key Takeaway:** We implement a reduction in terms of a [`Reducer`] type
-that stores incremental contribution, in a separately tracked `accum_state`,
-from each [`Datum`] instance that is produced from
-a __data source__.
 
 ### Binned Reduction
 
@@ -129,7 +132,7 @@ very start and at the very end of a task).
 This section primarily focuses on the fine-grained parallelism. In fact, let's
 consider this fine-grained parallelism in a vacuum, and forget about the
 coarse-grained parallelism for now; we'll touch on coarse-grained parallelism
-for now.
+at the end of this section.
 
 To model fine-grained parallelism, we introduce a __team__ abstraction. A team
 is composed of 1 or more members, and the members of a team work together in a
