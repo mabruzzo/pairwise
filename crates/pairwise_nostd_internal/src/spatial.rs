@@ -80,4 +80,20 @@ mod tests {
         );
         assert!(block.is_ok());
     }
+
+    #[test]
+    fn cartesian_block_err() {
+        let velocity_x = [0.0; 3];
+        let velocity_y = [0.0; 4];
+        let velocity_z = [4.0, 1.0, 2.0, -3.0];
+        let weights = [1.0; 4];
+
+        let block = CartesianBlock::new(
+            [&velocity_z, &velocity_y, &velocity_x],
+            &weights,
+            View3DSpec::from_shape_contiguous([1, 1, 4]).unwrap(),
+            [0, 0, 0],
+        );
+        assert!(block.is_err());
+    }
 }

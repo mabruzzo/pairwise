@@ -236,12 +236,12 @@ these categories _"Nested"_ and _"Batched"_.
 
 */
 
-#![no_std]
+#![cfg_attr(not(test), no_std)] // (we allow std for testing)
 #![deny(rustdoc::broken_intra_doc_links)]
 
 mod apply_points;
 mod bins;
-mod displacement_vec;
+mod idx_3d_offset;
 mod misc;
 mod parallel;
 mod reduce_utils;
