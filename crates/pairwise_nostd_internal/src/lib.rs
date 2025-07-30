@@ -157,7 +157,7 @@ or "unit of work", at a time.
 
 The basic premise is to implement different parallelism backends. In a given
 backend, we represent a "team" with a type that implements the
-[`TeamProps`] trait.
+[`Team`] trait.
 
 Finally, let's briefly reconsider the coarser-level parallelism. The idea is
 to use multiple teams, where each team operates independently. This is
@@ -255,9 +255,8 @@ pub use apply_points::{PointProps, apply_accum};
 pub use bins::*;
 pub use misc::{dot_product, squared_diff_norm};
 pub use parallel::{
-    BatchedReduction, BinnedDatum, Executor, NestedReduction, ReductionCommon, StandardTeamParam,
-    TeamMemberProp, TeamProps, ThreadMember, fill_single_team_statepack_batched,
-    fill_single_team_statepack_nested,
+    BinnedDatum, Executor, MemberID, ReductionSpec, StandardTeamParam, Team,
+    fill_single_team_binned_statepack,
 };
 pub use reduce_utils::reset_full_statepack;
 pub use reducer::{Datum, Histogram, Mean, OutputDescr, Reducer};

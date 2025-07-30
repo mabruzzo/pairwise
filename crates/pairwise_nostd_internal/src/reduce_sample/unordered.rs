@@ -1,10 +1,9 @@
 // this file is intended for illustrative purposes
 // see module-level documentation for chunked.rs for more detail
 
+use crate::MemberID;
 use crate::misc::segment_idx_bounds;
-use crate::parallel::{
-    BatchedReduction, BinnedDatum, ReductionCommon, StandardTeamParam, TeamMemberProp,
-};
+use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, Team};
 use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
 use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
@@ -235,7 +234,7 @@ impl<'a> MeanUnorderedReduction<'a> {
     }
 }
 
-impl<'a> ReductionCommon for MeanUnorderedReduction<'a> {
+impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
     type ReducerType = Mean;
 
     fn get_reducer(&self) -> &Self::ReducerType {
@@ -258,52 +257,76 @@ impl<'a> ReductionCommon for MeanUnorderedReduction<'a> {
         let n_batches = n_stream_indices.div_ceil(batch_size);
         (0, n_batches)
     }
-}
 
-impl<'a> BatchedReduction for MeanUnorderedReduction<'a> {
-    fn get_datum_index_pair<T: TeamMemberProp>(
+    const NESTED_REDUCE: bool = false;
+
+    fn add_contributions<T: Team>(
         &self,
-        collect_pad: &mut [BinnedDatum],
+        binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
         _outer_index: usize,
         inner_index: usize,
-        member_prop: &T,
-        team_id: usize,
-        team_param: &StandardTeamParam,
+        team: &mut T,
     ) {
+        let team_id = team.team_id();
+        let team_param = team.standard_team_info();
         let stream_idx_bounds = segment_idx_bounds(self.stream.len(), team_id, team_param.n_teams);
         let i_offset = stream_idx_bounds.0 + team_param.n_members_per_team * inner_index;
 
         let stream_len = self.stream.len();
-        let get_binned_datum = |i: usize| -> BinnedDatum {
-            if i >= stream_len {
-                BinnedDatum::zeroed()
-            } else {
-                BinnedDatum {
-                    bin_index: self.stream.bin_indices[i],
-                    datum: Datum {
-                        value: self.f.call(self.stream.x_array[i]),
-                        weight: self.stream.weights[i],
-                    },
-                }
-            }
-        };
 
         if T::IS_VECTOR_PROCESSOR {
-            // we would need to do a lot of work to get this to auto-vectorize
-            // - as we note in the docstring where the function is declared
-            //   (in the trait declaration), we probably need to pre-generate
-            //   more elements than there are are threads
-            // - we probably need to statically make guarantees about
-            //   alignment and array length
-            // - it may be easier to use machinery like glam::DVec to force
-            //   the vectorizaiton
-            assert_eq!(collect_pad.len(), team_param.n_teams);
-            for (i, pad) in collect_pad.iter_mut().enumerate() {
-                *pad = get_binned_datum(i_offset + i);
-            }
+            team.collect_pairs_then_apply(
+                binned_statepack,
+                self.get_reducer(),
+                &|collect_pad: &mut [BinnedDatum], member_id: MemberID| {
+                    assert_eq!(member_id.0, 0); // sanity check
+                    assert_eq!(collect_pad.len(), team_param.n_members_per_team); // sanity check!
+                    // we would need to do a lot of work to get this to
+                    // auto-vectorize
+                    // - we probably need to pre-generate more elements than
+                    //   there are team members.
+                    // - we probably need to statically make guarantees about
+                    //   alignment and array length
+                    // - it may be easier to use machinery like glam::DVec to
+                    //   force the vectorizaiton
+
+                    #[allow(clippy::needless_range_loop)]
+                    for lane_id in 0..team_param.n_members_per_team {
+                        let i = i_offset + lane_id;
+                        collect_pad[lane_id] = if i >= stream_len {
+                            BinnedDatum::zeroed()
+                        } else {
+                            BinnedDatum {
+                                bin_index: self.stream.bin_indices[i],
+                                datum: Datum {
+                                    value: self.f.call(self.stream.x_array[i]),
+                                    weight: self.stream.weights[i],
+                                },
+                            }
+                        };
+                    }
+                },
+            );
         } else {
-            let member_id: usize = member_prop.get_id().try_into().unwrap();
-            collect_pad[0] = get_binned_datum(i_offset + member_id);
+            team.collect_pairs_then_apply(
+                binned_statepack,
+                self.get_reducer(),
+                &|collect_pad: &mut [BinnedDatum], member_id: MemberID| {
+                    assert_eq!(collect_pad.len(), 1); // sanity check!
+                    let i = i_offset + member_id.0;
+                    collect_pad[0] = if i >= stream_len {
+                        BinnedDatum::zeroed()
+                    } else {
+                        BinnedDatum {
+                            bin_index: self.stream.bin_indices[i],
+                            datum: Datum {
+                                value: self.f.call(self.stream.x_array[i]),
+                                weight: self.stream.weights[i],
+                            },
+                        }
+                    };
+                },
+            );
         }
     }
 }

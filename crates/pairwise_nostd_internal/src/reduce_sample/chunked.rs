@@ -24,9 +24,8 @@
 //! The logic has been separated between files to facilitate side-by-side
 //! comparisons
 
-use crate::NestedReduction;
 use crate::misc::segment_idx_bounds;
-use crate::parallel::{ReductionCommon, StandardTeamParam, TeamMemberProp};
+use crate::parallel::{MemberID, ReductionSpec, StandardTeamParam, Team};
 use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
     serial_merge_accum_states,
@@ -379,7 +378,7 @@ impl<'a> MeanChunkedReduction<'a> {
     }
 }
 
-impl<'a> ReductionCommon for MeanChunkedReduction<'a> {
+impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
     type ReducerType = Mean;
 
     fn get_reducer(&self) -> &Self::ReducerType {
@@ -398,75 +397,88 @@ impl<'a> ReductionCommon for MeanChunkedReduction<'a> {
     ) -> (usize, usize) {
         segment_idx_bounds(self.stream_chunk_lens.len(), team_id, team_info.n_teams)
     }
-}
 
-impl<'a> NestedReduction for MeanChunkedReduction<'a> {
-    fn infer_bin_index(
+    const NESTED_REDUCE: bool = true;
+
+    fn add_contributions<T: Team>(
         &self,
+        binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
         _outer_index: usize,
         inner_index: usize,
-        _team_info: &StandardTeamParam,
-    ) -> Option<usize> {
-        let chunk_index = inner_index;
-        if let Ok(stream_index) = self.stream.first_index_of_chunk(chunk_index) {
-            let bin_index = self.stream.bin_indices[stream_index];
-            if bin_index < self.n_bins {
-                Some(bin_index)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-    fn compute_team_contrib<T: TeamMemberProp>(
-        &self,
-        accum_state_buf: &mut StatePackViewMut,
-        _outer_index: usize,
-        inner_index: usize,
-        member_prop: &T,
-        team_param: &StandardTeamParam,
+        team: &mut T,
     ) {
+        // figure out the first index of the stream that corresponds to the
+        // current chunk, the associated bin_index, and the chunk_len
         let chunk_index = inner_index;
         let i_global = self.stream.first_index_of_chunk(chunk_index).unwrap();
+        let bin_index = self.stream.bin_indices[i_global];
+        if bin_index >= self.n_bins {
+            return;
+        }
         let chunk_len = self.stream_chunk_lens[chunk_index];
 
-        let do_work = |tmp_accum_state: &mut AccumStateViewMut, member_id: usize| {
-            let i_itr =
-                ((i_global + member_id)..(i_global + chunk_len)).step_by(team_param.n_teams);
-            for i in i_itr {
-                self.reducer.consume(
-                    tmp_accum_state,
-                    &Datum {
-                        value: self.f.call(self.stream.x_array[i]),
-                        weight: self.stream.weights[i],
-                    },
-                );
-            }
-        };
+        // get the team info
+        let team_param = team.standard_team_info();
 
         if T::IS_VECTOR_PROCESSOR {
-            // to achieve auto-vectorization:
-            // - we'd probably need to massage the way this loop is implemented
-            //   so that we are updating the states of all tmp_accum_states in
-            //   a single operation.
-            //   - the easiest way to do this probably involves modifying
-            //     things so that an tmp_accum_state is implemented in terms
-            //     of something like a glam::DVec type and so that the accum
-            //     methods can operate on glam::DVec objects
-            //   - this would involve some refactoring and statically encoding
-            //     some assumptions about the alignment of data storage
-            // - note: this change would only involve modifying implementation,
-            //   we wouldn't actually alter the algorithm
-            assert_eq!(accum_state_buf.n_states(), team_param.n_teams);
-            for offset in 0..team_param.n_teams {
-                do_work(&mut accum_state_buf.get_state_mut(offset), offset);
-            }
+            team.calccontribs_combine_apply(
+                binned_statepack,
+                &self.reducer,
+                bin_index,
+                &|tmp_accum_states: &mut StatePackViewMut, member_id: MemberID| {
+                    // to achieve auto-vectorization:
+                    // - we'd probably need to massage the way this loop is
+                    //   implemented so that we are updating the states of all
+                    //   tmp_accum_states in a single operation.
+                    //   - the easiest way to do this probably involves
+                    //     modifying things so that a tmp_accum_state is
+                    //     implemented in terms of something like a
+                    //     glam::DVec type and so that the Reducer methods
+                    //     can operate on glam::DVec objects
+                    //   - this would involve some refactoring and statically
+                    //     encoding some assumptions about the alignment of
+                    //     data storage
+                    // - note: this change would only involve modifying the
+                    //   implementation, we wouldn't actually alter the
+                    //   underlying algorithm
+                    assert_eq!(tmp_accum_states.n_states(), team_param.n_teams);
+                    for offset in 0..team_param.n_members_per_team {
+                        let mut tmp_accum_state = tmp_accum_states.get_state_mut(offset);
+                        let i_itr = ((i_global + member_id.0)..(i_global + chunk_len))
+                            .step_by(team_param.n_members_per_team);
+                        for i in i_itr {
+                            self.reducer.consume(
+                                &mut tmp_accum_state,
+                                &Datum {
+                                    value: self.f.call(self.stream.x_array[i]),
+                                    weight: self.stream.weights[i],
+                                },
+                            );
+                        }
+                    }
+                },
+            );
         } else {
-            do_work(
-                &mut accum_state_buf.get_state_mut(0),
-                member_prop.get_id().try_into().unwrap(),
+            team.calccontribs_combine_apply(
+                binned_statepack,
+                &self.reducer,
+                bin_index,
+                &|tmp_accum_states: &mut StatePackViewMut, member_id: MemberID| {
+                    assert_eq!(tmp_accum_states.n_states(), 1);
+                    let mut tmp_accum_state = tmp_accum_states.get_state_mut(0);
+
+                    let i_itr = ((i_global + member_id.0)..(i_global + chunk_len))
+                        .step_by(team_param.n_members_per_team);
+                    for i in i_itr {
+                        self.reducer.consume(
+                            &mut tmp_accum_state,
+                            &Datum {
+                                value: self.f.call(self.stream.x_array[i]),
+                                weight: self.stream.weights[i],
+                            },
+                        );
+                    }
+                },
             );
         }
     }
