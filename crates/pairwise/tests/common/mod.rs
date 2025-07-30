@@ -74,8 +74,7 @@ pub fn assert_consistent_results(
         assert_eq!(
             actual[key].len(),
             len,
-            "the lengths of the '{}' entry in actual and ref are unequal",
-            key,
+            "the lengths of the '{key}' entry in actual and ref are unequal",
         );
 
         for i in 0..len {
@@ -83,15 +82,9 @@ pub fn assert_consistent_results(
             let ref_val = expected[key][i];
             assert!(
                 isclose(actual_val, ref_val, *rtol, *atol),
-                "map[\"{}\"][{}] values aren't to within rtol={}, atol={}\
-            \n  actual   = {}\
-            \n  expected = {}",
-                key,
-                i,
-                rtol,
-                atol,
-                actual_val,
-                ref_val
+                "map[\"{key}\"][{i}] values aren't to within rtol={rtol}, atol={atol}\
+            \n  actual   = {actual_val}\
+            \n  expected = {ref_val}",
             );
         }
     }
