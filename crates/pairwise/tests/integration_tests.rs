@@ -180,8 +180,7 @@ mod tests {
         for (i, expected) in expected_hist_weights.iter().enumerate() {
             assert_eq!(
                 hist_result_map["weight"][i], *expected,
-                "problem at index {}",
-                i
+                "problem at index {i}",
             );
         }
     }
