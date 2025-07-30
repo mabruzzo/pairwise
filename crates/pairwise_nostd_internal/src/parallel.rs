@@ -1,29 +1,5 @@
-//! Our parallelism abstractions use the concepts of teams & reductions
-//!
-//! In general, a parallel reduction is a way of characterizing a certain kind
-//! of calculation that can be broken into parts, where each part can be
-//! computed simultaneously, and each of the partial results can be combined
-//! together into a single result.
-//!
-//! The idea of a "team" is an abstraction that we define in the context of
-//! describing parallelism. When we decompose a parallel reduction into pieces
-//! or "units of work":
-//! - we can distributed the units of work among 1 or more teams
-//! - a team is composed of 1 or more members. The members of a team work
-//!   together in a tightly-coupled, potentially synchronous manner to
-//!   collaboratively complete a single task at a time.
-//! - members of a multi-member teams may map to separate threads (fast on
-//!   GPUs) or (on CPUs) separate lanes involved in SIMD operations of a single
-//!   thread, or simply to serial execution on a single thread.
-//!
-//! This abstraction nicely maps to hardware:
-//! - on GPUs, you can imagine that each team-member corresponds to a separate
-//!   thread in a single Warp (aka a WaveFront)
-//! - on CPUs, it is optimal for a team to be represented by a single thread,
-//!   and for each member to correspond to a lane use by SIMD instructions
-//!
-//! Of course we also have flexibility to adjust the definition of this
-//! hardware mapping
+//! This module defines parallelism abstractions. If you aren't familiar with
+//! our high-level concepts, please go see the [developer guide](`super#parallelism-overview`)
 
 use crate::reduce_utils::reset_full_statepack;
 use crate::reducer::{Datum, Reducer};
@@ -33,8 +9,8 @@ use core::num::NonZeroU32;
 /// Used to describes the properties of a team member.
 ///
 /// The main reason purpose for this trait's existence is so that methods of
-/// [`ReductionSpec`] can accept a type that implements this trait as an
-/// argument and provide a specialization for:
+/// [`NestedReduction`] or [`BatchedReduction`] can accept a type that
+/// implements this trait as an argument and provide a specialization for:
 /// - the case when the members of a team are represented by a full thread
 /// - the case when the members of a team are vector-lanes driven by a single
 ///   thread.
@@ -189,15 +165,13 @@ pub trait TeamProps {
 
 /// Used for specifying the details of a binned reduction, providing an
 /// interface to for external code to carry it out (e.g.
-/// [`fill_single_team_statepack`]), potentially in parallel.
+/// [`fill_single_team_statepack_batched`]), potentially in parallel.
 ///
 /// At a high-level, types that implement this trait generally:
 ///
-/// 1. encode details about a _binned reduction_, wherein  pairs are
-///    partitioned into bins (e.g. by distance), with separt `accum_state`s
-///    for each. For example, when calculating the VSF, we partition pairs
-///    into distance bins. The collection of `accum_state`s for each bin is
-///    called a `statepack`.
+/// 1. encode details about a _binned reduction_, wherein data elements are
+///    partitioned into bins, with separate `accum_state`s for each bin. The
+///    collection of `accum_state`s for each bin is called a `statepack`.
 ///    Executing a binned reduction consists of generating (datum, bin-index)
 ///    pairs from the data source and using each to update the appropriate
 ///    `accum_state`.
@@ -211,9 +185,10 @@ pub trait TeamProps {
 ///
 /// # `outer_team_loop_bounds` and `inner_team_loop_bounds`
 /// The trait exposes information about the units of work that a given team is
-/// responsible for completing with the [`outer_team_loop_bounds`] and
-/// [`inner_team_loop_bounds`]. The following snippet illustrates how they are
-/// intended to be used.
+/// responsible for completing with the [`Self::outer_team_loop_bounds`] and
+/// [`Self::inner_team_loop_bounds`]. The following snippet illustrates how
+/// they are intended to be used.
+///
 /// In the context of this snippet, `team_param` holds a [`StandardTeamParam`]
 /// instance. You should imagine that all of the members of the team with the
 /// id of `team_id` are executing this snippet in lockstep with each other (and
@@ -237,19 +212,16 @@ pub trait TeamProps {
 /// to actually complete the work associated with this pair.
 /// those methods shortly.
 ///
-// The number of teams and the number of members per team are commonly encoded
+/// The number of teams and the number of members per team are commonly encoded
 /// within instances of [`StandardTeamParam`].
 ///
 /// Types that implement this trait should also implement either
-/// [`NestedReduce`] or [`BatchedReduce`].
+/// [`NestedReduction`] or [`BatchedReduction`].
 pub trait ReductionCommon {
     // An important premise is that you do error-checking while constructing
     // structs, and you design the logic such that you don't have to do **any**
     // error-handling in this trait's methods.
 
-    //
-    // Associated items that are always used
-    // -------------------------------------
     type ReducerType: Reducer;
 
     /// return a reference to the reducer
@@ -263,16 +235,17 @@ pub trait ReductionCommon {
     // (See the `inner_team_loop_bounds` docstring for more details)
 
     /// Provides the bounds of the outer loop that all members of team share in
-    /// a given call to the [`fill_single_team_statepack`] function
+    /// a given call to the [`fill_single_team_statepack_batched`] function
     ///
     /// For more details about how this is used, see the docstring of
-    /// [`inner_team_loop_bounds`] or the implementation of
-    /// [`fill_single_team_statepack`]
+    /// [`Self::inner_team_loop_bounds`] or the implementation of
+    /// [`fill_single_team_statepack_batched`]
     ///
     /// # Note
     /// we will eventually be able to remove this method. It is totally
     /// unnecessary in the vast majority of cases. It **only** exists to make
-    /// it easier to port over the [`apply_accum`] function for [`PointProps`]
+    /// it easier to port over the [`crate::apply_accum`] function for
+    /// [`crate::PointProps`]
     #[inline(always)]
     fn outer_team_loop_bounds(
         &self,
@@ -283,8 +256,7 @@ pub trait ReductionCommon {
     }
 
     /// Provides the bounds of the inner loop that all members of a team share
-    /// in a given call to the [`fill_single_team_statepack`] function
-    ///
+    /// in a given call to the [`fill_single_team_statepack_batched`] function
     ///
     /// # Preference for iterators
     /// move to using iterators rather than this
@@ -293,8 +265,8 @@ pub trait ReductionCommon {
     /// is mostly to avoid any codegen surprises.
     ///
     /// # Other Thoughts
-    /// When the [`outer_team_loop_bounds`] function is removed, we should
-    /// rename this function (maybe `team_loop_bounds`?)
+    /// When the [`Self::outer_team_loop_bounds`] function is removed, we
+    /// should rename this function (maybe `team_loop_bounds`?)
     fn inner_team_loop_bounds(
         &self,
         outer_index: usize,
@@ -306,11 +278,11 @@ pub trait ReductionCommon {
 /// Specifies how to compute a unit of work when we know ahead of time that
 /// all datums generated in the unit of work share a common bin index.
 ///
-/// The shared bin index is computed by [`infer_bin_index`].
+/// The shared bin index is computed by [`Self::infer_bin_index`].
 ///
 /// - the intention is to:
-///   1. Have the team collectively call [`collect_team_contrib`]. Each member
-///      will record contributions to a separate `accum_state`
+///   1. Have the team collectively call [`Self::compute_team_contrib`].
+///      Each member will record contributions to a separate `accum_state`
 ///   2. Then, these separate `accum_state` should be combined (in a "nested
 ///      reduction") so that a single member knows the total contribution
 ///      from the current unit of work.
