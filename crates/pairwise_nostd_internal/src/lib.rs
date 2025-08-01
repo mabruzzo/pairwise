@@ -236,7 +236,7 @@ these categories _"Nested"_ and _"Batched"_.
 
 */
 
-#![no_std]
+#![cfg_attr(not(test), no_std)] // (we allow std for testing)
 #![deny(rustdoc::broken_intra_doc_links)]
 
 mod apply_points;
@@ -246,6 +246,7 @@ mod parallel;
 mod reduce_utils;
 mod reducer;
 mod state;
+mod twopoint;
 
 // I'm not really sure we want to publicly expose reduce_sample, but for now,
 // we expose it to support testing...
@@ -261,3 +262,4 @@ pub use parallel::{
 pub use reduce_utils::reset_full_statepack;
 pub use reducer::{Datum, Histogram, Mean, OutputDescr, Reducer};
 pub use state::{AccumStateView, AccumStateViewMut, StatePackViewMut};
+pub use twopoint::spatial::{CartesianBlock, CellWidth};
