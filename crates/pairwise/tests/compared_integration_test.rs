@@ -199,6 +199,7 @@ impl TestScenario {
 
 mod tests {
     use pairwise::{PairOperation, apply_cartesian};
+    use pairwise_nostd_internal::BinEdges;
 
     use super::*;
 
@@ -217,11 +218,8 @@ mod tests {
 
         // the bin edges are chosen so that some values don't fit
         // inside the bottom bin
-        let distance_bin_edges: [f64; 4] = [2., 6., 10., 15.];
-        let squared_distance_bin_edges_buf: Vec<f64> =
-            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
-        let squared_distance_bin_edges =
-            IrregularBinEdges::new(&squared_distance_bin_edges_buf).unwrap();
+        let bin_edge_buf = Vec::from_iter([2.0f64, 6., 10., 15.].iter().map(|x| x.powi(2)));
+        let squared_distance_bin_edges = IrregularBinEdges::new(&bin_edge_buf).unwrap();
 
         // check the means (using results computed by pyvsf)
         let expected = HashMap::from([
@@ -230,7 +228,7 @@ mod tests {
         ]);
         let rtol_atol_sets = HashMap::from([("mean", [3.0e-16, 0.0]), ("weight", [0.0, 0.0])]);
 
-        let n_spatial_bins = distance_bin_edges.len() - 1;
+        let n_spatial_bins = squared_distance_bin_edges.n_bins();
 
         for use_points in [true, false] {
             let reducer = ComponentSumMean::new();
