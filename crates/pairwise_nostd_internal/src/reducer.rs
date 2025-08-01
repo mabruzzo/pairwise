@@ -119,14 +119,14 @@ use ndarray::ArrayViewMut1;
 /// I don't love that this defines copy, but it's important for examples
 #[derive(Clone, Copy)]
 pub struct Datum {
-    value: f64,
+    value: [f64; 3],
     weight: f64,
 }
 
 impl Datum {
     pub fn zeroed() -> Self {
         Datum {
-            value: 0.0,
+            value: [0.0, 0.0, 0.0],
             weight: 0.0,
         }
     }
@@ -134,7 +134,10 @@ impl Datum {
     // this is intended primarily for testing and migration
     #[inline]
     pub fn from_scalar_value(value: f64, weight: f64) -> Self {
-        Datum { value, weight }
+        Datum {
+            value: [value, 0.0, 0.0],
+            weight,
+        }
     }
 }
 
@@ -203,12 +206,9 @@ pub trait Reducer {
     fn output_descr(&self) -> OutputDescr;
 }
 
-// Transition Note:
-// -> we are in the middle of transitioning from the case where Datum holds a
-//    scalar value to Datum holding a 3-component vector
-// -> the following Reducers are intended to map the vector components to a
-//    scalar before performing any operation
-// -> todo: update this comment when we finish the transition
+// the following Reducers all "scalarize" the value in Datum before actually
+// the reduction. In other words, they somehow map it from a vector to a
+// scalar.
 
 #[derive(Clone, Copy)]
 pub struct Comp0Mean;
@@ -234,7 +234,7 @@ impl Reducer for Comp0Mean {
 
     fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &Datum) {
         accum_state[Self::WEIGHT] += datum.weight;
-        accum_state[Self::TOTAL] += datum.value * datum.weight;
+        accum_state[Self::TOTAL] += datum.value[0] * datum.weight;
     }
 
     fn merge(&self, accum_state: &mut AccumStateViewMut, other: &AccumStateView) {
@@ -276,7 +276,7 @@ impl<B: bins::BinEdges> Reducer for Comp0Histogram<B> {
 
     /// consume the value and weight to update the accum_state
     fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &Datum) {
-        if let Some(hist_bin_idx) = self.bins.bin_index(datum.value) {
+        if let Some(hist_bin_idx) = self.bins.bin_index(datum.value[0]) {
             accum_state[hist_bin_idx] += datum.weight;
         }
     }
