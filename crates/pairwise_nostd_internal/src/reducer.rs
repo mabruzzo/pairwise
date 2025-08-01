@@ -203,10 +203,17 @@ pub trait Reducer {
     fn output_descr(&self) -> OutputDescr;
 }
 
-#[derive(Clone, Copy)]
-pub struct Mean;
+// Transition Note:
+// -> we are in the middle of transitioning from the case where Datum holds a
+//    scalar value to Datum holding a 3-component vector
+// -> the following Reducers are intended to map the vector components to a
+//    scalar before performing any operation
+// -> todo: update this comment when we finish the transition
 
-impl Mean {
+#[derive(Clone, Copy)]
+pub struct Comp0Mean;
+
+impl Comp0Mean {
     const TOTAL: usize = 0;
     const WEIGHT: usize = 1;
 
@@ -215,49 +222,49 @@ impl Mean {
     const OUTPUT_COMPONENTS: &'static [&'static str] = &["mean", "weight"];
 }
 
-impl Reducer for Mean {
+impl Reducer for Comp0Mean {
     fn accum_state_size(&self) -> usize {
         2_usize
     }
 
     fn init_accum_state(&self, accum_state: &mut AccumStateViewMut) {
-        accum_state[Mean::TOTAL] = 0.0;
-        accum_state[Mean::WEIGHT] = 0.0;
+        accum_state[Self::TOTAL] = 0.0;
+        accum_state[Self::WEIGHT] = 0.0;
     }
 
     fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &Datum) {
-        accum_state[Mean::WEIGHT] += datum.weight;
-        accum_state[Mean::TOTAL] += datum.value * datum.weight;
+        accum_state[Self::WEIGHT] += datum.weight;
+        accum_state[Self::TOTAL] += datum.value * datum.weight;
     }
 
     fn merge(&self, accum_state: &mut AccumStateViewMut, other: &AccumStateView) {
-        accum_state[Mean::TOTAL] += other[Mean::TOTAL];
-        accum_state[Mean::WEIGHT] += other[Mean::WEIGHT];
+        accum_state[Self::TOTAL] += other[Self::TOTAL];
+        accum_state[Self::WEIGHT] += other[Self::WEIGHT];
     }
 
     fn output_descr(&self) -> OutputDescr {
-        OutputDescr::MultiScalarComp(Mean::OUTPUT_COMPONENTS)
+        OutputDescr::MultiScalarComp(Self::OUTPUT_COMPONENTS)
     }
 
     fn value_from_accum_state(&self, value: &mut ArrayViewMut1<f64>, accum_state: &AccumStateView) {
-        value[[Mean::VALUE_MEAN]] = accum_state[Mean::TOTAL] / accum_state[Mean::WEIGHT];
-        value[[Mean::VALUE_WEIGHT]] = accum_state[Mean::WEIGHT];
+        value[[Self::VALUE_MEAN]] = accum_state[Self::TOTAL] / accum_state[Self::WEIGHT];
+        value[[Self::VALUE_WEIGHT]] = accum_state[Self::WEIGHT];
     }
 }
 
-pub struct Histogram<BinsType: bins::BinEdges> {
+pub struct Comp0Histogram<BinsType: bins::BinEdges> {
     bins: BinsType,
 }
 
 // I think it's good form to have this constructor but I'm not sure that we
 // really need it?
-impl<B: bins::BinEdges> Histogram<B> {
-    pub fn from_bin_edges(bins: B) -> Histogram<B> {
-        Histogram { bins }
+impl<B: bins::BinEdges> Comp0Histogram<B> {
+    pub fn from_bin_edges(bins: B) -> Comp0Histogram<B> {
+        Comp0Histogram { bins }
     }
 }
 
-impl<B: bins::BinEdges> Reducer for Histogram<B> {
+impl<B: bins::BinEdges> Reducer for Comp0Histogram<B> {
     fn accum_state_size(&self) -> usize {
         self.bins.n_bins()
     }
