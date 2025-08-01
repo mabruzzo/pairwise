@@ -8,7 +8,10 @@
 
 use crate::misc::View3DSpec;
 use crate::spatial::{CartesianBlock, CellWidth};
-use core::iter::IntoIterator;
+use core::cmp;
+
+#[cfg(test)] // disable outside of testing, for now
+use std::iter::IntoIterator;
 
 /// Describes the offset between 3D indices.
 ///
@@ -46,6 +49,7 @@ pub(crate) struct Idx3DOffset([isize; 3]);
 
 impl Idx3DOffset {
     /// returns the underlying value (the signed index offset along each axis)
+    #[inline]
     pub(crate) fn value(&self) -> &[isize; 3] {
         &self.0
     }
@@ -84,6 +88,38 @@ impl Idx3DOffset {
         }
         out
     }
+}
+
+/// computes the triple for-loop bounds for enumerating all indices in
+/// `block_a` that are part of measurement pairs described by `index_offset`
+pub(crate) fn get_block_a_start_stop_indices(
+    index_offset: &Idx3DOffset,
+    block_a: &CartesianBlock,
+    block_b: &CartesianBlock,
+) -> ([isize; 3], [isize; 3]) {
+    let mut idx_a_start = [0_isize; 3];
+    let mut idx_a_stop = [0_isize; 3];
+    for i in 0..3 {
+        // start is abs(index_offset[i]) if index_offset[i] < 0. Otherwise, it's 0
+        let start = cmp::max(-index_offset.0[i], 0_isize);
+        // compute the number of elements along axis (we can definitely make
+        // this more concise -- but we should be very clear what it means)
+        let n_elem: isize = if index_offset.0[i] < 0 {
+            cmp::min(
+                block_a.idx_spec.shape()[i] - start,
+                block_b.idx_spec.shape()[i],
+            )
+        } else {
+            cmp::min(
+                block_a.idx_spec.shape()[i],
+                block_b.idx_spec.shape()[i] - index_offset.0[i],
+            )
+        };
+        idx_a_start[i] = start;
+        idx_a_stop[i] = start + n_elem;
+    }
+
+    (idx_a_start, idx_a_stop)
 }
 
 /// a helper type that encodes constraints on the family of [`Idx3DOffset`]
@@ -168,12 +204,14 @@ fn update_to_next_offset(offset_zyx: &mut [isize; 3], bounds: &Bounds) {
 /// displacement vector associated with each [`Idx3DOffset`]. Accounting for
 /// instance. This is an opportunity for enhanced performance beacuase most real-world code only cares about a
 /// certain range of displacement magnitudes
+#[cfg(test)] // disable outside of testing, for now
 pub(crate) struct Iter {
     bounds: Bounds,
     /// the internal representation of the next [`Idx3DOffset`]
     next_offset_zyx: [isize; 3],
 }
 
+#[cfg(test)] // disable outside of testing, for now
 impl Iterator for Iter {
     type Item = Idx3DOffset;
 
@@ -373,6 +411,7 @@ impl Idx3DOffsetSeq {
     }
 }
 
+#[cfg(test)] // disable outside of testing, for now
 impl IntoIterator for Idx3DOffsetSeq {
     type Item = Idx3DOffset;
     type IntoIter = Iter;
@@ -390,7 +429,7 @@ mod tests {
 
     use super::*;
 
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
 
     /// the premise here is that we count up, in a brute force manner, the
     /// number of occurences of [`Idx3DOffset`] that occur for 2 viewspecs
@@ -488,28 +527,51 @@ mod tests {
         }
     }
 
+    fn get_num_occurrences(
+        idx_offset: &Idx3DOffset,
+        block_a: &CartesianBlock,
+        block_b: &CartesianBlock,
+    ) -> usize {
+        let (start, stop) = get_block_a_start_stop_indices(idx_offset, block_a, block_b);
+        ((stop[0] - start[0]) as usize)
+            * ((stop[1] - start[1]) as usize)
+            * ((stop[2] - start[2]) as usize)
+    }
+
     fn check_idxspec_seq(
         idxoffset_seq: &Idx3DOffsetSeq,
         reference_counts: &HashMap<Idx3DOffset, usize>,
         descr: &str,
+        block_a: &CartesianBlock,
+        block_b: &CartesianBlock,
     ) {
-        let mut seen = HashSet::<Idx3DOffset>::new();
+        let mut seen = HashMap::<Idx3DOffset, usize>::new();
         for i in 0..idxoffset_seq.len() {
             let cur_offset = idxoffset_seq.get(i);
+            let n_occurences = get_num_occurrences(&cur_offset, block_a, block_b);
             assert!(
-                reference_counts.contains_key(&cur_offset),
-                "idxoffset_seq.get({i}) provides {cur_offset:?}, which is invalid for {descr}"
-            );
-            assert!(
-                seen.insert(cur_offset.clone()),
+                seen.insert(cur_offset.clone(), n_occurences).is_none(),
                 "idxoffset_seq.get({i}) provides {cur_offset:?} more than once for {descr}"
             );
+
+            let expected_occurrence_count = reference_counts.get(&cur_offset);
+            if let Some(expected_occurrence_count) = expected_occurrence_count {
+                assert_eq!(
+                    n_occurences, *expected_occurrence_count,
+                    "idxoffset_seq.get({i}) provides {cur_offset:?} with the wrong number of occurences, which is invalid for {descr}"
+                )
+            } else {
+                assert!(
+                    expected_occurrence_count.is_some(),
+                    "idxoffset_seq.get({i}) provides {cur_offset:?}, which is invalid for {descr}"
+                );
+            }
         }
 
         if seen.len() < reference_counts.len() {
             let entry = reference_counts
                 .keys()
-                .find(|k| !seen.contains(*k))
+                .find(|k| !seen.contains_key(*k))
                 .unwrap();
             panic!("idxoffset_seq is missing {entry:?} for {descr}")
         }
@@ -520,22 +582,23 @@ mod tests {
         reference_counts: &HashMap<Idx3DOffset, usize>,
         descr: &str,
     ) {
-        let mut seen = HashSet::<Idx3DOffset>::new();
+        let mut seen = HashMap::<Idx3DOffset, usize>::new();
         for (i, cur_offset) in idxoffset_itr.enumerate() {
             assert!(
                 reference_counts.contains_key(&cur_offset),
                 "element {i} from the iterator provides {cur_offset:?}, which is invalid for {descr}"
             );
+            let n_occurences = 1; // todo: fixme
             assert!(
-                seen.insert(cur_offset.clone()),
-                "element {i} from the iterator provides {cur_offset:?} more than once for {descr}"
+                seen.insert(cur_offset.clone(), n_occurences).is_none(),
+                "idxoffset_seq.get({i}) provides {cur_offset:?} more than once for {descr}"
             );
         }
 
         if seen.len() < reference_counts.len() {
             let entry = reference_counts
                 .keys()
-                .find(|k| !seen.contains(*k))
+                .find(|k| !seen.contains_key(*k))
                 .unwrap();
             panic!("iterator is missing {entry:?} for {descr}")
         }
@@ -567,7 +630,13 @@ mod tests {
 
                 let descr = format!("blocks with the shapes {shape_a:?} & {shape_b:?}");
 
-                check_idxspec_seq(&idxoffset_seq, &reference_counts, &descr);
+                check_idxspec_seq(
+                    &idxoffset_seq,
+                    &reference_counts,
+                    &descr,
+                    &dummy_block_a.get_block(),
+                    &dummy_block_b.get_block(),
+                );
                 check_iter(idxoffset_seq.into_iter(), &reference_counts, &descr)
             }
         };
@@ -588,7 +657,13 @@ mod tests {
 
                 let descr = format!("single block with the shape {shape:?}");
 
-                check_idxspec_seq(&idxoffset_seq, &reference_counts, &descr);
+                check_idxspec_seq(
+                    &idxoffset_seq,
+                    &reference_counts,
+                    &descr,
+                    &dummy_block.get_block(),
+                    &dummy_block.get_block(),
+                );
                 check_iter(idxoffset_seq.into_iter(), &reference_counts, &descr)
             }
         };
