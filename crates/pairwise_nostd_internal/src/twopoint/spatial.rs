@@ -28,7 +28,8 @@ pub struct CartesianBlock<'a> {
     /// the layout information
     pub(crate) idx_spec: View3DSpec,
     /// the index offset from the left edge of the domain in cells
-    pub(crate) start_idx_global_offset: [usize; 3],
+    /// (this is isize because it is used in the context of signed ints)
+    pub(crate) start_idx_global_offset: [isize; 3],
     // if we ever choose to support an AMR context, we may want to hold a
     // multiple for how wide the cells are compared to some either the
     // coarsest cell-widths or the finest cell-widths
@@ -40,7 +41,7 @@ impl<'a> CartesianBlock<'a> {
         value_components_zyx: [&'a [f64]; 3],
         weights: &'a [f64],
         idx_props: View3DSpec,
-        start_idx_global_offset: [usize; 3],
+        start_idx_global_offset: [isize; 3],
     ) -> Result<CartesianBlock<'a>, &'static str> {
         if weights.len() < idx_props.required_length() {
             Err("length of weights is inconsistent with strides and shape")

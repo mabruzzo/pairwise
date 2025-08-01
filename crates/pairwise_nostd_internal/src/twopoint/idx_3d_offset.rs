@@ -65,8 +65,8 @@ impl Idx3DOffset {
         let mut out = [0_isize; 3];
         #[allow(clippy::needless_range_loop)] // <- todo get rid of me
         for i in 0..3 {
-            let off_a = block_a.start_idx_global_offset[i] as isize;
-            let off_b = block_b.start_idx_global_offset[i] as isize;
+            let off_a = block_a.start_idx_global_offset[i];
+            let off_b = block_b.start_idx_global_offset[i];
             out[i] = (off_b - off_a) + self.0[i];
         }
         out
@@ -314,7 +314,7 @@ impl Iterator for Iter {
 pub(crate) struct Idx3DOffsetSeq {
     bounds: Bounds,
     mapping_props: View3DSpec,
-    internal_arr_offset: isize, // 0 for cross-region & positive for single-region
+    internal_arr_offset: usize, // 0 for cross-region & positive for single-region
 }
 
 impl Idx3DOffsetSeq {
@@ -355,11 +355,16 @@ impl Idx3DOffsetSeq {
             first_idx_offset[2] - bounds.start_offsets_zyx[2],
         );
 
-        Ok(Self {
-            bounds,
-            mapping_props,
-            internal_arr_offset: internal_offset,
-        })
+        if let Ok(internal_arr_offset) = usize::try_from(internal_offset) {
+            Ok(Self {
+                bounds,
+                mapping_props,
+                internal_arr_offset,
+            })
+        } else {
+            // this should be unreachable!
+            Err("something went wrong in mapping_props.map_idx3d_to_1d!")
+        }
     }
 
     /// construct the sequence of all [`Idx3DOffset`] instances that describe
@@ -388,7 +393,7 @@ impl Idx3DOffsetSeq {
 
     /// get the number of elements in the sequence
     pub(crate) fn len(&self) -> usize {
-        self.mapping_props.n_elements() - (self.internal_arr_offset as usize)
+        self.mapping_props.n_elements() - self.internal_arr_offset
     }
 
     /// get the ith [`Idx3DOffset`]
@@ -401,7 +406,7 @@ impl Idx3DOffsetSeq {
     pub(crate) fn get(&self, index: usize) -> Idx3DOffset {
         let [iz, iy, ix] = self
             .mapping_props
-            .map_idx1d_to_3d((index as isize) + self.internal_arr_offset);
+            .map_idx1d_to_3d((index + self.internal_arr_offset) as isize);
 
         Idx3DOffset([
             iz + self.bounds.start_offsets_zyx[0],
@@ -504,11 +509,11 @@ mod tests {
         // it doesn't matter what data actually holds, we should never see it
         data: Vec<f64>,
         idx_spec: View3DSpec,
-        start_idx_global_offset: [usize; 3],
+        start_idx_global_offset: [isize; 3],
     }
 
     impl<'a> DummyCartesianBlockSrc {
-        fn new(idx_spec: View3DSpec, start_idx_global_offset: [usize; 3]) -> Self {
+        fn new(idx_spec: View3DSpec, start_idx_global_offset: [isize; 3]) -> Self {
             DummyCartesianBlockSrc {
                 data: vec![0.0; idx_spec.required_length()],
                 idx_spec,
@@ -617,7 +622,11 @@ mod tests {
                 );
                 let dummy_block_b = DummyCartesianBlockSrc::new(
                     View3DSpec::from_shape_contiguous(shape_b).unwrap(),
-                    shape_a,
+                    [
+                        shape_a[0] as isize,
+                        shape_a[1] as isize,
+                        shape_a[2] as isize,
+                    ],
                 );
                 let reference_counts =
                     collect_cross_counts(&dummy_block_a.idx_spec, &dummy_block_b.idx_spec);
@@ -667,6 +676,32 @@ mod tests {
                 check_iter(idxoffset_seq.into_iter(), &reference_counts, &descr)
             }
         };
+    }
+
+    #[test]
+    fn check_auto_single_element() {
+        let dummy_block = DummyCartesianBlockSrc::new(
+            View3DSpec::from_shape_contiguous([1, 1, 1]).unwrap(),
+            [0, 0, 0],
+        );
+        let rslt = Idx3DOffsetSeq::new_auto(&dummy_block.get_block());
+
+        let Ok(idxoffset_seq) = rslt else {
+            panic!(
+                "we currently expect Idx3DOffsetSeq::new_auto to succeed when handed a 1-element block"
+            )
+        };
+
+        assert_eq!(
+            idxoffset_seq.len(),
+            0,
+            "a standalone 1-element block contains no pairs"
+        );
+        let mut iter = idxoffset_seq.into_iter();
+        assert!(
+            iter.next().is_none(),
+            "a standalone 1-element block contains no pairs"
+        )
     }
 
     check2block!(block_pair_same_shape, [2, 3, 4], [2, 3, 4]);
