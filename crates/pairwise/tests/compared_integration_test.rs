@@ -1,8 +1,10 @@
 use ndarray::{Array2, ArrayView2, Axis};
 use pairwise::{
-    CartesianBlock, CellWidth, Comp0Mean, ComponentSumMean, IrregularBinEdges, PointProps,
-    StatePackViewMut, View3DSpec, apply_accum, dot_product, get_output,
+    CartesianBlock, CellWidth, Comp0Mean, ComponentSumMean, IrregularBinEdges, PairOperation,
+    PointProps, StatePackViewMut, View3DSpec, apply_accum, apply_cartesian, dot_product,
+    get_output,
 };
+use pairwise_nostd_internal::BinEdges;
 use std::collections::HashMap;
 
 // use ndarray::indices
@@ -197,145 +199,138 @@ impl TestScenario {
     }
 }
 
-mod tests {
-    use pairwise::{PairOperation, apply_cartesian};
-    use pairwise_nostd_internal::BinEdges;
+#[test]
+fn test_apply_accum_auto_corr() {
+    // keep in mind that we interpret positions as a (3, ...) array
+    // so position 0 is [6,12,18]
+    let positions: Vec<i32> = (6_i32..24_i32).collect();
+    let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
 
-    use super::*;
+    let scenario = TestScenario::from_integer_position_points(
+        ArrayView2::from_shape((3, 6), &positions).unwrap(),
+        ArrayView2::from_shape((3, 6), &values).unwrap(),
+        None,
+    );
 
-    #[test]
-    fn test_apply_accum_auto_corr() {
-        // keep in mind that we interpret positions as a (3, ...) array
-        // so position 0 is [6,12,18]
-        let positions: Vec<i32> = (6_i32..24_i32).collect();
-        let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
+    // the bin edges are chosen so that some values don't fit
+    // inside the bottom bin
+    let bin_edge_buf = Vec::from_iter([2.0f64, 6., 10., 15.].iter().map(|x| x.powi(2)));
+    let squared_distance_bin_edges = IrregularBinEdges::new(&bin_edge_buf).unwrap();
 
-        let scenario = TestScenario::from_integer_position_points(
-            ArrayView2::from_shape((3, 6), &positions).unwrap(),
-            ArrayView2::from_shape((3, 6), &values).unwrap(),
-            None,
-        );
+    // check the means (using results computed by pyvsf)
+    let expected = HashMap::from([
+        ("mean", vec![284.57142857142856, 236.0, f64::NAN]),
+        ("weight", vec![7., 3., 0.]),
+    ]);
+    let rtol_atol_sets = HashMap::from([("mean", [3.0e-16, 0.0]), ("weight", [0.0, 0.0])]);
 
-        // the bin edges are chosen so that some values don't fit
-        // inside the bottom bin
-        let bin_edge_buf = Vec::from_iter([2.0f64, 6., 10., 15.].iter().map(|x| x.powi(2)));
-        let squared_distance_bin_edges = IrregularBinEdges::new(&bin_edge_buf).unwrap();
+    let n_spatial_bins = squared_distance_bin_edges.n_bins();
 
-        // check the means (using results computed by pyvsf)
-        let expected = HashMap::from([
-            ("mean", vec![284.57142857142856, 236.0, f64::NAN]),
-            ("weight", vec![7., 3., 0.]),
-        ]);
-        let rtol_atol_sets = HashMap::from([("mean", [3.0e-16, 0.0]), ("weight", [0.0, 0.0])]);
+    for use_points in [true, false] {
+        let reducer = ComponentSumMean::new();
+        let mut binned_statepack_buf = common::prepare_statepack(n_spatial_bins, &reducer);
+        let mut binned_statepack =
+            StatePackViewMut::from_array_view(binned_statepack_buf.view_mut());
 
-        let n_spatial_bins = squared_distance_bin_edges.n_bins();
+        let output = if use_points {
+            // HACK: apply_accum hasn't been adapted to use ComponentSumMean, quite yet
+            let reducer_override = Comp0Mean::new();
 
-        for use_points in [true, false] {
-            let reducer = ComponentSumMean::new();
-            let mut binned_statepack_buf = common::prepare_statepack(n_spatial_bins, &reducer);
-            let mut binned_statepack =
-                StatePackViewMut::from_array_view(binned_statepack_buf.view_mut());
+            let points = scenario.point_props();
+            let rslt = apply_accum(
+                &mut binned_statepack,
+                &reducer_override,
+                &points,
+                None,
+                &squared_distance_bin_edges,
+                &dot_product,
+            );
+            assert!(rslt.is_ok(), "point_props case failed!");
+            get_output(&reducer_override, &binned_statepack)
+        } else {
+            let block = scenario.cartesian_block();
+            let rslt = apply_cartesian(
+                &mut binned_statepack,
+                &reducer,
+                &block,
+                None,
+                &scenario.cell_width(),
+                &squared_distance_bin_edges,
+                PairOperation::ElementwiseMultiply,
+            );
+            assert_eq!(rslt, Ok(()));
 
-            let output = if use_points {
-                // HACK: apply_accum hasn't been adapted to use ComponentSumMean, quite yet
-                let reducer_override = Comp0Mean::new();
+            get_output(&reducer, &binned_statepack)
+        };
 
-                let points = scenario.point_props();
-                let rslt = apply_accum(
-                    &mut binned_statepack,
-                    &reducer_override,
-                    &points,
-                    None,
-                    &squared_distance_bin_edges,
-                    &dot_product,
-                );
-                assert!(rslt.is_ok(), "point_props case failed!");
-                get_output(&reducer_override, &binned_statepack)
-            } else {
-                let block = scenario.cartesian_block();
-                let rslt = apply_cartesian(
-                    &mut binned_statepack,
-                    &reducer,
-                    &block,
-                    None,
-                    &scenario.cell_width(),
-                    &squared_distance_bin_edges,
-                    PairOperation::ElementwiseMultiply,
-                );
-                assert_eq!(rslt, Ok(()));
+        println!("{:#?}", output);
 
-                get_output(&reducer, &binned_statepack)
-            };
-
-            println!("{:#?}", output);
-
-            common::assert_consistent_results(&output, &expected, &rtol_atol_sets);
-        }
+        common::assert_consistent_results(&output, &expected, &rtol_atol_sets);
     }
-
-    /*
-    #[test]
-    #[ignore] // TODO: WE NEED TO COME BACK TO THIS (I think there is a bug in setup)
-    fn test_random_autocorr_scenario() {
-        let seed = 10582441886303702641_u64;
-        // let scenario = TestScenario::setup(seed, [4, 3, 2]);
-        let scenario = TestScenario::setup(seed, [4, 1, 1]);
-
-        let distance_bin_edges: &[f64] = &[0.25, 0.75, 1.25, 1.75, 2.25, 2.75, 3.25];
-        let squared_distance_bin_edges: Vec<f64> =
-            distance_bin_edges.iter().map(|x| x.powi(2)).collect();
-
-        let mean_accum = Mean;
-        let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut statepacks = common::prepare_statepacks(n_spatial_bins, &mean_accum);
-
-        // we can run things with point_props
-        let result = apply_accum(
-            &mut statepacks.view_mut(),
-            &mean_accum,
-            &scenario.point_props(),
-            None,
-            &squared_distance_bin_edges,
-            &dot_product,
-        );
-        assert_eq!(result, Ok(()));
-
-        let output_points = get_output(&mean_accum, &statepacks.view());
-
-        for mut col in statepacks.columns_mut() {
-            mean_accum.reset_statepack(&mut col);
-        }
-
-        // we can run things with cartesian_block
-        let block = scenario.cartesian_block();
-        let result = apply_cartesian(
-            &mut statepacks.view_mut(),
-            &mean_accum,
-            &block,
-            None,
-            &squared_distance_bin_edges,
-            &scenario.cell_width(),
-        );
-
-        //let result = apply_accum(
-        //    &mut statepacks.view_mut(),
-        //    &mean_accum,
-        //    &scenario.point_props(),
-        //    None,
-        //    &squared_distance_bin_edges,
-        //    &dot_product,
-        //);
-
-        assert_eq!(result, Ok(()));
-
-        let output_cartesian = get_output(&mean_accum, &statepacks.view());
-        println!("points: {:?}", output_points);
-        println!("cartesian: {:?}", output_cartesian);
-
-        // the fact that the inputs are sorta garbage may make this comparison
-        // a little problematic (e.g. it may make make the means unstable)
-        let rtol_atol_sets = HashMap::from([("weight", [0.0, 0.0]), ("mean", [0.0, 0.0])]);
-        common::assert_consistent_results(&output_cartesian, &output_points, &rtol_atol_sets);
-    }
-    */
 }
+
+/*
+#[test]
+#[ignore] // TODO: WE NEED TO COME BACK TO THIS (I think there is a bug in setup)
+fn test_random_autocorr_scenario() {
+    let seed = 10582441886303702641_u64;
+    // let scenario = TestScenario::setup(seed, [4, 3, 2]);
+    let scenario = TestScenario::setup(seed, [4, 1, 1]);
+
+    let distance_bin_edges: &[f64] = &[0.25, 0.75, 1.25, 1.75, 2.25, 2.75, 3.25];
+    let squared_distance_bin_edges: Vec<f64> =
+        distance_bin_edges.iter().map(|x| x.powi(2)).collect();
+
+    let mean_accum = Mean;
+    let n_spatial_bins = distance_bin_edges.len() - 1;
+    let mut statepacks = common::prepare_statepacks(n_spatial_bins, &mean_accum);
+
+    // we can run things with point_props
+    let result = apply_accum(
+        &mut statepacks.view_mut(),
+        &mean_accum,
+        &scenario.point_props(),
+        None,
+        &squared_distance_bin_edges,
+        &dot_product,
+    );
+    assert_eq!(result, Ok(()));
+
+    let output_points = get_output(&mean_accum, &statepacks.view());
+
+    for mut col in statepacks.columns_mut() {
+        mean_accum.reset_statepack(&mut col);
+    }
+
+    // we can run things with cartesian_block
+    let block = scenario.cartesian_block();
+    let result = apply_cartesian(
+        &mut statepacks.view_mut(),
+        &mean_accum,
+        &block,
+        None,
+        &squared_distance_bin_edges,
+        &scenario.cell_width(),
+    );
+
+    //let result = apply_accum(
+    //    &mut statepacks.view_mut(),
+    //    &mean_accum,
+    //    &scenario.point_props(),
+    //    None,
+    //    &squared_distance_bin_edges,
+    //    &dot_product,
+    //);
+
+    assert_eq!(result, Ok(()));
+
+    let output_cartesian = get_output(&mean_accum, &statepacks.view());
+    println!("points: {:?}", output_points);
+    println!("cartesian: {:?}", output_cartesian);
+
+    // the fact that the inputs are sorta garbage may make this comparison
+    // a little problematic (e.g. it may make make the means unstable)
+    let rtol_atol_sets = HashMap::from([("weight", [0.0, 0.0]), ("mean", [0.0, 0.0])]);
+    common::assert_consistent_results(&output_cartesian, &output_points, &rtol_atol_sets);
+}
+*/
