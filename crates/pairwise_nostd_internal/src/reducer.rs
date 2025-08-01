@@ -224,6 +224,36 @@ impl ScalarizeOp for TakeComp0 {
     }
 }
 
+// the basic premise is that we will define the following 2 types and we'll
+// start using them in the constext of correlation and structure functions
+
+// /// To be used with simple correlation
+// #[derive(Clone, Copy)]
+// pub struct ComponentSum;
+//
+// impl ScalarizeOp for ComponentSum {
+//     #[inline(always)]
+//     fn scalarized_value(datum: &Datum) -> f64 {
+//         datum.value[0] + (datum.value[1] + datum.value[2])
+//     }
+// }
+
+// define here, if we start using libm, or define this elsewhere
+// /// to be used when computing the "astronomer's first order structure function"
+// #[derive(Clone, Copy)]
+// pub struct EuclideanNorm;
+//
+// impl ScalarizeOp for EuclideanNorm {
+//     #[inline(always)]
+//     fn scalarized_value(datum: &Datum) -> f64 {
+//         let comp0 = datum.value[0] * datum.value[0];
+//         let comp1 = datum.value[1] * datum.value[1];
+//         let comp2 = datum.value[2] * datum.value[2];
+//         let sum = comp0 + (comp1 + comp2);
+//         sum.sqrt()
+//     }
+// }
+
 // the following Reducers all "scalarize" the value in Datum before actually
 // the reduction. In other words, they somehow map it from a vector to a
 // scalar.
