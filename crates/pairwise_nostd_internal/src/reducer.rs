@@ -1,6 +1,6 @@
-//! Define basic accumulator machinery (that doesn't require the standard lib)
+//! Define basic reducer machinery (that doesn't require the standard lib)
 //!
-//! # Accumulation Machinery
+//! # Reducer Machinery
 //!
 //! The architecture of this crate is built upon the concept of accumulation.
 //!
@@ -14,36 +14,32 @@
 //! - `𝒚ᵢ` is the quantity that contributes to the statistic
 //! - `wᵢ` is the weighting applied to `𝒚ᵢ`.
 //!
-//! For simplicity, let's assume `𝒚ᵢ` is a scalar `yᵢ` (it may be useful to
-//! come back to this for longitudinal statistics and tensors).
+//! In practice, we use [`Datum`] to package together `𝒚ᵢ` & `wᵢ`
 //!
-//! In practice, we use [`Datum`] to package together `yᵢ` & `wᵢ`
-//!
-//! If a statistic just summed the values of `wᵢ` and totally ignored `yᵢ`,
+//! If a statistic just summed the values of `wᵢ` and totally ignored `𝒚ᵢ`,
 //! that would be equivalent to a normal histogram. Other statistics that we
 //! compute can be thought of generalizations of histograms (this idea is also
 //! described by scipy's
 //! [binned_statistic](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.binned_statistic.html)
 //! function.)
 //!
-//! ## Coming back to Accumulation Machinery
+//! ## Coming back to Reducer Machinery
 //!
-//! Now, the actual binning is taken care of separately. The accumulation
+//! Now, the actual binning is taken care of separately. The reducer
 //! machinery is responsible for computing the statistic within a single bin.
-//! We draw a distinction between the current state of the accumulator between
-//! the actual accumulation logic.
-//! - We refer to the current state of a single accumulator as the
-//!   `accum_state`.
-//! - The accumulation logic is encapsulated by the functions implemented by
+//! We draw a distinction between the current state of the reduction and the
+//! actual reducer logic.
+//! - We refer to the current state of a single reduction as the `accum_state`
+//! - The reducer logic is encapsulated by the functions implemented by
 //!   the `Reducer` trait. At the time of writing, a Reducer
 //!   implements logic for modifying a single `accum_state` at a time.
-//! - From the perspective of an accumulator, the `accum_state` is packaged
+//! - From the perspective of a reducer, the `accum_state` is packaged
 //!   inside within the [`AccumStateView`] & [`AccumStateViewMut`] types (the
 //!   exact type depends on context)
 //!
 //! At a high-level, external code manages and each bin's `accum_state`. A
 //! collection of `accum_state`s is usually managed by a [`StatePackViewMut`]
-//! instance. Currently, the accumulators are designed to be agnostic about
+//! instance. Currently, the reducers are designed to be agnostic about
 //! the precise way a given `accum_state` is organized in memory. This is done
 //! to give additional flexibility to the external code driving the
 //! calculation.
@@ -123,8 +119,8 @@ use ndarray::ArrayViewMut1;
 /// I don't love that this defines copy, but it's important for examples
 #[derive(Clone, Copy)]
 pub struct Datum {
-    pub value: f64,
-    pub weight: f64,
+    value: f64,
+    weight: f64,
 }
 
 impl Datum {
@@ -133,6 +129,12 @@ impl Datum {
             value: 0.0,
             weight: 0.0,
         }
+    }
+
+    // this is intended primarily for testing and migration
+    #[inline]
+    pub fn from_scalar_value(value: f64, weight: f64) -> Self {
+        Datum { value, weight }
     }
 }
 

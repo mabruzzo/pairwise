@@ -44,10 +44,7 @@ pub fn reducer_mean_unordered(
 
     for i in 0..stream.len() {
         let bin_index = stream.bin_indices[i];
-        let datum = Datum {
-            value: f.call(stream.x_array[i]),
-            weight: stream.weights[i],
-        };
+        let datum = Datum::from_scalar_value(f.call(stream.x_array[i]),stream.weights[i]);
         if bin_index < n_bins {
             reducer.consume(&mut binned_statepack.get_state_mut(bin_index), &datum);
         }
@@ -131,10 +128,7 @@ pub fn restructured1_mean_unordered(
             } else {
                 BinnedDatum {
                     bin_index: stream.bin_indices[i],
-                    datum: Datum {
-                        value: f.call(stream.x_array[i]),
-                        weight: stream.weights[i],
-                    },
+                    datum: Datum::from_scalar_value(f.call(stream.x_array[i]),stream.weights[i]),
                 }
             };
         }
@@ -298,10 +292,7 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
                         } else {
                             BinnedDatum {
                                 bin_index: self.stream.bin_indices[i],
-                                datum: Datum {
-                                    value: self.f.call(self.stream.x_array[i]),
-                                    weight: self.stream.weights[i],
-                                },
+                                datum: Datum::from_scalar_value(self.f.call(self.stream.x_array[i]),self.stream.weights[i]),
                             }
                         };
                     }
@@ -319,10 +310,7 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
                     } else {
                         BinnedDatum {
                             bin_index: self.stream.bin_indices[i],
-                            datum: Datum {
-                                value: self.f.call(self.stream.x_array[i]),
-                                weight: self.stream.weights[i],
-                            },
+                            datum: Datum::from_scalar_value(self.f.call(self.stream.x_array[i]),self.stream.weights[i]),
                         }
                     };
                 },

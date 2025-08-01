@@ -165,10 +165,7 @@ pub fn reducer_mean_chunked(
             for i in i_global..(i_global + chunk_len) {
                 reducer.consume(
                     &mut tmp_accum_state,
-                    &Datum {
-                        value: f.call(stream.x_array[i]),
-                        weight: stream.weights[i],
-                    },
+                    &Datum::from_scalar_value(f.call(stream.x_array[i]), stream.weights[i]),
                 );
             }
             reducer.merge(
@@ -267,10 +264,7 @@ pub fn restructured1_mean_chunked(
                 for i in i_itr {
                     reducer.consume(
                         &mut tmp_accum_state,
-                        &Datum {
-                            value: f.call(stream.x_array[i]),
-                            weight: stream.weights[i],
-                        },
+                        &Datum::from_scalar_value(f.call(stream.x_array[i]), stream.weights[i]),
                     );
                 }
             }
@@ -449,10 +443,7 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
                         for i in i_itr {
                             self.reducer.consume(
                                 &mut tmp_accum_state,
-                                &Datum {
-                                    value: self.f.call(self.stream.x_array[i]),
-                                    weight: self.stream.weights[i],
-                                },
+                                &Datum::from_scalar_value(self.f.call(self.stream.x_array[i]),self.stream.weights[i]),
                             );
                         }
                     }
@@ -472,10 +463,7 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
                     for i in i_itr {
                         self.reducer.consume(
                             &mut tmp_accum_state,
-                            &Datum {
-                                value: self.f.call(self.stream.x_array[i]),
-                                weight: self.stream.weights[i],
-                            },
+                            &Datum::from_scalar_value(self.f.call(self.stream.x_array[i]),self.stream.weights[i]),
                         );
                     }
                 },
