@@ -49,7 +49,7 @@ mod tests {
 
         let squared_distance_bin_edges = [0.0, 1.0, 9.0, 16.0];
         let squared_distance_bins = IrregularBinEdges::new(&squared_distance_bin_edges).unwrap();
-        let reducer = Comp0Mean;
+        let reducer = Comp0Mean::new();
         let mut statepack = prepare_statepack(squared_distance_bin_edges.len(), &reducer);
         let points = PointProps::new(
             ArrayView2::from_shape((3, 2), &positions).unwrap(),
@@ -114,7 +114,7 @@ mod tests {
         // check the means (using results computed by pyvsf)
         let expected_mean = [8.41281820819169, 15.01110699893027, f64::NAN];
         let expected_weight = [7., 3., 0.];
-        let mean_reducer = Comp0Mean;
+        let mean_reducer = Comp0Mean::new();
         let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
         let points = PointProps::new(
@@ -235,7 +235,7 @@ mod tests {
         let expected_weight = [4., 6.];
 
         // perform the calculation!
-        let reducer = Comp0Mean;
+        let reducer = Comp0Mean::new();
         let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut statepack = prepare_statepack(n_spatial_bins, &reducer);
 
@@ -278,7 +278,7 @@ mod tests {
         // check the means (using results computed by pyvsf)
         let expected_mean = [284.57142857142856, 236.0, f64::NAN];
         let expected_weight = [7., 3., 0.];
-        let mean_reducer = Comp0Mean;
+        let mean_reducer = Comp0Mean::new();
         let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
 

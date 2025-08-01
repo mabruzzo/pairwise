@@ -25,7 +25,7 @@ mod tests {
 
     #[test]
     fn mean_consume_once() {
-        let reducer = Comp0Mean;
+        let reducer = Comp0Mean::new();
 
         let mut storage = [0.0, 0.0];
         let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
@@ -40,7 +40,7 @@ mod tests {
 
     #[test]
     fn mean_consume_twice() {
-        let reducer = Comp0Mean;
+        let reducer = Comp0Mean::new();
 
         let mut storage = [0.0, 0.0];
         let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);
@@ -56,7 +56,7 @@ mod tests {
 
     #[test]
     fn merge() {
-        let reducer = Comp0Mean;
+        let reducer = Comp0Mean::new();
 
         let mut storage = [0.0, 0.0];
         let mut accum_state = AccumStateViewMut::from_contiguous_slice(&mut storage);

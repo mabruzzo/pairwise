@@ -49,6 +49,7 @@
 
 use crate::bins;
 use crate::state::{AccumStateView, AccumStateViewMut};
+use core::marker::PhantomData;
 use ndarray::ArrayViewMut1;
 
 /// Instances of this element are consumed by the Reducer
@@ -206,23 +207,52 @@ pub trait Reducer {
     fn output_descr(&self) -> OutputDescr;
 }
 
+/// this encodes the logic to convert the vector value in a [`Datum`] from
+/// a vector to a scalar.
+pub trait ScalarizeOp: Copy + Clone {
+    /// returns the value of datum after coercing to a scalar
+    fn scalarized_value(datum: &Datum) -> f64;
+}
+
+#[derive(Copy, Clone)]
+pub struct TakeComp0;
+
+impl ScalarizeOp for TakeComp0 {
+    #[inline(always)]
+    fn scalarized_value(datum: &Datum) -> f64 {
+        datum.value[0]
+    }
+}
+
 // the following Reducers all "scalarize" the value in Datum before actually
 // the reduction. In other words, they somehow map it from a vector to a
 // scalar.
 
 #[derive(Clone, Copy)]
-pub struct Comp0Mean;
+pub struct ScalarMean<T: ScalarizeOp>(PhantomData<T>);
 
-impl Comp0Mean {
+impl<T: ScalarizeOp> ScalarMean<T> {
     const TOTAL: usize = 0;
     const WEIGHT: usize = 1;
 
     const VALUE_MEAN: usize = 0;
     const VALUE_WEIGHT: usize = 1;
     const OUTPUT_COMPONENTS: &'static [&'static str] = &["mean", "weight"];
+
+    #[inline(always)]
+    pub fn new() -> Self {
+        Self(PhantomData::<T>)
+    }
 }
 
-impl Reducer for Comp0Mean {
+// we are only implementing this to silence clippy::new_without_default
+impl<T: ScalarizeOp> Default for ScalarMean<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: ScalarizeOp> Reducer for ScalarMean<T> {
     fn accum_state_size(&self) -> usize {
         2_usize
     }
@@ -234,7 +264,7 @@ impl Reducer for Comp0Mean {
 
     fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &Datum) {
         accum_state[Self::WEIGHT] += datum.weight;
-        accum_state[Self::TOTAL] += datum.value[0] * datum.weight;
+        accum_state[Self::TOTAL] += T::scalarized_value(datum) * datum.weight;
     }
 
     fn merge(&self, accum_state: &mut AccumStateViewMut, other: &AccumStateView) {
@@ -252,19 +282,25 @@ impl Reducer for Comp0Mean {
     }
 }
 
-pub struct Comp0Histogram<BinsType: bins::BinEdges> {
+pub type Comp0Mean = ScalarMean<TakeComp0>;
+
+pub struct ScalarHistogram<BinsType: bins::BinEdges, T: ScalarizeOp> {
     bins: BinsType,
+    _dummy: PhantomData<T>,
 }
 
 // I think it's good form to have this constructor but I'm not sure that we
 // really need it?
-impl<B: bins::BinEdges> Comp0Histogram<B> {
-    pub fn from_bin_edges(bins: B) -> Comp0Histogram<B> {
-        Comp0Histogram { bins }
+impl<B: bins::BinEdges, T: ScalarizeOp> ScalarHistogram<B, T> {
+    pub fn from_bin_edges(bins: B) -> Self {
+        ScalarHistogram {
+            bins,
+            _dummy: PhantomData::<T>,
+        }
     }
 }
 
-impl<B: bins::BinEdges> Reducer for Comp0Histogram<B> {
+impl<B: bins::BinEdges, T: ScalarizeOp> Reducer for ScalarHistogram<B, T> {
     fn accum_state_size(&self) -> usize {
         self.bins.n_bins()
     }
@@ -302,3 +338,5 @@ impl<B: bins::BinEdges> Reducer for Comp0Histogram<B> {
         }
     }
 }
+
+pub type Comp0Histogram<B> = ScalarHistogram<B, TakeComp0>;
