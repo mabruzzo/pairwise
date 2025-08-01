@@ -254,13 +254,18 @@ pub mod reduce_sample;
 
 pub use apply_points::{PointProps, apply_accum};
 pub use bins::*;
-pub use misc::{dot_product, squared_diff_norm};
+pub use misc::{View3DSpec, dot_product, squared_diff_norm};
 pub use parallel::{
     BinnedDatum, Executor, MemberID, ReductionSpec, StandardTeamParam, Team,
     fill_single_team_binned_statepack,
 };
 pub use reduce_utils::reset_full_statepack;
-pub use reducer::{Comp0Histogram, Comp0Mean, Datum, OutputDescr, Reducer};
+// TODO: before 1.0, consider whether we really want to expose all of the
+//       following constructs... (especially Datum)
+pub use reducer::{
+    Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean, Datum, OutputDescr,
+    Reducer, ScalarHistogram, ScalarMean, ScalarizeOp,
+};
 pub use state::{AccumStateView, AccumStateViewMut, StatePackViewMut};
 pub use twopoint::{
     common::PairOperation,

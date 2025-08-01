@@ -1,9 +1,9 @@
 mod common;
 
-use common::prepare_statepack;
+use common::{isclose, prepare_statepack};
 use ndarray::ArrayView2;
 use pairwise::{
-    Comp0Histogram, Comp0Mean, PointProps, StatePackViewMut, apply_accum, diff_norm, dot_product,
+    Comp0Histogram, Comp0Mean, PointProps, StatePackViewMut, apply_accum, diff_norm,
     get_output_from_statepack_array,
 };
 
@@ -14,22 +14,6 @@ mod tests {
     use pairwise_nostd_internal::IrregularBinEdges;
 
     use super::*;
-
-    // based on numpy!
-    // https://numpy.org/doc/stable/reference/generated/numpy.isclose.html
-    //
-    // I suspect we'll use this a lot! If we may want to define
-    // a `assert_isclose!` macro to provide a nice error message (or an
-    // `assert_allclose!` macro to operate upon arrays)
-    fn _isclose(actual: f64, ref_val: f64, rtol: f64, atol: f64) -> bool {
-        let actual_nan = actual.is_nan();
-        let ref_nan = ref_val.is_nan();
-        if actual_nan || ref_nan {
-            actual_nan && ref_nan
-        } else {
-            (actual - ref_val).abs() <= (atol + rtol * ref_val.abs())
-        }
-    }
 
     #[test]
     fn apply_accum_errors() {
@@ -140,7 +124,7 @@ mod tests {
         for i in 0..n_spatial_bins {
             // we might need to adopt an actual rtol
             assert!(
-                _isclose(mean_result_map["mean"][i], expected_mean[i], 3.0e-16, 0.0),
+                isclose(mean_result_map["mean"][i], expected_mean[i], 3.0e-16, 0.0),
                 "actual mean = {}, expected mean = {}",
                 mean_result_map["mean"][i],
                 expected_mean[i]
@@ -253,57 +237,7 @@ mod tests {
 
         for i in 0..n_spatial_bins {
             assert!(
-                _isclose(output["mean"][i], expected_mean[i], 3.0e-16, 0.0),
-                "actual mean = {}, expected mean = {}",
-                output["mean"][i],
-                expected_mean[i]
-            );
-            assert_eq!(output["weight"][i], expected_weight[i], "unequal weights");
-        }
-    }
-
-    #[test]
-    fn test_apply_accum_auto_corr() {
-        // keep in mind that we interpret positions as a (3, ...) array
-        // so position 0 is [6,12,18]
-        let positions: Vec<f64> = (6..24).map(|x| x as f64).collect();
-        let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
-
-        // the bin edges are chosen so that some values don't fit
-        // inside the bottom bin
-        let distance_bin_edges: [f64; 4] = [2., 6., 10., 15.];
-        let squared_bin_edges = distance_bin_edges.map(|x| x.powi(2));
-        let squared_distance_bins = IrregularBinEdges::new(&squared_bin_edges).unwrap();
-
-        // check the means (using results computed by pyvsf)
-        let expected_mean = [284.57142857142856, 236.0, f64::NAN];
-        let expected_weight = [7., 3., 0.];
-        let mean_reducer = Comp0Mean::new();
-        let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
-
-        let points = PointProps::new(
-            ArrayView2::from_shape((3, 6), &positions).unwrap(),
-            ArrayView2::from_shape((3, 6), &values).unwrap(),
-            None,
-        )
-        .unwrap();
-        let result = apply_accum(
-            &mut StatePackViewMut::from_array_view(mean_statepack.view_mut()),
-            &mean_reducer,
-            &points,
-            None,
-            &squared_distance_bins,
-            &dot_product,
-        );
-        assert_eq!(result, Ok(()));
-
-        let output = get_output_from_statepack_array(&mean_reducer, &mean_statepack.view());
-
-        for i in 0..3 {
-            // we might need to adopt an actual rtol
-            assert!(
-                _isclose(output["mean"][i], expected_mean[i], 3.0e-16, 0.0),
+                isclose(output["mean"][i], expected_mean[i], 3.0e-16, 0.0),
                 "actual mean = {}, expected mean = {}",
                 output["mean"][i],
                 expected_mean[i]

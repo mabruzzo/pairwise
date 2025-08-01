@@ -36,15 +36,20 @@ See the crate-level documentation for [`pairwise_nostd_internal`].
 #![deny(rustdoc::broken_intra_doc_links)]
 
 // inform build-system of the crates in this package
+mod apply;
 mod misc;
 mod parallel_serial;
 mod reducers;
 
 // pull in symbols that visible outside of the package
+pub use apply::apply_cartesian;
 pub use misc::diff_norm;
 pub use pairwise_nostd_internal::{
-    CartesianBlock, CellWidth, Comp0Histogram, Comp0Mean, Executor, OutputDescr, PointProps,
-    Reducer, StatePackViewMut, apply_accum, dot_product,
+    CartesianBlock, CellWidth, Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean,
+    Executor, IrregularBinEdges, OutputDescr, PairOperation, PointProps, Reducer, RegularBinEdges,
+    StatePackViewMut, View3DSpec, apply_accum, dot_product,
 };
 pub use parallel_serial::SerialExecutor;
-pub use reducers::{get_output, get_output_from_statepack_array};
+pub use reducers::{
+    EuclideanNormHistogram, EuclideanNormMean, get_output, get_output_from_statepack_array,
+};
