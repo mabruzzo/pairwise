@@ -120,8 +120,8 @@ use ndarray::ArrayViewMut1;
 /// I don't love that this defines copy, but it's important for examples
 #[derive(Clone, Copy)]
 pub struct Datum {
-    value: [f64; 3],
-    weight: f64,
+    pub(crate) value: [f64; 3],
+    pub(crate) weight: f64,
 }
 
 impl Datum {

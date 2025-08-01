@@ -262,4 +262,8 @@ pub use parallel::{
 pub use reduce_utils::reset_full_statepack;
 pub use reducer::{Comp0Histogram, Comp0Mean, Datum, OutputDescr, Reducer};
 pub use state::{AccumStateView, AccumStateViewMut, StatePackViewMut};
-pub use twopoint::spatial::{CartesianBlock, CellWidth};
+pub use twopoint::{
+    common::PairOperation,
+    spatial::{CartesianBlock, CellWidth},
+    twopoint_cartesian::TwoPointCartesian,
+};
