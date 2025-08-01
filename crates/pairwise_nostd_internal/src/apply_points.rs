@@ -156,10 +156,10 @@ fn apply_accum_helper<const CROSS: bool>(
                 points_a.n_spatial_dims,
             );
             if let Some(distance_bin_idx) = squared_distance_bin_edges.bin_index(distance_squared) {
-                let datum = Datum {
-                    value: pairwise_fn(points_a.values, points_b.values, i_a, i_b),
-                    weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
-                };
+                let datum = Datum::from_scalar_value(
+                    pairwise_fn(points_a.values, points_b.values, i_a, i_b),
+                    points_a.get_weight(i_a) * points_b.get_weight(i_b),
+                );
 
                 reducer.consume(&mut statepack.get_state_mut(distance_bin_idx), &datum);
             }
