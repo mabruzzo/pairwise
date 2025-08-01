@@ -7,7 +7,7 @@
 //! separate construct and just reuse some of the logic).
 
 use crate::misc::View3DSpec;
-use crate::spatial::{CartesianBlock, CellWidth};
+use crate::twopoint::spatial::{CartesianBlock, CellWidth};
 use core::cmp;
 
 #[cfg(test)] // disable outside of testing, for now
@@ -179,7 +179,7 @@ fn update_to_next_offset(offset_zyx: &mut [isize; 3], bounds: &Bounds) {
 /// * external code currently uses [`Idx3DOffsetSeq`] because
 ///   1. conceptually, a sequence is somewhat simpler than an iterator.
 ///   2. partitioning elements in a sequence (for the sake of parallelism) is
-///      a simpler than paritioning elements in an iterator.
+///      a simpler than partitioning elements in an iterator.
 ///   3. I have some concerns about how optimal GPU code generation would be
 ///      when using iterators (this probably doesn't matter much if we aren't
 ///      using the iterator in a very tight loop)
@@ -269,7 +269,7 @@ impl Iterator for Iter {
 /// you can construct a 3D array that holds the every unique [`Idx3DOffset`]
 /// instance that describes a unique measurement pair. Lets call this
 /// ``offset_arr3D``. If this isn't intuitive, its instructive to:
-/// - the measurments at the 8 corners of block_a.
+/// - the measurements at the 8 corners of block_a.
 /// - For each of these corner measurements, consider all pairs of containing
 ///   the corner measurement. It should be straight-forward to see that the
 ///   set of [`Idx3DOffset`] instances for each pair can be organized into a
@@ -307,7 +307,7 @@ impl Iterator for Iter {
 /// case, with a small tweak. In more detail, we can imagine building up a
 /// `flat_i3off_arr`, where block_a and block_b refer to the same
 /// [`CartesianBlock`] instance. To avoid both (i) double-counting measurement
-/// pairs, and (ii) every pair composed of the same measurment, this type only
+/// pairs, and (ii) every pair composed of the same measurement, this type only
 /// reveals considers `flat_i3off_arr[internal_arr_offset..]`, where
 /// `flat_i3off_arr[internal_arr_offset]` corresponds to the first
 /// [`Idx3DOffset`] instance after `Idx3DOffset([0,0,0])`
@@ -432,7 +432,7 @@ mod tests {
     use std::collections::HashMap;
 
     /// the premise here is that we count up, in a brute force manner, the
-    /// number of occurences of [`Idx3DOffset`] that occur for 2 viewspecs
+    /// number of occurrences of [`Idx3DOffset`] that occur for 2 viewspecs
     ///
     /// currently, we don't use the counts, but the counts will be important
     /// if we ever want to partition work in a nice manner
@@ -465,7 +465,7 @@ mod tests {
     }
 
     /// the premise here is that we count up, in a brute force manner, the
-    /// number of occurences of [`Idx3DOffset`] that occur within 1 viewspec
+    /// number of occurrences of [`Idx3DOffset`] that occur within 1 viewspec
     ///
     /// currently, we don't use the counts, but the counts will be important
     /// if we ever want to partition work in a nice manner
@@ -548,17 +548,17 @@ mod tests {
         let mut seen = HashMap::<Idx3DOffset, usize>::new();
         for i in 0..idxoffset_seq.len() {
             let cur_offset = idxoffset_seq.get(i);
-            let n_occurences = get_num_occurrences(&cur_offset, block_a, block_b);
+            let n_occurrences = get_num_occurrences(&cur_offset, block_a, block_b);
             assert!(
-                seen.insert(cur_offset.clone(), n_occurences).is_none(),
+                seen.insert(cur_offset.clone(), n_occurrences).is_none(),
                 "idxoffset_seq.get({i}) provides {cur_offset:?} more than once for {descr}"
             );
 
             let expected_occurrence_count = reference_counts.get(&cur_offset);
             if let Some(expected_occurrence_count) = expected_occurrence_count {
                 assert_eq!(
-                    n_occurences, *expected_occurrence_count,
-                    "idxoffset_seq.get({i}) provides {cur_offset:?} with the wrong number of occurences, which is invalid for {descr}"
+                    n_occurrences, *expected_occurrence_count,
+                    "idxoffset_seq.get({i}) provides {cur_offset:?} with the wrong number of occurrences, which is invalid for {descr}"
                 )
             } else {
                 assert!(
@@ -588,9 +588,9 @@ mod tests {
                 reference_counts.contains_key(&cur_offset),
                 "element {i} from the iterator provides {cur_offset:?}, which is invalid for {descr}"
             );
-            let n_occurences = 1; // todo: fixme
+            let n_occurrences = 1; // todo: fixme
             assert!(
-                seen.insert(cur_offset.clone(), n_occurences).is_none(),
+                seen.insert(cur_offset.clone(), n_occurrences).is_none(),
                 "idxoffset_seq.get({i}) provides {cur_offset:?} more than once for {descr}"
             );
         }
