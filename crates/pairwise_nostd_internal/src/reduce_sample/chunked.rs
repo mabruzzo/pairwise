@@ -30,7 +30,7 @@ use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
     serial_merge_accum_states,
 };
-use crate::reducer::{Datum, Comp0Mean, Reducer};
+use crate::reducer::{Comp0Mean, Datum, Reducer};
 use crate::state::{AccumStateViewMut, StatePackViewMut};
 
 // Defining some basic functionality for implementing this example:

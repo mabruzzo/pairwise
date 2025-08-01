@@ -8,7 +8,7 @@ use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
 use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
 };
-use crate::reducer::{Datum, Comp0Mean, Reducer};
+use crate::reducer::{Comp0Mean, Datum, Reducer};
 use crate::state::StatePackViewMut;
 
 // Version 0: our simple naive implementation

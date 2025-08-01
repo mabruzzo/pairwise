@@ -225,7 +225,7 @@ impl ScalarizeOp for TakeComp0 {
 }
 
 // the basic premise is that we will define the following 2 types and we'll
-// start using them in the constext of correlation and structure functions
+// start using them in the context of correlation and structure functions
 
 // /// To be used with simple correlation
 // #[derive(Clone, Copy)]
