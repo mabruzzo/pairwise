@@ -325,7 +325,7 @@ impl<B: bins::BinEdges, T: ScalarizeOp> Reducer for ScalarHistogram<B, T> {
 
     /// consume the value and weight to update the accum_state
     fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &Datum) {
-        if let Some(hist_bin_idx) = self.bins.bin_index(datum.value[0]) {
+        if let Some(hist_bin_idx) = self.bins.bin_index(T::scalarized_value(datum)) {
             accum_state[hist_bin_idx] += datum.weight;
         }
     }
