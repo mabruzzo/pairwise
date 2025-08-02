@@ -254,7 +254,6 @@ pub mod reduce_sample;
 
 pub use apply_points::{PointProps, apply_accum};
 pub use bins::*;
-pub use misc::{dot_product, squared_diff_norm};
 pub use parallel::{
     BinnedDatum, Executor, MemberID, ReductionSpec, StandardTeamParam, Team,
     fill_single_team_binned_statepack,

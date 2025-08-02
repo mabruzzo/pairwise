@@ -42,7 +42,7 @@ mod reducers;
 // pull in symbols that visible outside of the package
 pub use pairwise_nostd_internal::{
     Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean, Executor, OutputDescr,
-    PairOperation, PointProps, Reducer, StatePackViewMut, apply_accum, dot_product,
+    PairOperation, PointProps, Reducer, StatePackViewMut, apply_accum,
 };
 pub use parallel_serial::SerialExecutor;
 pub use reducers::{
