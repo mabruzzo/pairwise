@@ -199,6 +199,28 @@ impl TestScenario {
     }
 }
 
+/// exists for testing purposes!
+struct DistBinEdges {
+    bin_edges: Vec<f64>,
+    bin_edges_sqr: Vec<f64>,
+}
+
+impl DistBinEdges {
+    fn new(vals: &[f64]) -> Self {
+        DistBinEdges {
+            bin_edges: vals.to_vec(),
+            bin_edges_sqr: vals.iter().map(|x| x.powi(2)).collect(),
+        }
+    }
+
+    fn bin_edge_sqr(&'_ self) -> IrregularBinEdges<'_> {
+        IrregularBinEdges::new(&self.bin_edges_sqr).unwrap()
+    }
+}
+
+// compute the "astronomer's first-order structure function"
+fn astro_sf1(data_a: &TestScenario, data_b: Option<&TestScenario>) {}
+
 #[test]
 fn test_apply_accum_auto_corr() {
     // keep in mind that we interpret positions as a (3, ...) array

@@ -1,7 +1,7 @@
 use crate::parallel_serial::SerialExecutor;
 use pairwise_nostd_internal::{
-    BinEdges, CartesianBlock, CellWidth, Executor, PairOperation, Reducer, StatePackViewMut,
-    TwoPointCartesian,
+    BinEdges, CartesianBlock, CellWidth, Executor, PairOperation, PointProps, Reducer,
+    StatePackViewMut, TwoPointCartesian, apply_accum,
 };
 use std::num::NonZeroU32;
 
@@ -35,3 +35,26 @@ pub fn apply_cartesian<T: Reducer + Clone, B: BinEdges + Clone>(
 
     Ok(())
 }
+
+/*
+// we may throw this out, but we are only using it right now for the sake of preserving tests...
+pub fn apply_unstructured<T: Reducer + Clone, B: BinEdges + Clone>(
+    binned_statepacks: &mut StatePackViewMut,
+    reducer: &T,
+    points_a: &PointProps,
+    points_b: Option<&PointProps>,
+    squared_distance_bin_edges: &B, // should this be passed by value?
+    pair_op: PairOperation,
+) -> Result<(), &'static str> {
+    apply_accum(
+        binned_statepacks,
+        reducer,
+        points_a,
+        points_b,
+        squared_distance_bin_edges,
+        pairwise_fn
+    )?;
+
+    Ok(())
+}
+*/
