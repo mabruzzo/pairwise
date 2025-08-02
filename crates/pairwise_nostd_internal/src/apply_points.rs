@@ -2,6 +2,7 @@ use crate::bins::BinEdges;
 use crate::misc::squared_diff_norm;
 use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
+use crate::twopoint::common::PairOperation;
 use ndarray::ArrayView2;
 
 /// Collection of point properties.
@@ -96,7 +97,7 @@ pub fn apply_accum(
     points_a: &PointProps,
     points_b: Option<&PointProps>,
     squared_distance_bin_edges: &impl BinEdges,
-    pairwise_fn: &impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
+    pair_op: PairOperation,
 ) -> Result<(), &'static str> {
     // maybe we make separate functions for auto-stats vs cross-stats?
     // TODO: check size of output buffers
@@ -115,34 +116,57 @@ pub fn apply_accum(
     }
 
     if let Some(points_b) = points_b {
-        apply_accum_helper::<false>(
-            statepack,
-            reducer,
-            points_a,
-            points_b,
-            squared_distance_bin_edges,
-            pairwise_fn,
-        )
+        match pair_op {
+            PairOperation::ElementwiseMultiply => {
+                apply_accum_helper::<false, false>(
+                    statepack,
+                    reducer,
+                    points_a,
+                    points_b,
+                    squared_distance_bin_edges,
+                );
+            }
+            PairOperation::ElementwiseSub => {
+                apply_accum_helper::<false, true>(
+                    statepack,
+                    reducer,
+                    points_a,
+                    points_b,
+                    squared_distance_bin_edges,
+                );
+            }
+        }
     } else {
-        apply_accum_helper::<true>(
-            statepack,
-            reducer,
-            points_a,
-            points_a,
-            squared_distance_bin_edges,
-            pairwise_fn,
-        )
+        match pair_op {
+            PairOperation::ElementwiseMultiply => {
+                apply_accum_helper::<true, false>(
+                    statepack,
+                    reducer,
+                    points_a,
+                    points_a,
+                    squared_distance_bin_edges,
+                );
+            }
+            PairOperation::ElementwiseSub => {
+                apply_accum_helper::<true, true>(
+                    statepack,
+                    reducer,
+                    points_a,
+                    points_a,
+                    squared_distance_bin_edges,
+                );
+            }
+        }
     }
     Ok(())
 }
 
-fn apply_accum_helper<const CROSS: bool>(
+fn apply_accum_helper<const CROSS: bool, const SUBTRACT: bool>(
     statepack: &mut StatePackViewMut,
     reducer: &impl Reducer,
     points_a: &PointProps,
     points_b: &PointProps,
     squared_distance_bin_edges: &impl BinEdges,
-    pairwise_fn: impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
 ) {
     for i_a in 0..points_a.n_points {
         let i_b_start = if CROSS { i_a + 1 } else { 0 };
@@ -156,10 +180,22 @@ fn apply_accum_helper<const CROSS: bool>(
                 points_a.n_spatial_dims,
             );
             if let Some(distance_bin_idx) = squared_distance_bin_edges.bin_index(distance_squared) {
-                let datum = Datum::from_scalar_value(
-                    pairwise_fn(points_a.values, points_b.values, i_a, i_b),
-                    points_a.get_weight(i_a) * points_b.get_weight(i_b),
-                );
+                let datum = Datum {
+                    value: if SUBTRACT {
+                        [
+                            points_b.values[[0, i_b]] - points_a.values[[0, i_a]],
+                            points_b.values[[1, i_b]] - points_a.values[[1, i_a]],
+                            points_b.values[[2, i_b]] - points_a.values[[2, i_a]],
+                        ]
+                    } else {
+                        [
+                            points_b.values[[0, i_b]] * points_a.values[[0, i_a]],
+                            points_b.values[[1, i_b]] * points_a.values[[1, i_a]],
+                            points_b.values[[2, i_b]] * points_a.values[[2, i_a]],
+                        ]
+                    },
+                    weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
+                };
 
                 reducer.consume(&mut statepack.get_state_mut(distance_bin_idx), &datum);
             }

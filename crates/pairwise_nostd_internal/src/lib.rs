@@ -246,6 +246,7 @@ mod parallel;
 mod reduce_utils;
 mod reducer;
 mod state;
+mod twopoint;
 
 // I'm not really sure we want to publicly expose reduce_sample, but for now,
 // we expose it to support testing...
@@ -259,5 +260,9 @@ pub use parallel::{
     fill_single_team_binned_statepack,
 };
 pub use reduce_utils::reset_full_statepack;
-pub use reducer::{Comp0Histogram, Comp0Mean, Datum, OutputDescr, Reducer};
+pub use reducer::{
+    Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean, Datum, OutputDescr,
+    Reducer, ScalarHistogram, ScalarMean, ScalarizeOp,
+};
 pub use state::{AccumStateView, AccumStateViewMut, StatePackViewMut};
+pub use twopoint::common::PairOperation;

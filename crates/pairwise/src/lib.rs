@@ -43,8 +43,10 @@ mod reducers;
 // pull in symbols that visible outside of the package
 pub use misc::diff_norm;
 pub use pairwise_nostd_internal::{
-    Comp0Histogram, Comp0Mean, Executor, OutputDescr, PointProps, Reducer, StatePackViewMut,
-    apply_accum, dot_product,
+    Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean, Executor, OutputDescr,
+    PairOperation, PointProps, Reducer, StatePackViewMut, apply_accum, dot_product,
 };
 pub use parallel_serial::SerialExecutor;
-pub use reducers::{get_output, get_output_from_statepack_array};
+pub use reducers::{
+    EuclideanNormHistogram, EuclideanNormMean, get_output, get_output_from_statepack_array,
+};

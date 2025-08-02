@@ -3,8 +3,8 @@ mod common;
 use common::prepare_statepack;
 use ndarray::ArrayView2;
 use pairwise::{
-    Comp0Histogram, Comp0Mean, PointProps, StatePackViewMut, apply_accum, diff_norm, dot_product,
-    get_output_from_statepack_array,
+    ComponentSumMean, EuclideanNormHistogram, EuclideanNormMean, PairOperation, PointProps,
+    StatePackViewMut, apply_accum, get_output_from_statepack_array,
 };
 
 // Things are a little unergonomic!
@@ -49,7 +49,7 @@ mod tests {
 
         let squared_distance_bin_edges = [0.0, 1.0, 9.0, 16.0];
         let squared_distance_bins = IrregularBinEdges::new(&squared_distance_bin_edges).unwrap();
-        let reducer = Comp0Mean::new();
+        let reducer = EuclideanNormMean::new();
         let mut statepack = prepare_statepack(squared_distance_bin_edges.len(), &reducer);
         let points = PointProps::new(
             ArrayView2::from_shape((3, 2), &positions).unwrap(),
@@ -71,7 +71,7 @@ mod tests {
             &points,
             Some(&points_b),
             &squared_distance_bins,
-            &diff_norm,
+            PairOperation::ElementwiseSub,
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("spatial dimensions"));
@@ -90,7 +90,7 @@ mod tests {
             &points,
             Some(&points_b),
             &squared_distance_bins,
-            &diff_norm,
+            PairOperation::ElementwiseSub,
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("weights"));
@@ -114,7 +114,7 @@ mod tests {
         // check the means (using results computed by pyvsf)
         let expected_mean = [8.41281820819169, 15.01110699893027, f64::NAN];
         let expected_weight = [7., 3., 0.];
-        let mean_reducer = Comp0Mean::new();
+        let mean_reducer = EuclideanNormMean::new();
         let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
         let points = PointProps::new(
@@ -129,7 +129,7 @@ mod tests {
             &points,
             None,
             &squared_distance_bins,
-            &diff_norm,
+            PairOperation::ElementwiseSub,
         );
         assert_eq!(result, Ok(()));
 
@@ -164,7 +164,7 @@ mod tests {
             4., 0., 0.,
             3., 2., 0.,
         ];
-        let hist_reducer = Comp0Histogram::from_bin_edges(hist_buckets);
+        let hist_reducer = EuclideanNormHistogram::from_bin_edges(hist_buckets);
         let mut hist_statepack = prepare_statepack(distance_bin_edges.len() - 1, &hist_reducer);
         let result = apply_accum(
             &mut StatePackViewMut::from_array_view(hist_statepack.view_mut()),
@@ -172,7 +172,7 @@ mod tests {
             &points,
             None,
             &squared_distance_bins,
-            &diff_norm,
+            PairOperation::ElementwiseSub,
         );
         assert_eq!(result, Ok(()));
         let hist_result_map =
@@ -235,7 +235,7 @@ mod tests {
         let expected_weight = [4., 6.];
 
         // perform the calculation!
-        let reducer = Comp0Mean::new();
+        let reducer = EuclideanNormMean::new();
         let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut statepack = prepare_statepack(n_spatial_bins, &reducer);
 
@@ -245,7 +245,7 @@ mod tests {
             &points_a,
             Some(&points_b),
             &square_distance_bins,
-            &diff_norm,
+            PairOperation::ElementwiseSub,
         );
         assert_eq!(result, Ok(()));
 
@@ -278,7 +278,7 @@ mod tests {
         // check the means (using results computed by pyvsf)
         let expected_mean = [284.57142857142856, 236.0, f64::NAN];
         let expected_weight = [7., 3., 0.];
-        let mean_reducer = Comp0Mean::new();
+        let mean_reducer = ComponentSumMean::new();
         let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
 
@@ -294,7 +294,7 @@ mod tests {
             &points,
             None,
             &squared_distance_bins,
-            &dot_product,
+            PairOperation::ElementwiseMultiply,
         );
         assert_eq!(result, Ok(()));
 
