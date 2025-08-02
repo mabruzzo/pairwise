@@ -114,7 +114,6 @@ pub struct View3DSpec {
     strides_zyx: [isize; 3],
 }
 
-#[allow(dead_code)] // <- this is a temporary stopgap solution
 impl View3DSpec {
     /// Create a contiguous-in-memory View3DSpec from shape_zyx alone
     pub fn from_shape_contiguous(shape_zyx: [usize; 3]) -> Result<View3DSpec, &'static str> {
@@ -185,6 +184,10 @@ impl View3DSpec {
         // based on the invariants enforced by the constructor, tmp is always
         // always be positive. Thus, it can be losslessly converted to usize
         (max_idx_1d as usize) + 1_usize
+    }
+
+    pub fn n_elements(&self) -> usize {
+        (self.shape_zyx[0] * self.shape_zyx[1] * self.shape_zyx[2]) as usize
     }
 
     pub fn shape(&self) -> &[isize; 3] {

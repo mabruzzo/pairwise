@@ -30,7 +30,7 @@ use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
     serial_merge_accum_states,
 };
-use crate::reducer::{Datum, Mean, Reducer};
+use crate::reducer::{Comp0Mean, Datum, Reducer};
 use crate::state::{AccumStateViewMut, StatePackViewMut};
 
 // Defining some basic functionality for implementing this example:
@@ -144,7 +144,7 @@ pub fn naive_mean_chunked(
 pub fn reducer_mean_chunked(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
-    reducer: &Mean,
+    reducer: &Comp0Mean,
     binned_statepack: &mut StatePackViewMut,
 ) {
     let Some(chunk_lens) = stream.chunk_lens else {
@@ -165,10 +165,7 @@ pub fn reducer_mean_chunked(
             for i in i_global..(i_global + chunk_len) {
                 reducer.consume(
                     &mut tmp_accum_state,
-                    &Datum {
-                        value: f.call(stream.x_array[i]),
-                        weight: stream.weights[i],
-                    },
+                    &Datum::from_scalar_value(f.call(stream.x_array[i]), stream.weights[i]),
                 );
             }
             reducer.merge(
@@ -219,7 +216,7 @@ pub fn reducer_mean_chunked(
 pub fn restructured1_mean_chunked(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
-    reducer: &Mean,
+    reducer: &Comp0Mean,
     binned_statepack: &mut StatePackViewMut,
     tmp_accum_states: &mut StatePackViewMut,
     start_stop_chunk_idx: Option<(usize, usize)>,
@@ -267,10 +264,7 @@ pub fn restructured1_mean_chunked(
                 for i in i_itr {
                     reducer.consume(
                         &mut tmp_accum_state,
-                        &Datum {
-                            value: f.call(stream.x_array[i]),
-                            weight: stream.weights[i],
-                        },
+                        &Datum::from_scalar_value(f.call(stream.x_array[i]), stream.weights[i]),
                     );
                 }
             }
@@ -301,7 +295,7 @@ pub fn restructured1_mean_chunked(
 pub fn restructured2_mean_chunked(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
-    reducer: &Mean,
+    reducer: &Comp0Mean,
     binned_statepack: &mut StatePackViewMut,
     scratch_binned_statepacks: &mut [StatePackViewMut],
     tmp_accum_states: &mut StatePackViewMut,
@@ -354,7 +348,7 @@ pub struct MeanChunkedReduction<'a> {
     stream: SampleDataStreamView<'a>,
     stream_chunk_lens: &'a [usize],
     f: QuadraticPolynomial,
-    reducer: Mean,
+    reducer: Comp0Mean,
     n_bins: usize,
 }
 
@@ -362,7 +356,7 @@ impl<'a> MeanChunkedReduction<'a> {
     pub fn new(
         stream: SampleDataStreamView<'a>,
         f: QuadraticPolynomial,
-        reducer: Mean,
+        reducer: Comp0Mean,
         n_bins: usize,
     ) -> Self {
         let Some(chunk_lens) = stream.chunk_lens else {
@@ -379,7 +373,7 @@ impl<'a> MeanChunkedReduction<'a> {
 }
 
 impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
-    type ReducerType = Mean;
+    type ReducerType = Comp0Mean;
 
     fn get_reducer(&self) -> &Self::ReducerType {
         &self.reducer
@@ -449,10 +443,10 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
                         for i in i_itr {
                             self.reducer.consume(
                                 &mut tmp_accum_state,
-                                &Datum {
-                                    value: self.f.call(self.stream.x_array[i]),
-                                    weight: self.stream.weights[i],
-                                },
+                                &Datum::from_scalar_value(
+                                    self.f.call(self.stream.x_array[i]),
+                                    self.stream.weights[i],
+                                ),
                             );
                         }
                     }
@@ -472,10 +466,10 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
                     for i in i_itr {
                         self.reducer.consume(
                             &mut tmp_accum_state,
-                            &Datum {
-                                value: self.f.call(self.stream.x_array[i]),
-                                weight: self.stream.weights[i],
-                            },
+                            &Datum::from_scalar_value(
+                                self.f.call(self.stream.x_array[i]),
+                                self.stream.weights[i],
+                            ),
                         );
                     }
                 },

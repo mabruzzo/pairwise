@@ -57,6 +57,7 @@ impl BinEdges for RegularBinEdges {
     }
 }
 
+#[derive(Clone)]
 pub struct IrregularBinEdges<'a> {
     bin_edges: &'a [f64],
 }

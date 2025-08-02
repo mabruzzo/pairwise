@@ -2,7 +2,28 @@ use std::collections::HashMap;
 
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut2, Axis};
 
-use pairwise_nostd_internal::{AccumStateView, OutputDescr, Reducer, StatePackViewMut};
+use pairwise_nostd_internal::{
+    AccumStateView, Datum, OutputDescr, Reducer, ScalarHistogram, ScalarMean, ScalarizeOp,
+    StatePackViewMut,
+};
+
+/// to be used when computing the "astronomer's first order structure function"
+#[derive(Clone, Copy)]
+pub struct EuclideanNorm;
+
+impl ScalarizeOp for EuclideanNorm {
+    #[inline(always)]
+    fn scalarized_value(datum: &Datum) -> f64 {
+        let comp0 = datum.value[0] * datum.value[0];
+        let comp1 = datum.value[1] * datum.value[1];
+        let comp2 = datum.value[2] * datum.value[2];
+        let sum = comp0 + (comp1 + comp2);
+        sum.sqrt()
+    }
+}
+
+pub type EuclideanNormHistogram<B> = ScalarHistogram<B, EuclideanNorm>;
+pub type EuclideanNormMean = ScalarMean<EuclideanNorm>;
 
 /// compute the output quantities from an accumulator's state properties and
 /// return the result in a HashMap.
