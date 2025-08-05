@@ -1,8 +1,8 @@
 //! Implements the "serial" backend for running thread teams
-
+use crate::Error;
 use pairwise_nostd_internal::{
-    BinnedDatum, Executor, MemberID, Reducer, ReductionSpec, StandardTeamParam, StatePackViewMut,
-    Team, fill_single_team_binned_statepack,
+    BinnedDatum, MemberID, Reducer, ReductionSpec, StandardTeamParam, StatePackViewMut, Team,
+    fill_single_team_binned_statepack,
 };
 use std::num::NonZeroU32;
 
@@ -116,14 +116,17 @@ impl Team for SerialTeam {
 
 pub struct SerialExecutor;
 
-impl Executor for SerialExecutor {
-    fn drive_reduce(
+// I'm increasingly thinking that we don't want the Exectutor trait. If
+// nothing else, it shouldn't be declared in pairwise_nostd_internal
+
+impl SerialExecutor {
+    pub fn drive_reduce(
         &mut self,
         out: &mut StatePackViewMut,
         reduce_spec: &impl ReductionSpec,
         n_members_per_team: NonZeroU32,
         n_teams: NonZeroU32,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), Error> {
         let reducer = reduce_spec.get_reducer();
         let n_bins = reduce_spec.n_bins();
 
@@ -133,12 +136,27 @@ impl Executor for SerialExecutor {
         };
 
         if team_param.n_members_per_team != 1 {
-            return Err("only supports 1 member per team");
+            return Err(Error::integer_range(
+                "team_param.n_members_per_team",
+                team_param.n_members_per_team as i64,
+                1,
+                1,
+            ));
         } else if team_param.n_teams != 1 {
             // todo: we should add support for n_teams (that's straight-forward)
-            return Err("only supports 1 team");
+            return Err(Error::integer_range(
+                "team_param.n_teams",
+                team_param.n_teams as i64,
+                1,
+                1,
+            ));
         } else if (out.n_states() != n_bins) || (out.state_size() != reducer.accum_state_size()) {
-            return Err("out has the wrong shape");
+            return Err(Error::binned_statepack_shape(
+                n_bins as u64,
+                reducer.accum_state_size() as u64,
+                out.n_states() as u64,
+                out.state_size() as u64,
+            ));
         }
 
         // allocate a temporary statepack
