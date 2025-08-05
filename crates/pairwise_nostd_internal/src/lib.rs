@@ -260,4 +260,4 @@ pub use parallel::{
 };
 pub use reduce_utils::reset_full_statepack;
 pub use reducer::{Datum, Histogram, Mean, OutputDescr, Reducer};
-pub use state::{AccumStateView, AccumStateViewMut, StatePackViewMut};
+pub use state::{AccumStateView, AccumStateViewMut, StatePackView, StatePackViewMut};
