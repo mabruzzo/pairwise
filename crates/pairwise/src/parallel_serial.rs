@@ -116,7 +116,7 @@ impl Team for SerialTeam {
 
 pub struct SerialExecutor;
 
-// I'm increasingly thinking that we don't want the Exectutor trait. If
+// I'm increasingly thinking that we don't want the Executor trait. If
 // nothing else, it shouldn't be declared in pairwise_nostd_internal
 
 impl SerialExecutor {

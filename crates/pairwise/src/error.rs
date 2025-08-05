@@ -1,6 +1,6 @@
 // I don't really know what I'm doing with error handling quite yet here.
 //
-// But, I think its time ot start doing "something" in so we can start digging
+// But, I think its time to start doing "something" so we can start digging
 // our way out of the "hole" that we created in the `pairwise_nostd_internal`
 // by returning `&'static str` everywhere...
 //
@@ -118,7 +118,8 @@ impl core::fmt::Display for ErrorKind {
 /// An error that occurs when a binned_statepack has the wrong shape
 ///
 /// # Note
-/// I supsect that in the long-term, this error may situation may not be accessible
+/// I suspect that in the long-term, we may design our API so that this error
+/// isn't directly accessible
 #[derive(Clone, Debug)]
 struct BinnedStatePackShapeError {
     expected_n_states: u64,
