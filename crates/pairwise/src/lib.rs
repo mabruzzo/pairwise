@@ -37,12 +37,14 @@ See the crate-level documentation for [`pairwise_nostd_internal`].
 
 // inform build-system of the crates in this package
 mod apply;
+mod error;
 mod misc;
 mod parallel_serial;
 mod reducers;
 
 // pull in symbols that visible outside of the package
 pub use apply::apply_cartesian;
+pub use error::Error;
 pub use misc::diff_norm;
 pub use pairwise_nostd_internal::{
     CartesianBlock, CellWidth, Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean,

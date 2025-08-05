@@ -280,7 +280,7 @@ fn test_apply_accum_auto_corr() {
                 &squared_distance_bin_edges,
                 PairOperation::ElementwiseMultiply,
             );
-            assert_eq!(rslt, Ok(()));
+            assert!(rslt.is_ok());
 
             get_output(&reducer, &binned_statepack)
         };

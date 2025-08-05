@@ -1,7 +1,7 @@
-use crate::parallel_serial::SerialExecutor;
+use crate::{Error, parallel_serial::SerialExecutor};
 use pairwise_nostd_internal::{
-    BinEdges, CartesianBlock, CellWidth, Executor, PairOperation, PointProps, Reducer,
-    StatePackViewMut, TwoPointCartesian, apply_accum,
+    BinEdges, CartesianBlock, CellWidth, PairOperation, PointProps, Reducer, StatePackViewMut,
+    TwoPointCartesian, apply_accum,
 };
 use std::num::NonZeroU32;
 
@@ -14,7 +14,7 @@ pub fn apply_cartesian<T: Reducer + Clone, B: BinEdges + Clone>(
     cell_width: &CellWidth,
     squared_distance_bin_edges: &B, // should this be passed by value?
     pair_op: PairOperation,
-) -> Result<(), &'static str> {
+) -> Result<(), Error> {
     let context = TwoPointCartesian::new(
         reducer.clone(),
         block_a.clone(),
@@ -22,7 +22,8 @@ pub fn apply_cartesian<T: Reducer + Clone, B: BinEdges + Clone>(
         *cell_width,
         squared_distance_bin_edges.clone(),
         pair_op,
-    )?;
+    )
+    .map_err(Error::internal_legacy_adhoc)?;
 
     // todo: make this customizable
     let mut executor = SerialExecutor;
