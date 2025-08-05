@@ -36,10 +36,12 @@ See the crate-level documentation for [`pairwise_nostd_internal`].
 #![deny(rustdoc::broken_intra_doc_links)]
 
 // inform build-system of the crates in this package
+mod error;
 mod parallel_serial;
 mod reducers;
 
 // pull in symbols that visible outside of the package
+pub use error::Error;
 pub use pairwise_nostd_internal::{
     Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean, Executor, OutputDescr,
     PairOperation, PointProps, Reducer, StatePackViewMut, apply_accum,
