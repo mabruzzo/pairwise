@@ -213,7 +213,7 @@ pub trait ReductionSpec {
     /// we will eventually be able to remove this method. It is totally
     /// unnecessary in the vast majority of cases. It **only** exists to make
     /// it easier to port over the `pairwise::apply_accum` function for
-    /// [`crate::PointProps`]
+    /// [`crate::UnstructuredPoints`]
     #[inline(always)]
     fn outer_team_loop_bounds(
         &self,

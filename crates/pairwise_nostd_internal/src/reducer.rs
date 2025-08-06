@@ -120,8 +120,9 @@ use ndarray::ArrayViewMut1;
 /// I don't love that this defines copy, but it's important for examples
 #[derive(Clone, Copy)]
 pub struct Datum {
-    value: [f64; 3],
-    weight: f64,
+    // TODO: should this really be public to all?
+    pub value: [f64; 3],
+    pub(crate) weight: f64,
 }
 
 impl Datum {
@@ -224,35 +225,16 @@ impl ScalarizeOp for TakeComp0 {
     }
 }
 
-// the basic premise is that we will define the following 2 types and we'll
-// start using them in the context of correlation and structure functions
+/// To be used with simple correlation
+#[derive(Clone, Copy)]
+pub struct ComponentSum;
 
-// /// To be used with simple correlation
-// #[derive(Clone, Copy)]
-// pub struct ComponentSum;
-//
-// impl ScalarizeOp for ComponentSum {
-//     #[inline(always)]
-//     fn scalarized_value(datum: &Datum) -> f64 {
-//         datum.value[0] + (datum.value[1] + datum.value[2])
-//     }
-// }
-
-// define here, if we start using libm, or define this elsewhere
-// /// to be used when computing the "astronomer's first order structure function"
-// #[derive(Clone, Copy)]
-// pub struct EuclideanNorm;
-//
-// impl ScalarizeOp for EuclideanNorm {
-//     #[inline(always)]
-//     fn scalarized_value(datum: &Datum) -> f64 {
-//         let comp0 = datum.value[0] * datum.value[0];
-//         let comp1 = datum.value[1] * datum.value[1];
-//         let comp2 = datum.value[2] * datum.value[2];
-//         let sum = comp0 + (comp1 + comp2);
-//         sum.sqrt()
-//     }
-// }
+impl ScalarizeOp for ComponentSum {
+    #[inline(always)]
+    fn scalarized_value(datum: &Datum) -> f64 {
+        datum.value[0] + (datum.value[1] + datum.value[2])
+    }
+}
 
 // the following Reducers all "scalarize" the value in Datum before actually
 // the reduction. In other words, they somehow map it from a vector to a
@@ -313,6 +295,7 @@ impl<T: ScalarizeOp> Reducer for ScalarMean<T> {
 }
 
 pub type Comp0Mean = ScalarMean<TakeComp0>;
+pub type ComponentSumMean = ScalarMean<ComponentSum>;
 
 #[derive(Clone)]
 pub struct ScalarHistogram<BinsType: bins::BinEdges, T: ScalarizeOp> {
@@ -343,7 +326,7 @@ impl<B: bins::BinEdges, T: ScalarizeOp> Reducer for ScalarHistogram<B, T> {
 
     /// consume the value and weight to update the accum_state
     fn consume(&self, accum_state: &mut AccumStateViewMut, datum: &Datum) {
-        if let Some(hist_bin_idx) = self.bins.bin_index(datum.value[0]) {
+        if let Some(hist_bin_idx) = self.bins.bin_index(T::scalarized_value(datum)) {
             accum_state[hist_bin_idx] += datum.weight;
         }
     }
@@ -371,3 +354,4 @@ impl<B: bins::BinEdges, T: ScalarizeOp> Reducer for ScalarHistogram<B, T> {
 }
 
 pub type Comp0Histogram<B> = ScalarHistogram<B, TakeComp0>;
+pub type ComponentSumHistogram<B> = ScalarHistogram<B, ComponentSum>;
