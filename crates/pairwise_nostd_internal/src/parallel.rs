@@ -6,8 +6,6 @@ use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
 use core::num::NonZeroU32;
 
-pub struct MemberID(pub usize);
-
 /// This struct holds standardized parameters that describe Team parallelism.
 /// Different backends will obviously require extra parameters.
 ///
@@ -115,7 +113,7 @@ pub trait Team {
         binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         reducer: &impl Reducer,
         bin_index: usize,
-        get_member_contrib: &impl Fn(&mut StatePackViewMut, MemberID),
+        get_member_contrib: &impl Fn(&mut StatePackViewMut, usize),
     );
 
     /// Ensures all team members are synchronized, then does 3 things:
@@ -130,7 +128,7 @@ pub trait Team {
         &mut self,
         binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         reducer: &impl Reducer,
-        get_datum_bin_pair: &impl Fn(&mut [BinnedDatum], MemberID),
+        get_datum_bin_pair: &impl Fn(&mut [BinnedDatum], usize),
     );
 }
 

@@ -253,7 +253,7 @@ pub mod reduce_sample;
 
 pub use bins::*;
 pub use parallel::{
-    BinnedDatum, Executor, MemberID, ReductionSpec, StandardTeamParam, Team,
+    BinnedDatum, Executor, ReductionSpec, StandardTeamParam, Team,
     fill_single_team_binned_statepack,
 };
 pub use reduce_utils::reset_full_statepack;
