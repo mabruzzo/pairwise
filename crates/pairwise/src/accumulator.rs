@@ -318,7 +318,9 @@ enum SpatialInfo<'a> {
     //}
 }
 
-type MkWrappedReducerFn = fn(&Config) -> Result<Box<dyn WrappedReducer>, Error>;
+// making this a type-alias wasn't have the appropriate effect (we weren't
+// properly coercing closures to function pointers)
+struct MkWrappedReducerFn(fn(&Config) -> Result<Box<dyn WrappedReducer>, Error>);
 
 fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
     // - "2pcf", "hist_cf"
@@ -326,63 +328,58 @@ fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
     //   "sf3_tensor"
     // - "longitudinal_sf2", "longitudinal_sf3"
     //let func = ;
-    let mut out: HashMap<String, MkWrappedReducerFn> = HashMap::new();
-    // correlation function machinery
-    out.insert(
-        "hist_cf".to_owned(),
-        |config: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
-            if let Some(ref edges) = config.hist_reducer_bucket {
+    let mut out: HashMap<String, MkWrappedReducerFn> = HashMap::from([
+        // correlation function machinery
+        (
+            "hist_cf".to_owned(),
+            MkWrappedReducerFn(|conf: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
+                let Some(ref edges) = conf.hist_reducer_bucket else {
+                    return Err(Error::bucket_edges(conf.reducer_name.clone(), true));
+                };
                 Ok(Box::new(WrappedReducerImpl {
                     reducer: ComponentSumHistogram::from_bin_edges(edges.clone()),
                     pair_op: PairOperation::ElementwiseMultiply,
                 }) as Box<dyn WrappedReducer>)
-            } else {
-                Err(Error::bucket_edges(config.reducer_name.clone(), true))
-            }
-        },
-    );
-    out.insert(
-        "2pcf".to_owned(),
-        |config: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
-            if config.hist_reducer_bucket.is_some() {
-                Err(Error::bucket_edges(config.reducer_name.clone(), false))
-            } else {
+            }),
+        ),
+        (
+            "2pcf".to_owned(),
+            MkWrappedReducerFn(|conf: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
+                if conf.hist_reducer_bucket.is_some() {
+                    return Err(Error::bucket_edges(conf.reducer_name.clone(), false));
+                }
                 Ok(Box::new(WrappedReducerImpl {
                     reducer: ComponentSumMean::new(),
                     pair_op: PairOperation::ElementwiseMultiply,
                 }) as Box<dyn WrappedReducer>)
-            }
-        },
-    );
-
-    // shift to structure functions
-    out.insert(
-        "hist_astro_sf1".to_owned(),
-        |config: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
-            if let Some(ref edges) = config.hist_reducer_bucket {
+            }),
+        ),
+        // shift to structure functions
+        (
+            "hist_astro_sf1".to_owned(),
+            MkWrappedReducerFn(|conf: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
+                let Some(ref edges) = conf.hist_reducer_bucket else {
+                    return Err(Error::bucket_edges(conf.reducer_name.clone(), true));
+                };
                 Ok(Box::new(WrappedReducerImpl {
                     reducer: EuclideanNormHistogram::from_bin_edges(edges.clone()),
                     pair_op: PairOperation::ElementwiseSub,
                 }) as Box<dyn WrappedReducer>)
-            } else {
-                Err(Error::bucket_edges(config.reducer_name.clone(), true))
-            }
-        },
-    );
-    out.insert(
-        "astro_sf1".to_owned(),
-        |config: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
-            if config.hist_reducer_bucket.is_some() {
-                Err(Error::bucket_edges(config.reducer_name.clone(), false))
-            } else {
+            }),
+        ),
+        (
+            "astro_sf1".to_owned(),
+            MkWrappedReducerFn(|conf: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
+                if conf.hist_reducer_bucket.is_some() {
+                    return Err(Error::bucket_edges(conf.reducer_name.clone(), false));
+                }
                 Ok(Box::new(WrappedReducerImpl {
                     reducer: EuclideanNormMean::new(),
                     pair_op: PairOperation::ElementwiseSub,
                 }) as Box<dyn WrappedReducer>)
-            }
-        },
-    );
-
+            }),
+        ),
+    ]);
     out
 }
 
@@ -392,7 +389,7 @@ static REDUCER_MAKER_REGISTRY: LazyLock<HashMap<String, MkWrappedReducerFn>> =
 fn wrapper_reducer_from_config(config: &Config) -> Result<Box<dyn WrappedReducer>, Error> {
     let name = &config.reducer_name;
     if let Some(func) = REDUCER_MAKER_REGISTRY.get(name) {
-        func(config)
+        func.0(config)
     } else {
         Err(Error::reducer_name(
             name.clone(),
