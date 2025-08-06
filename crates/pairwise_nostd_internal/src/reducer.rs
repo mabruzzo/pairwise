@@ -243,6 +243,7 @@ impl Reducer for Mean {
     }
 }
 
+#[derive(Clone)]
 pub struct Histogram<BinsType: bins::BinEdges> {
     bins: BinsType,
 }

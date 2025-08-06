@@ -16,6 +16,7 @@ use ndarray::ArrayView2;
 /// - In other words the shape of one of these arrays is `(D, n_points)`,
 ///   where `D` is the number of spatial dimensions and `n_points` is the
 ///   number of points.
+#[derive(Clone)]
 pub struct PointProps<'a> {
     positions: ArrayView2<'a, f64>,
     // TODO allow values to have a different dimensionality than positions

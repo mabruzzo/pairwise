@@ -3,17 +3,44 @@ mod common;
 use common::prepare_statepack;
 use ndarray::ArrayView2;
 use pairwise::{
-    Histogram, Mean, PointProps, StatePackViewMut, apply_accum, diff_norm, dot_product,
-    get_output_from_statepack_array,
+    Executor, Histogram, Mean, PointProps, Reducer, SerialExecutor, StatePackViewMut, TwoPoint,
+    diff_norm, dot_product, get_output_from_statepack_array,
 };
+use std::num::NonZero;
 
 // Things are a little unergonomic!
 
 #[cfg(test)]
 mod tests {
-    use pairwise_nostd_internal::IrregularBinEdges;
+
+    use pairwise_nostd_internal::{BinEdges, IrregularBinEdges};
 
     use super::*;
+
+    /// Apply a function to each pair of points and accumulate the results.
+    /// This wraps TwoPoints, and exists to streamline existing tests
+    /// TODO this should be deleted eventually
+    pub fn apply_accum<'a, R: Reducer + Clone, B: BinEdges + Clone>(
+        statepack: &mut StatePackViewMut,
+        reducer: &R,
+        points_a: &PointProps<'a>,
+        points_b: Option<&PointProps<'a>>,
+        squared_distance_bin_edges: &B,
+        pairwise_fn: &'a impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
+    ) -> Result<(), &'static str> {
+        let twopoint = TwoPoint::new(
+            reducer.clone(),
+            points_a.clone(),
+            points_b.cloned(),
+            squared_distance_bin_edges.clone(),
+            pairwise_fn,
+        )?;
+
+        let one = NonZero::<u32>::new(1).unwrap();
+        SerialExecutor {}.drive_reduce(statepack, &twopoint, one, one)?;
+
+        Ok(())
+    }
 
     // based on numpy!
     // https://numpy.org/doc/stable/reference/generated/numpy.isclose.html
