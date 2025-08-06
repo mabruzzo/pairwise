@@ -252,7 +252,7 @@ mod twopoint;
 // we expose it to support testing...
 pub mod reduce_sample;
 
-pub use apply_points::{PointProps, apply_accum};
+pub use apply_points::{PointProps, TwoPoint};
 pub use bins::*;
 pub use parallel::{
     BinnedDatum, Executor, MemberID, ReductionSpec, StandardTeamParam, Team,
