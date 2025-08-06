@@ -32,6 +32,9 @@ pub struct Error {
 enum ErrorKind {
     /// An error that occurs when a binned_statepack has the wrong shape
     BinnedStatePackShape(BinnedStatePackShapeError),
+    /// An error related to specifying (or not specifying) the Bin Edges
+    /// for the Buckets in a Histogram Reducer
+    BucketEdge(BucketEdgeError),
     /// An error that occurs when an integer lies outside of the acceptable
     /// range of values
     IntegerRanger(IntegerRangeError),
@@ -67,6 +70,14 @@ impl Error {
                 actual_n_states,
                 actual_accum_size,
             }),
+        }
+    }
+
+    /// produce an error indicating the presence/ommision of the bucket
+    /// bin-edges for configuring the Reducer within an Accumulator
+    pub(crate) fn bucket_edges(name: String, expect_edges: bool) -> Self {
+        Error {
+            kind: ErrorKind::BucketEdge(BucketEdgeError { name, expect_edges }),
         }
     }
 
@@ -118,6 +129,7 @@ impl core::fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match *self {
             ErrorKind::BinnedStatePackShape(ref err) => err.fmt(f),
+            ErrorKind::BucketEdge(ref err) => err.fmt(f),
             ErrorKind::IntegerRanger(ref err) => err.fmt(f),
             ErrorKind::InternalLegacyAdHoc(ref msg) => msg.fmt(f),
             ErrorKind::ReducerName(ref err) => err.fmt(f),
@@ -151,6 +163,27 @@ impl core::fmt::Display for BinnedStatePackShapeError {
             self.expected_n_states,
             self.expected_accum_size
         )
+    }
+}
+
+/// An error related to specifying (or not specifying) the Bin Edges
+/// for the Buckets in a Histogram Reducer
+#[derive(Clone, Debug)]
+struct BucketEdgeError {
+    name: String,
+    expect_edges: bool,
+}
+
+impl std::error::Error for BucketEdgeError {}
+
+impl core::fmt::Display for BucketEdgeError {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        let BucketEdgeError { name, expect_edges } = self;
+        if *expect_edges {
+            write!(f, "The \"{name}\" reducer didn't recieve bucket edges")
+        } else {
+            write!(f, "The \"{name}\" reducer shouldn't recieve bucket edges")
+        }
     }
 }
 

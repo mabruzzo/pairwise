@@ -290,10 +290,9 @@ enum BinEdgeSpec {
 }
 
 /// A configuration object
-#[derive(Clone, Default, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 struct Config {
-    // TODO: make this not an option
-    reducer_name: Option<String>,
+    reducer_name: String,
     // I'm fairly confident that supporting the Histogram with the
     // [`IrregularBinEdges`] type introduces self-referential struct issues
     // (at a slightly higher level)
@@ -301,7 +300,7 @@ struct Config {
     // eventually, we should add an option for variance
 
     // I'm not so sure the following should actually be tracked in this struct
-    // TODO: make this not an option
+    // TODO: this shouldn't be an option
     squared_distance_bin_edges: Option<BinEdgeSpec>,
 }
 
@@ -338,7 +337,7 @@ fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
                     pair_op: PairOperation::ElementwiseMultiply,
                 }) as Box<dyn WrappedReducer>)
             } else {
-                todo!("properly handle this error!")
+                Err(Error::bucket_edges(config.reducer_name.clone(), true))
             }
         },
     );
@@ -346,7 +345,7 @@ fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
         "2pcf".to_owned(),
         |config: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
             if config.hist_reducer_bucket.is_some() {
-                todo!("properly handle this error!")
+                Err(Error::bucket_edges(config.reducer_name.clone(), false))
             } else {
                 Ok(Box::new(WrappedReducerImpl {
                     reducer: ComponentSumMean::new(),
@@ -366,7 +365,7 @@ fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
                     pair_op: PairOperation::ElementwiseSub,
                 }) as Box<dyn WrappedReducer>)
             } else {
-                todo!("properly handle this error!")
+                Err(Error::bucket_edges(config.reducer_name.clone(), true))
             }
         },
     );
@@ -374,7 +373,7 @@ fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
         "astro_sf1".to_owned(),
         |config: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
             if config.hist_reducer_bucket.is_some() {
-                todo!("properly handle this error!")
+                Err(Error::bucket_edges(config.reducer_name.clone(), false))
             } else {
                 Ok(Box::new(WrappedReducerImpl {
                     reducer: EuclideanNormMean::new(),
@@ -391,8 +390,7 @@ static REDUCER_MAKER_REGISTRY: LazyLock<HashMap<String, MkWrappedReducerFn>> =
     LazyLock::new(build_registry);
 
 fn wrapper_reducer_from_config(config: &Config) -> Result<Box<dyn WrappedReducer>, Error> {
-    // todo: reducer_name shouldn't be an option
-    let name = config.reducer_name.as_ref().unwrap();
+    let name = &config.reducer_name;
     if let Some(func) = REDUCER_MAKER_REGISTRY.get(name) {
         func(config)
     } else {
@@ -574,10 +572,13 @@ impl AccumulatorBuilder {
         //todo!("not implemented yet!")
 
         // construct the Config
-        let mut config = Config::default();
-        config.reducer_name = self.calc_kind.clone();
-        // todo: set up hist_reducer_bucket
-        // todo: set up squared_distance_bin_edges
+        let config = Config {
+            reducer_name: self.calc_kind.clone().unwrap(),
+            // TODO deal with me!
+            hist_reducer_bucket: None,
+            // TODO deal with me!
+            squared_distance_bin_edges: None,
+        };
 
         let reducer = wrapper_reducer_from_config(&config)?;
         let descr = AccumulatorDescr { config, reducer };
