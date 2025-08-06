@@ -41,6 +41,7 @@ mod apply;
 mod error;
 mod parallel_serial;
 mod reducers;
+mod wrapped_reducer;
 
 // pull in symbols that visible outside of the package
 pub use accumulator::{Accumulator, AccumulatorBuilder};
