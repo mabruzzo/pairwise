@@ -3,8 +3,8 @@ mod common;
 use common::prepare_statepack;
 use ndarray::ArrayView2;
 use pairwise::{
-    ComponentSumMean, EuclideanNormHistogram, EuclideanNormMean, PairOperation, PointProps,
-    StatePackViewMut, apply_accum, get_output_from_statepack_array,
+    ComponentSumMean, EuclideanNormHistogram, EuclideanNormMean, PairOperation, StatePackViewMut,
+    UnstructuredPoints, apply_accum, get_output_from_statepack_array,
 };
 
 // Things are a little unergonomic!
@@ -52,7 +52,7 @@ mod tests {
         let squared_distance_bins = IrregularBinEdges::new(&squared_distance_bin_edges).unwrap();
         let reducer = EuclideanNormMean::new();
         let mut statepack = prepare_statepack(squared_distance_bin_edges.len(), &reducer);
-        let points = PointProps::new(
+        let points = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 2), &positions).unwrap(),
             ArrayView2::from_shape((3, 2), &values).unwrap(),
             None,
@@ -60,7 +60,7 @@ mod tests {
         .unwrap();
 
         // should fail for mismatched spatial dimensions
-        let points_b = PointProps::new(
+        let points_b = UnstructuredPoints::new(
             ArrayView2::from_shape((2, 3), &positions).unwrap(),
             ArrayView2::from_shape((2, 3), &values).unwrap(),
             None,
@@ -78,7 +78,7 @@ mod tests {
 
         // should fail if 1 points object provides weights an the other doesn't
         let weights = [1.0, 0.0];
-        let points_b = PointProps::new(
+        let points_b = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 2), &positions).unwrap(),
             ArrayView2::from_shape((3, 2), &values).unwrap(),
             Some(&weights),
@@ -116,7 +116,7 @@ mod tests {
         let mean_reducer = EuclideanNormMean::new();
         let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
-        let points = PointProps::new(
+        let points = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
             ArrayView2::from_shape((3, 6), &values).unwrap(),
             None,
@@ -193,7 +193,7 @@ mod tests {
         let positions_a: Vec<f64> = (6..24).map(|x| x as f64).collect();
         let values_a: Vec<f64> = (-9..9).map(|x| x as f64).collect();
 
-        let points_a = PointProps::new(
+        let points_a = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 6), &positions_a).unwrap(),
             ArrayView2::from_shape((3, 6), &values_a).unwrap(),
             None,
@@ -217,7 +217,7 @@ mod tests {
              1.,  2., 1000.,
         ];
 
-        let points_b = PointProps::new(
+        let points_b = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 3), &positions_b).unwrap(),
             ArrayView2::from_shape((3, 3), &values_b).unwrap(),
             None,
@@ -281,7 +281,7 @@ mod tests {
         let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
 
-        let points = PointProps::new(
+        let points = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
             ArrayView2::from_shape((3, 6), &values).unwrap(),
             None,

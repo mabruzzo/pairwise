@@ -1,5 +1,7 @@
-use crate::{Error, TwoPoint, parallel_serial::SerialExecutor};
-use pairwise_nostd_internal::{BinEdges, PairOperation, PointProps, Reducer, StatePackViewMut};
+use crate::{Error, TwoPointUnstructured, parallel_serial::SerialExecutor};
+use pairwise_nostd_internal::{
+    BinEdges, PairOperation, Reducer, StatePackViewMut, UnstructuredPoints,
+};
 use std::num::NonZeroU32;
 
 /// Apply a function to each pair of points and accumulate the results.
@@ -8,12 +10,12 @@ use std::num::NonZeroU32;
 pub fn apply_accum<'a, R: Reducer + Clone, B: BinEdges + Clone>(
     statepack: &mut StatePackViewMut,
     reducer: &R,
-    points_a: &PointProps<'a>,
-    points_b: Option<&PointProps<'a>>,
+    points_a: &UnstructuredPoints<'a>,
+    points_b: Option<&UnstructuredPoints<'a>>,
     squared_distance_bin_edges: &B,
     pair_op: PairOperation,
 ) -> Result<(), Error> {
-    let twopoint = TwoPoint::new(
+    let twopoint = TwoPointUnstructured::new(
         reducer.clone(),
         points_a.clone(),
         points_b.cloned(),

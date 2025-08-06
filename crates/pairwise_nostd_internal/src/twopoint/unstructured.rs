@@ -18,7 +18,7 @@ use ndarray::ArrayView2;
 ///   where `D` is the number of spatial dimensions and `n_points` is the
 ///   number of points.
 #[derive(Clone)]
-pub struct PointProps<'a> {
+pub struct UnstructuredPoints<'a> {
     positions: ArrayView2<'a, f64>,
     // TODO allow values to have a different dimensionality than positions
     values: ArrayView2<'a, f64>,
@@ -27,13 +27,13 @@ pub struct PointProps<'a> {
     n_spatial_dims: usize,
 }
 
-impl<'a> PointProps<'a> {
+impl<'a> UnstructuredPoints<'a> {
     /// create a new instance
     pub fn new(
         positions: ArrayView2<'a, f64>,
         values: ArrayView2<'a, f64>,
         weights: Option<&'a [f64]>,
-    ) -> Result<PointProps<'a>, &'static str> {
+    ) -> Result<UnstructuredPoints<'a>, &'static str> {
         let n_spatial_dims = positions.shape()[0];
         let n_points = positions.shape()[1];
         // TODO: should we place a requirement on the number of spatial_dims?
@@ -85,21 +85,21 @@ impl<'a> PointProps<'a> {
 /// - The value contributed by the pair is determined by `pairwise_fn`
 /// - The bin the value is contributed to is determined by the distance between
 ///   the points and the `squared_distance_bin_edges` argument
-pub struct TwoPoint<'a, R: Reducer, B: BinEdges> {
+pub struct TwoPointUnstructured<'a, R: Reducer, B: BinEdges> {
     reducer: R,
-    points_a: PointProps<'a>,
-    points_b: PointProps<'a>,
+    points_a: UnstructuredPoints<'a>,
+    points_b: UnstructuredPoints<'a>,
     is_auto: bool, // true when points_a is the same as points_b
     squared_distance_bin_edges: B,
     pair_op: PairOperation,
 }
 
-impl<'a, R: Reducer, B: BinEdges> TwoPoint<'a, R, B> {
+impl<'a, R: Reducer, B: BinEdges> TwoPointUnstructured<'a, R, B> {
     // TODO starting with squared distance bins is a major footgun.
     pub fn new(
         reducer: R,
-        points_a: PointProps<'a>,
-        points_b: Option<PointProps<'a>>,
+        points_a: UnstructuredPoints<'a>,
+        points_b: Option<UnstructuredPoints<'a>>,
         squared_distance_bin_edges: B,
         pair_op: PairOperation,
     ) -> Result<Self, &'static str> {
@@ -138,7 +138,7 @@ impl<'a, R: Reducer, B: BinEdges> TwoPoint<'a, R, B> {
     }
 }
 
-impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPoint<'a, R, B> {
+impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, B> {
     type ReducerType = R;
     /// return a reference to the reducer
     fn get_reducer(&self) -> &Self::ReducerType {
@@ -224,8 +224,8 @@ fn apply_accum_helper<T: Team, const SUBTRACT: bool>(
     reducer: &impl Reducer,
     outer_index: usize,
     inner_index: usize,
-    points_a: &PointProps,
-    points_b: &PointProps,
+    points_a: &UnstructuredPoints,
+    points_b: &UnstructuredPoints,
     squared_distance_bin_edges: &impl BinEdges,
     team: &mut T,
 ) {
