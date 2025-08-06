@@ -251,7 +251,7 @@ mod state;
 // we expose it to support testing...
 pub mod reduce_sample;
 
-pub use apply_points::{PointProps, apply_accum};
+pub use apply_points::{PointProps, TwoPoint};
 pub use bins::*;
 pub use misc::{dot_product, squared_diff_norm};
 pub use parallel::{

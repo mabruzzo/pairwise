@@ -94,6 +94,7 @@ pub fn validate_bin_edges(edges: &[f64]) -> Result<(), &'static str> {
     }
 }
 
+#[derive(Clone)]
 pub struct IrregularBinEdges<'a> {
     bin_edges: &'a [f64],
 }

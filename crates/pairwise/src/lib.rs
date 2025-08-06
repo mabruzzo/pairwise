@@ -36,17 +36,19 @@ See the crate-level documentation for [`pairwise_nostd_internal`].
 #![deny(rustdoc::broken_intra_doc_links)]
 
 // inform build-system of the crates in this package
+mod apply;
 mod error;
 mod misc;
 mod parallel_serial;
 mod reducers;
 
 // pull in symbols that visible outside of the package
+pub use apply::apply_accum;
 pub use error::Error;
 pub use misc::diff_norm;
 pub use pairwise_nostd_internal::{
     Comp0Histogram, Comp0Mean, Executor, OutputDescr, PointProps, Reducer, StatePackViewMut,
-    apply_accum, dot_product,
+    TwoPoint, dot_product,
 };
 pub use parallel_serial::SerialExecutor;
 pub use reducers::{get_output, get_output_from_statepack_array};

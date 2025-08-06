@@ -1,5 +1,6 @@
 use crate::bins::BinEdges;
 use crate::misc::squared_diff_norm;
+use crate::parallel::{BinnedDatum, MemberID, ReductionSpec, StandardTeamParam, Team};
 use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
 use ndarray::ArrayView2;
@@ -15,6 +16,7 @@ use ndarray::ArrayView2;
 /// - In other words the shape of one of these arrays is `(D, n_points)`,
 ///   where `D` is the number of spatial dimensions and `n_points` is the
 ///   number of points.
+#[derive(Clone)]
 pub struct PointProps<'a> {
     positions: ArrayView2<'a, f64>,
     // TODO allow values to have a different dimensionality than positions
@@ -67,6 +69,7 @@ impl<'a> PointProps<'a> {
     }
 }
 
+/// TODO
 /// Computes contributions to binned statistics from values computed from the
 /// specified pairs of points.
 ///
@@ -81,88 +84,148 @@ impl<'a> PointProps<'a> {
 /// - The value contributed by the pair is determined by `pairwise_fn`
 /// - The bin the value is contributed to is determined by the distance between
 ///   the points and the `squared_distance_bin_edges` argument
-///
-/// Details about the considered statistics are encapsulated by `accum`.
-/// Statistical contributions (for all bins) are tracked within `stateprops`.
-///
-/// TODO: I don't love that we are directly accepting
-///       `squared_distance_bin_edges`. Frankly it seems like a recipe for
-///       disaster (I myself could imagine forgetting to square things). I
-///       think this is Ok while we get everything working, but we definitely
-///       should revisit!
-pub fn apply_accum(
-    statepack: &mut StatePackViewMut,
-    reducer: &impl Reducer,
-    points_a: &PointProps,
-    points_b: Option<&PointProps>,
-    squared_distance_bin_edges: &impl BinEdges,
-    pairwise_fn: &impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
-) -> Result<(), &'static str> {
-    // maybe we make separate functions for auto-stats vs cross-stats?
-    // TODO: check size of output buffers
+pub struct TwoPoint<
+    'a,
+    R: Reducer,
+    B: BinEdges,
+    F: Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
+> {
+    reducer: R,
+    points_a: PointProps<'a>,
+    points_b: Option<PointProps<'a>>,
+    squared_distance_bin_edges: B,
+    // TODO come up with an alternative to pairwise_fn (to better support GPU situations)
+    pairwise_fn: &'a F,
+}
 
-    //  if points_b is not None, make sure a and b have the same number of
-    // spatial dimensions
-    if let Some(points_b) = points_b {
-        if points_a.n_spatial_dims != points_b.n_spatial_dims {
-            return Err("points_a and points_b must have the same number of spatial dimensions");
-        } else if points_a.weights.is_some() != points_b.weights.is_some() {
-            return Err(
-                "points_a and points_b must both provide weights or neither \
-                should provide weights",
-            );
+impl<'a, R: Reducer, B: BinEdges, F: Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64>
+    TwoPoint<'a, R, B, F>
+{
+    // TODO starting with squared distance bins is a major footgun.
+    pub fn new(
+        reducer: R,
+        points_a: PointProps<'a>,
+        points_b: Option<PointProps<'a>>,
+        squared_distance_bin_edges: B,
+        pairwise_fn: &'a F,
+    ) -> Result<Self, &'static str> {
+        //  if points_b is not None, make sure a and b have the same number of
+        // spatial dimensions
+        if let Some(points_b) = &points_b {
+            if points_a.n_spatial_dims != points_b.n_spatial_dims {
+                return Err(
+                    "points_a and points_b must have the same number of spatial dimensions",
+                );
+            } else if points_a.weights.is_some() != points_b.weights.is_some() {
+                return Err(
+                    "points_a and points_b must both provide weights or neither \
+                    should provide weights",
+                );
+            }
         }
-    }
 
-    if let Some(points_b) = points_b {
-        apply_accum_helper::<false>(
-            statepack,
+        Ok(Self {
             reducer,
             points_a,
             points_b,
             squared_distance_bin_edges,
             pairwise_fn,
-        )
-    } else {
-        apply_accum_helper::<true>(
-            statepack,
-            reducer,
-            points_a,
-            points_a,
-            squared_distance_bin_edges,
-            pairwise_fn,
-        )
+        })
     }
-    Ok(())
 }
 
-fn apply_accum_helper<const CROSS: bool>(
-    statepack: &mut StatePackViewMut,
-    reducer: &impl Reducer,
-    points_a: &PointProps,
-    points_b: &PointProps,
-    squared_distance_bin_edges: &impl BinEdges,
-    pairwise_fn: impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
-) {
-    for i_a in 0..points_a.n_points {
-        let i_b_start = if CROSS { i_a + 1 } else { 0 };
-        for i_b in i_b_start..points_b.n_points {
-            // compute the distance between the points, then the distance bin
-            let distance_squared = squared_diff_norm(
-                points_a.positions,
-                points_b.positions,
-                i_a,
-                i_b,
-                points_a.n_spatial_dims,
-            );
-            if let Some(distance_bin_idx) = squared_distance_bin_edges.bin_index(distance_squared) {
-                let datum = Datum::from_scalar_value(
-                    pairwise_fn(points_a.values, points_b.values, i_a, i_b),
-                    points_a.get_weight(i_a) * points_b.get_weight(i_b),
+impl<'a, R: Reducer, B: BinEdges, F: Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64>
+    ReductionSpec for TwoPoint<'a, R, B, F>
+{
+    type ReducerType = R;
+    /// return a reference to the reducer
+    fn get_reducer(&self) -> &Self::ReducerType {
+        &self.reducer
+    }
+
+    /// The number of bins in this reduction.
+    fn n_bins(&self) -> usize {
+        self.squared_distance_bin_edges.n_bins()
+    }
+
+    #[inline(always)]
+    fn outer_team_loop_bounds(
+        &self,
+        _team_id: usize,
+        team_info: &StandardTeamParam,
+    ) -> (usize, usize) {
+        // require serial implementation TODO
+        assert_eq!(team_info.n_members_per_team, 1);
+        assert_eq!(team_info.n_teams, 1);
+
+        (0, self.points_a.n_points)
+    }
+
+    fn inner_team_loop_bounds(
+        &self,
+        outer_index: usize,
+        _team_id: usize,
+        team_info: &StandardTeamParam,
+    ) -> (usize, usize) {
+        // require serial implementation TODO
+        assert_eq!(team_info.n_members_per_team, 1);
+        assert_eq!(team_info.n_teams, 1);
+
+        if let Some(points_b) = &self.points_b {
+            (0, points_b.n_points)
+        } else {
+            (outer_index + 1, self.points_a.n_points)
+        }
+    }
+
+    const NESTED_REDUCE: bool = false;
+
+    fn add_contributions<T: Team>(
+        &self,
+        binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
+        outer_index: usize,
+        inner_index: usize,
+        team: &mut T,
+    ) {
+        let points_b = if let Some(points_b) = &self.points_b {
+            points_b
+        } else {
+            &self.points_a
+        };
+
+        let pairwise_fn: &F = self.pairwise_fn;
+
+        team.collect_pairs_then_apply(
+            binned_statepack,
+            &self.reducer,
+            &|collect_pad: &mut [BinnedDatum], member_id: MemberID| {
+                assert!(!T::IS_VECTOR_PROCESSOR);
+
+                let i_a = outer_index;
+                // this will change when we have more that 1 member per team
+                let i_b = inner_index + member_id.0;
+
+                let distance_squared = squared_diff_norm(
+                    self.points_a.positions,
+                    points_b.positions,
+                    i_a,
+                    i_b,
+                    self.points_a.n_spatial_dims,
                 );
 
-                reducer.consume(&mut statepack.get_state_mut(distance_bin_idx), &datum);
-            }
-        }
+                collect_pad[0] = if let Some(distance_bin_idx) =
+                    self.squared_distance_bin_edges.bin_index(distance_squared)
+                {
+                    let value = pairwise_fn(self.points_a.values, points_b.values, i_a, i_b);
+                    let weight = self.points_a.get_weight(i_a) * points_b.get_weight(i_b);
+                    BinnedDatum {
+                        bin_index: distance_bin_idx,
+                        datum: Datum::from_scalar_value(value, weight),
+                    }
+                } else {
+                    BinnedDatum::zeroed()
+                }
+            },
+        );
     }
 }

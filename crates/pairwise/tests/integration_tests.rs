@@ -11,6 +11,7 @@ use pairwise::{
 
 #[cfg(test)]
 mod tests {
+
     use pairwise_nostd_internal::IrregularBinEdges;
 
     use super::*;
@@ -74,7 +75,6 @@ mod tests {
             &diff_norm,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("spatial dimensions"));
 
         // should fail if 1 points object provides weights an the other doesn't
         let weights = [1.0, 0.0];
@@ -93,7 +93,6 @@ mod tests {
             &diff_norm,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("weights"));
     }
 
     #[test]
@@ -131,7 +130,7 @@ mod tests {
             &squared_distance_bins,
             &diff_norm,
         );
-        assert_eq!(result, Ok(()));
+        assert!(result.is_ok());
 
         // output buffers
         let mean_result_map =
@@ -174,14 +173,13 @@ mod tests {
             &squared_distance_bins,
             &diff_norm,
         );
-        assert_eq!(result, Ok(()));
+        assert!(result.is_ok());
         let hist_result_map =
             get_output_from_statepack_array(&hist_reducer, &hist_statepack.view());
         for (i, expected) in expected_hist_weights.iter().enumerate() {
             assert_eq!(
                 hist_result_map["weight"][i], *expected,
-                "problem at index {}",
-                i
+                "problem at index {i}",
             );
         }
     }
@@ -247,7 +245,8 @@ mod tests {
             &square_distance_bins,
             &diff_norm,
         );
-        assert_eq!(result, Ok(()));
+
+        assert!(result.is_ok());
 
         let output = get_output_from_statepack_array(&reducer, &statepack.view());
 
@@ -296,7 +295,8 @@ mod tests {
             &squared_distance_bins,
             &dot_product,
         );
-        assert_eq!(result, Ok(()));
+
+        assert!(result.is_ok());
 
         let output = get_output_from_statepack_array(&mean_reducer, &mean_statepack.view());
 

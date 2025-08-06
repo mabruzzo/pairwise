@@ -314,6 +314,7 @@ impl<T: ScalarizeOp> Reducer for ScalarMean<T> {
 
 pub type Comp0Mean = ScalarMean<TakeComp0>;
 
+#[derive(Clone)]
 pub struct ScalarHistogram<BinsType: bins::BinEdges, T: ScalarizeOp> {
     bins: BinsType,
     _dummy: PhantomData<T>,
