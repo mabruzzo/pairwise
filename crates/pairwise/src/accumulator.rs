@@ -82,13 +82,14 @@
 //!    would certainly simplify some things...
 use crate::{
     Error,
+    apply::apply_accum,
     reducers::{EuclideanNormHistogram, EuclideanNormMean, get_output},
 };
 use std::{collections::HashMap, sync::LazyLock};
 
 use pairwise_nostd_internal::{
-    ComponentSumHistogram, ComponentSumMean, IrregularBinEdges, PairOperation, PointProps, Reducer,
-    RegularBinEdges, StatePackView, StatePackViewMut, apply_accum, merge_full_statepacks,
+    ComponentSumHistogram, ComponentSumMean, IrregularBinEdges, PairOperation, Reducer,
+    RegularBinEdges, StatePackView, StatePackViewMut, UnstructuredPoints, merge_full_statepacks,
     reset_full_statepack, validate_bin_edges,
 };
 
@@ -157,8 +158,8 @@ impl Accumulator {
     // a compelling case could be made that this should be a standalone fn
     pub fn collect_unstructured_contributions<'a>(
         &mut self,
-        points_a: PointProps<'a>,
-        points_b: Option<PointProps<'a>>,
+        points_a: UnstructuredPoints<'a>,
+        points_b: Option<UnstructuredPoints<'a>>,
     ) -> Result<(), Error> {
         self.launch_reduction_helper(SpatialInfo::Unstructured { points_a, points_b })
     }
@@ -308,8 +309,8 @@ struct Config {
 #[derive(Clone)]
 enum SpatialInfo<'a> {
     Unstructured {
-        points_a: PointProps<'a>,
-        points_b: Option<PointProps<'a>>,
+        points_a: UnstructuredPoints<'a>,
+        points_b: Option<UnstructuredPoints<'a>>,
     },
     //Cartesian{ // <- (to be uncommented)
     //    block_a: CartesianBlock<'a>,
@@ -434,12 +435,12 @@ trait WrappedReducer {
 /// annoying. We will have to play a "game," where the [`Reducer`] doesn't
 /// have persistent state. Instead, we will have to pass in the config to each
 /// method and reconstruct the reducer exactly when we need it...
-struct WrappedReducerImpl<R: Reducer> {
+struct WrappedReducerImpl<R: Reducer + Clone> {
     reducer: R,
     pair_op: PairOperation,
 }
 
-impl<R: Reducer> WrappedReducer for WrappedReducerImpl<R> {
+impl<R: Reducer + Clone> WrappedReducer for WrappedReducerImpl<R> {
     fn merge(
         &self,
         binned_statepack: &mut StatePackViewMut,
@@ -487,7 +488,6 @@ impl<R: Reducer> WrappedReducer for WrappedReducerImpl<R> {
                             &edges,
                             self.pair_op,
                         )
-                        .map_err(Error::internal_legacy_adhoc)
                     }
                     BinEdgeSpec::Regular(edges) => apply_accum(
                         binned_statepack,
@@ -496,8 +496,7 @@ impl<R: Reducer> WrappedReducer for WrappedReducerImpl<R> {
                         points_b.as_ref(),
                         edges,
                         self.pair_op,
-                    )
-                    .map_err(Error::internal_legacy_adhoc),
+                    ),
                 }
             }
         }

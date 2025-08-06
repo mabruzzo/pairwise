@@ -243,8 +243,7 @@ mod tests {
             assert_eq!(
                 start, stop,
                 "start & stop are supposed to be the same value for \
-                (n_indices = {} seg_index = {}, n_segments = {}",
-                n_indices, seg_index, n_segments
+                (n_indices = {n_indices} seg_index = {seg_index}, n_segments = {n_segments}",
             )
         }
     }
@@ -258,15 +257,13 @@ mod tests {
             assert_eq!(
                 idx_spec.map_idx3d_to_1d(idx_3d[0], idx_3d[1], idx_3d[2]),
                 *idx_1d,
-                "3D index, {:?}, was mapped to the wrong value",
-                idx_3d,
+                "3D index, {idx_3d:?}, was mapped to the wrong value",
             );
             // try 1D to 3D:
             assert_eq!(
                 idx_spec.map_idx1d_to_3d(*idx_1d),
                 idx_3d.as_slice(),
-                "1D index, {}, was mapped to the wrong 3D index",
-                idx_1d
+                "1D index, {idx_1d}, was mapped to the wrong 3D index",
             );
         }
     }
