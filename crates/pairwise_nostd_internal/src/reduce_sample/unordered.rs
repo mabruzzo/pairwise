@@ -201,7 +201,7 @@ pub fn restructured2_mean_unordered(
     merge_full_statepacks(
         reducer,
         binned_statepack,
-        scratch_binned_statepacks.first().unwrap(),
+        &scratch_binned_statepacks.first().unwrap().as_view(),
     );
 }
 

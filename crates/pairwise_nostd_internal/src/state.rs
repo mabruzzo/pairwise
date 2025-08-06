@@ -185,6 +185,37 @@ impl<'a> IndexMut<usize> for AccumStateViewMut<'a> {
     }
 }
 
+/// Represents a read-only Collection of accumulator states
+///
+/// # Note
+/// Ideally, we would be able to totally dispose of this type... But for now
+/// it serves a purpose...
+pub struct StatePackView<'a> {
+    // see StatePackViewMut<'a> for refactoring notes
+    data: ArrayView2<'a, f64>,
+}
+
+impl<'a> StatePackView<'a> {
+    pub fn from_slice(n_state: usize, state_size: usize, xs: &'a mut [f64]) -> Self {
+        Self {
+            data: ArrayView2::from_shape([state_size, n_state], xs).unwrap(),
+        }
+    }
+
+    #[inline]
+    pub fn get_state(&self, i: usize) -> AccumStateView {
+        AccumStateView::from_array_view(self.data.index_axis(Axis(1), i))
+    }
+
+    pub fn state_size(&self) -> usize {
+        self.data.len_of(Axis(0))
+    }
+
+    pub fn n_states(&self) -> usize {
+        self.data.len_of(Axis(1))
+    }
+}
+
 /// Represents a collection of accumulator States
 ///
 /// # Note
@@ -222,6 +253,12 @@ impl<'a> StatePackViewMut<'a> {
     // todo: remove this method before our release
     pub fn as_array_view_mut(&mut self) -> ArrayViewMut2<f64> {
         self.data.view_mut()
+    }
+
+    pub fn as_view<'b>(&'b self) -> StatePackView<'b> {
+        StatePackView {
+            data: self.data.view(),
+        }
     }
 
     #[inline]
