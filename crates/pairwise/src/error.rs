@@ -35,6 +35,8 @@ enum ErrorKind {
     /// An error related to specifying (or not specifying) the Bin Edges
     /// for the Buckets in a Histogram Reducer
     BucketEdge(BucketEdgeError),
+    /// An error that occurs when a problematic distance bin edge is specified
+    DistanceEdge(DistanceEdgeError),
     /// An error that occurs when an integer lies outside of the acceptable
     /// range of values
     IntegerRanger(IntegerRangeError),
@@ -50,7 +52,9 @@ enum ErrorKind {
     // /// The idea is to wrap the error type introduced within
     // /// `pairwise_nostd_internal`, whenever that actually gets introduced...
     // InternalError(InternalError)
-    /// An error occurs when an unknown reducer name is specified
+    /// An error that occurs when distance bin edges aren't specified
+    MissingDistanceEdge(MissingDistanceEdgeError),
+    /// An error that occurs when an unknown reducer name is specified
     ReducerName(ReducerNameError),
 }
 
@@ -81,6 +85,13 @@ impl Error {
         }
     }
 
+    /// produce an error indicating that a problematic distance bin edge was specified
+    pub(crate) fn distance_edge(what: String) -> Self {
+        Error {
+            kind: ErrorKind::DistanceEdge(DistanceEdgeError { what }),
+        }
+    }
+
     /// produce an error indicating that an integer lies outside the acceptable
     /// range of values
     pub(crate) fn integer_range(
@@ -107,6 +118,13 @@ impl Error {
         }
     }
 
+    /// produce an error indicating that distance bin edges aren't specified
+    pub(crate) fn missing_distance_edge() -> Self {
+        Error {
+            kind: ErrorKind::MissingDistanceEdge(MissingDistanceEdgeError),
+        }
+    }
+
     /// produce an error indicating that an unknown reducer name was specified
     pub(crate) fn reducer_name(actual: String, choices: Vec<String>) -> Self {
         Error {
@@ -130,8 +148,10 @@ impl core::fmt::Display for ErrorKind {
         match *self {
             ErrorKind::BinnedStatePackShape(ref err) => err.fmt(f),
             ErrorKind::BucketEdge(ref err) => err.fmt(f),
+            ErrorKind::DistanceEdge(ref err) => err.fmt(f),
             ErrorKind::IntegerRanger(ref err) => err.fmt(f),
             ErrorKind::InternalLegacyAdHoc(ref msg) => msg.fmt(f),
+            ErrorKind::MissingDistanceEdge(ref err) => err.fmt(f),
             ErrorKind::ReducerName(ref err) => err.fmt(f),
         }
     }
@@ -227,6 +247,33 @@ impl core::fmt::Display for InternalLegacyAdHocError {
 impl core::fmt::Debug for InternalLegacyAdHocError {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         core::fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+/// An error that occurs when distance bin edges aren't specified
+#[derive(Clone, Debug)]
+struct MissingDistanceEdgeError;
+
+impl std::error::Error for MissingDistanceEdgeError {}
+
+impl core::fmt::Display for MissingDistanceEdgeError {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f, "distance bin edges were not specified")
+    }
+}
+
+/// An error that occurs when a problematic distance bin edge is specified
+#[derive(Clone, Debug)]
+struct DistanceEdgeError {
+    what: String,
+}
+
+impl std::error::Error for DistanceEdgeError {}
+
+impl core::fmt::Display for DistanceEdgeError {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        let what = self.what.as_str();
+        write!(f, "problem with squared distance bin: {what}")
     }
 }
 

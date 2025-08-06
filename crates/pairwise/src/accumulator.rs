@@ -83,7 +83,8 @@
 use crate::{
     Error,
     wrapped_reducer::{
-        BinEdgeSpec, Config, SpatialInfo, WrappedReducer, wrapped_reducer_from_config,
+        BinEdgeSpec, Config, SpatialInfo, ValidatedBinEdgeVec, WrappedReducer,
+        wrapped_reducer_from_config,
     },
 };
 use std::collections::HashMap;
@@ -164,15 +165,10 @@ impl Accumulator {
     }
 
     fn launch_reduction_helper<'a>(&mut self, spatial_info: SpatialInfo<'a>) -> Result<(), Error> {
-        let reducer = &self.descr.reducer;
-        let Some(ref squared_distance_edges) = self.descr.config.squared_distance_bin_edges else {
-            panic!("Bug:this should be unreachable!")
-        };
-
-        reducer.exec_reduction(
+        self.descr.reducer.exec_reduction(
             &mut self.data.mut_view(),
             spatial_info,
-            squared_distance_edges,
+            &self.descr.config.squared_distance_bin_edges,
         )
     }
 }
@@ -301,23 +297,42 @@ impl AccumulatorBuilder {
     }
 
     // todo: maybe we force people to specify a BinEdgeSpec instead?
-    pub fn hist_irregular_bucket_edges(&mut self, edges: &[f64]) -> &mut AccumulatorBuilder {
+    pub fn irregular_hist_bucket_edges(&mut self, edges: &[f64]) -> &mut AccumulatorBuilder {
         self.bucket_edges = Some(RawBinEdgeSpec::Vec(edges.to_vec()));
         self
     }
 
-    pub fn hist_regular_bucket_edges(&mut self, edges: RegularBinEdges) -> &mut AccumulatorBuilder {
+    pub fn regular_hist_bucket_edges(&mut self, edges: RegularBinEdges) -> &mut AccumulatorBuilder {
         self.bucket_edges = Some(RawBinEdgeSpec::Regular(edges.clone()));
         self
     }
 
-    pub fn irregular_distance_square_edges(&mut self, edges: &[f64]) -> &mut AccumulatorBuilder {
+    pub fn irregular_distance_squared_edges(&mut self, edges: &[f64]) -> &mut AccumulatorBuilder {
         self.distance_sqr_bin_edges = Some(RawBinEdgeSpec::Vec(edges.to_vec()));
+        self
+    }
+
+    // do we really want this? (I think we can probably delete it...)
+    pub fn regular_distance_squared_edges(
+        &mut self,
+        edges: RegularBinEdges,
+    ) -> &mut AccumulatorBuilder {
+        self.distance_sqr_bin_edges = Some(RawBinEdgeSpec::Regular(edges));
         self
     }
 
     pub fn build(&self) -> Result<Accumulator, Error> {
         //todo!("not implemented yet!")
+
+        let squared_distance_bin_edges = match &self.distance_sqr_bin_edges {
+            Some(RawBinEdgeSpec::Regular(edges)) => BinEdgeSpec::Regular(edges.clone()),
+            Some(RawBinEdgeSpec::Vec(v)) => BinEdgeSpec::Vec(ValidatedBinEdgeVec::new(v.clone())?),
+            None => return Err(Error::missing_distance_edge()),
+        };
+
+        if squared_distance_bin_edges.leftmost_edge() < 0.0 {
+            return Err(Error::distance_edge("contains negative value".to_owned()));
+        }
 
         // construct the Config
         let config = Config {
@@ -325,7 +340,7 @@ impl AccumulatorBuilder {
             // TODO deal with me!
             hist_reducer_bucket: None,
             // TODO deal with me!
-            squared_distance_bin_edges: None,
+            squared_distance_bin_edges,
         };
 
         let reducer = wrapped_reducer_from_config(&config)?;

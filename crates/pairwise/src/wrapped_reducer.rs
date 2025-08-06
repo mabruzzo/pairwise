@@ -5,7 +5,7 @@ use crate::{
 };
 
 use pairwise_nostd_internal::{
-    ComponentSumHistogram, ComponentSumMean, IrregularBinEdges, PairOperation, Reducer,
+    BinEdges, ComponentSumHistogram, ComponentSumMean, IrregularBinEdges, PairOperation, Reducer,
     RegularBinEdges, StatePackView, StatePackViewMut, UnstructuredPoints, merge_full_statepacks,
     reset_full_statepack, validate_bin_edges,
 };
@@ -21,8 +21,8 @@ use std::{collections::HashMap, sync::LazyLock};
 pub(crate) struct ValidatedBinEdgeVec(Vec<f64>);
 
 impl ValidatedBinEdgeVec {
-    pub(crate) fn new(edges: Vec<f64>) -> Result<Self, &'static str> {
-        validate_bin_edges(&edges)?;
+    pub(crate) fn new(edges: Vec<f64>) -> Result<Self, Error> {
+        validate_bin_edges(&edges).map_err(Error::internal_legacy_adhoc)?;
         Ok(Self(edges))
     }
 }
@@ -37,8 +37,17 @@ impl Eq for ValidatedBinEdgeVec {}
 
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) enum BinEdgeSpec {
-    Vec(ValidatedBinEdgeVec),
     Regular(RegularBinEdges),
+    Vec(ValidatedBinEdgeVec),
+}
+
+impl BinEdgeSpec {
+    pub(crate) fn leftmost_edge(&self) -> f64 {
+        match self {
+            BinEdgeSpec::Regular(edges) => edges.leftmost_edge(),
+            BinEdgeSpec::Vec(v) => v.0[0],
+        }
+    }
 }
 
 /// A configuration object
@@ -53,7 +62,7 @@ pub(crate) struct Config {
 
     // I'm not so sure the following should actually be tracked in this struct
     // TODO: this shouldn't be an option
-    pub(crate) squared_distance_bin_edges: Option<BinEdgeSpec>,
+    pub(crate) squared_distance_bin_edges: BinEdgeSpec,
 }
 
 /// an internal type that will be used to encode the spatial information
