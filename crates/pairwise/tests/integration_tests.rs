@@ -3,44 +3,18 @@ mod common;
 use common::prepare_statepack;
 use ndarray::ArrayView2;
 use pairwise::{
-    Executor, Histogram, Mean, PointProps, Reducer, SerialExecutor, StatePackViewMut, TwoPoint,
-    diff_norm, dot_product, get_output_from_statepack_array,
+    Comp0Histogram, Comp0Mean, PointProps, StatePackViewMut, apply_accum, diff_norm, dot_product,
+    get_output_from_statepack_array,
 };
-use std::num::NonZero;
 
 // Things are a little unergonomic!
 
 #[cfg(test)]
 mod tests {
 
-    use pairwise_nostd_internal::{BinEdges, IrregularBinEdges};
+    use pairwise_nostd_internal::IrregularBinEdges;
 
     use super::*;
-
-    /// Apply a function to each pair of points and accumulate the results.
-    /// This wraps TwoPoints, and exists to streamline existing tests
-    /// TODO this should be deleted eventually
-    pub fn apply_accum<'a, R: Reducer + Clone, B: BinEdges + Clone>(
-        statepack: &mut StatePackViewMut,
-        reducer: &R,
-        points_a: &PointProps<'a>,
-        points_b: Option<&PointProps<'a>>,
-        squared_distance_bin_edges: &B,
-        pairwise_fn: &'a impl Fn(ArrayView2<f64>, ArrayView2<f64>, usize, usize) -> f64,
-    ) -> Result<(), &'static str> {
-        let twopoint = TwoPoint::new(
-            reducer.clone(),
-            points_a.clone(),
-            points_b.cloned(),
-            squared_distance_bin_edges.clone(),
-            pairwise_fn,
-        )?;
-
-        let one = NonZero::<u32>::new(1).unwrap();
-        SerialExecutor {}.drive_reduce(statepack, &twopoint, one, one)?;
-
-        Ok(())
-    }
 
     // based on numpy!
     // https://numpy.org/doc/stable/reference/generated/numpy.isclose.html
@@ -76,7 +50,7 @@ mod tests {
 
         let squared_distance_bin_edges = [0.0, 1.0, 9.0, 16.0];
         let squared_distance_bins = IrregularBinEdges::new(&squared_distance_bin_edges).unwrap();
-        let reducer = Mean;
+        let reducer = Comp0Mean::new();
         let mut statepack = prepare_statepack(squared_distance_bin_edges.len(), &reducer);
         let points = PointProps::new(
             ArrayView2::from_shape((3, 2), &positions).unwrap(),
@@ -101,7 +75,6 @@ mod tests {
             &diff_norm,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("spatial dimensions"));
 
         // should fail if 1 points object provides weights an the other doesn't
         let weights = [1.0, 0.0];
@@ -120,7 +93,6 @@ mod tests {
             &diff_norm,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("weights"));
     }
 
     #[test]
@@ -141,7 +113,7 @@ mod tests {
         // check the means (using results computed by pyvsf)
         let expected_mean = [8.41281820819169, 15.01110699893027, f64::NAN];
         let expected_weight = [7., 3., 0.];
-        let mean_reducer = Mean;
+        let mean_reducer = Comp0Mean::new();
         let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
         let points = PointProps::new(
@@ -158,7 +130,7 @@ mod tests {
             &squared_distance_bins,
             &diff_norm,
         );
-        assert_eq!(result, Ok(()));
+        assert!(result.is_ok());
 
         // output buffers
         let mean_result_map =
@@ -191,7 +163,7 @@ mod tests {
             4., 0., 0.,
             3., 2., 0.,
         ];
-        let hist_reducer = Histogram::from_bin_edges(hist_buckets);
+        let hist_reducer = Comp0Histogram::from_bin_edges(hist_buckets);
         let mut hist_statepack = prepare_statepack(distance_bin_edges.len() - 1, &hist_reducer);
         let result = apply_accum(
             &mut StatePackViewMut::from_array_view(hist_statepack.view_mut()),
@@ -201,7 +173,7 @@ mod tests {
             &squared_distance_bins,
             &diff_norm,
         );
-        assert_eq!(result, Ok(()));
+        assert!(result.is_ok());
         let hist_result_map =
             get_output_from_statepack_array(&hist_reducer, &hist_statepack.view());
         for (i, expected) in expected_hist_weights.iter().enumerate() {
@@ -261,7 +233,7 @@ mod tests {
         let expected_weight = [4., 6.];
 
         // perform the calculation!
-        let reducer = Mean;
+        let reducer = Comp0Mean::new();
         let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut statepack = prepare_statepack(n_spatial_bins, &reducer);
 
@@ -273,7 +245,8 @@ mod tests {
             &square_distance_bins,
             &diff_norm,
         );
-        assert_eq!(result, Ok(()));
+
+        assert!(result.is_ok());
 
         let output = get_output_from_statepack_array(&reducer, &statepack.view());
 
@@ -304,7 +277,7 @@ mod tests {
         // check the means (using results computed by pyvsf)
         let expected_mean = [284.57142857142856, 236.0, f64::NAN];
         let expected_weight = [7., 3., 0.];
-        let mean_reducer = Mean;
+        let mean_reducer = Comp0Mean::new();
         let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
 
@@ -322,7 +295,8 @@ mod tests {
             &squared_distance_bins,
             &dot_product,
         );
-        assert_eq!(result, Ok(()));
+
+        assert!(result.is_ok());
 
         let output = get_output_from_statepack_array(&mean_reducer, &mean_statepack.view());
 

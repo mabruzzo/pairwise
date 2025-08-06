@@ -259,5 +259,5 @@ pub use parallel::{
     fill_single_team_binned_statepack,
 };
 pub use reduce_utils::reset_full_statepack;
-pub use reducer::{Datum, Histogram, Mean, OutputDescr, Reducer};
+pub use reducer::{Comp0Histogram, Comp0Mean, Datum, OutputDescr, Reducer};
 pub use state::{AccumStateView, AccumStateViewMut, StatePackViewMut};

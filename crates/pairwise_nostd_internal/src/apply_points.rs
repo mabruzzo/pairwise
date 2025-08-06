@@ -216,12 +216,11 @@ impl<'a, R: Reducer, B: BinEdges, F: Fn(ArrayView2<f64>, ArrayView2<f64>, usize,
                 collect_pad[0] = if let Some(distance_bin_idx) =
                     self.squared_distance_bin_edges.bin_index(distance_squared)
                 {
+                    let value = pairwise_fn(self.points_a.values, points_b.values, i_a, i_b);
+                    let weight = self.points_a.get_weight(i_a) * points_b.get_weight(i_b);
                     BinnedDatum {
                         bin_index: distance_bin_idx,
-                        datum: Datum {
-                            value: pairwise_fn(self.points_a.values, points_b.values, i_a, i_b),
-                            weight: self.points_a.get_weight(i_a) * points_b.get_weight(i_b),
-                        },
+                        datum: Datum::from_scalar_value(value, weight),
                     }
                 } else {
                     BinnedDatum::zeroed()
