@@ -45,8 +45,8 @@ mod reducers;
 pub use error::Error;
 pub use misc::diff_norm;
 pub use pairwise_nostd_internal::{
-    Executor, Histogram, Mean, OutputDescr, PointProps, Reducer, StatePackViewMut, apply_accum,
-    dot_product,
+    Comp0Histogram, Comp0Mean, Executor, OutputDescr, PointProps, Reducer, StatePackViewMut,
+    apply_accum, dot_product,
 };
 pub use parallel_serial::SerialExecutor;
 pub use reducers::{get_output, get_output_from_statepack_array};

@@ -1,4 +1,4 @@
-use pairwise::{Mean, Reducer, SerialExecutor, StatePackViewMut, get_output};
+use pairwise::{Comp0Mean, Reducer, SerialExecutor, StatePackViewMut, get_output};
 
 use pairwise_nostd_internal::{
     BinnedDatum,
@@ -156,7 +156,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
         String::from("accumulator"),
         Box::new(
             move |stream: &SampleDataStreamView, version, statepack: &mut StatePackViewMut| {
-                let reducer = Mean;
+                let reducer = Comp0Mean::new();
                 reset_full_statepack(&reducer, statepack);
                 match version {
                     StreamKind::Chunked => reducer_mean_chunked(stream, f, &reducer, statepack),
@@ -177,7 +177,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                 // roughly approximates the case with
                 let n_members_per_team = 4;
 
-                let reducer = Mean;
+                let reducer = Comp0Mean::new();
                 reset_full_statepack(&reducer, binned_statepack);
                 match version {
                     StreamKind::Chunked => {
@@ -221,7 +221,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
             move |stream: &SampleDataStreamView,
                   version,
                   binned_statepack: &mut StatePackViewMut| {
-                let reducer = Mean;
+                let reducer = Comp0Mean::new();
                 reset_full_statepack(&reducer, binned_statepack);
                 // we are going to break up the work in a way that is
                 // equivalent to having 3 thread teams with 8 members per team
@@ -284,7 +284,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
             move |stream: &SampleDataStreamView,
                   version,
                   binned_statepack: &mut StatePackViewMut| {
-                let reducer = Mean;
+                let reducer = Comp0Mean::new();
                 reset_full_statepack(&reducer, binned_statepack);
                 let n_bins = binned_statepack.n_states();
                 let n_members_per_team = NonZeroU32::new(1u32).unwrap();
