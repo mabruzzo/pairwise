@@ -196,10 +196,15 @@ pub struct StatePackView<'a> {
 }
 
 impl<'a> StatePackView<'a> {
-    pub fn from_slice(n_state: usize, state_size: usize, xs: &'a mut [f64]) -> Self {
+    pub fn from_slice(n_state: usize, state_size: usize, xs: &'a [f64]) -> Self {
         Self {
             data: ArrayView2::from_shape([state_size, n_state], xs).unwrap(),
         }
+    }
+
+    // todo: remove this method before our release
+    pub fn as_array_view(&self) -> ArrayView2<f64> {
+        self.data.view()
     }
 
     #[inline]

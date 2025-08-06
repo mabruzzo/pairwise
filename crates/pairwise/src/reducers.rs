@@ -4,7 +4,7 @@ use ndarray::{ArrayView1, ArrayView2, ArrayViewMut2, Axis};
 
 use pairwise_nostd_internal::{
     AccumStateView, Datum, OutputDescr, Reducer, ScalarHistogram, ScalarMean, ScalarizeOp,
-    StatePackViewMut,
+    StatePackView,
 };
 
 /// to be used when computing the "astronomer's first order structure function"
@@ -47,7 +47,7 @@ pub type EuclideanNormMean = ScalarMean<EuclideanNorm>;
 ///       part of the public API.
 pub fn get_output(
     reducer: &impl Reducer,
-    statepack: &StatePackViewMut,
+    statepack: &StatePackView,
 ) -> HashMap<&'static str, Vec<f64>> {
     get_output_from_statepack_array(reducer, &statepack.as_array_view())
 }

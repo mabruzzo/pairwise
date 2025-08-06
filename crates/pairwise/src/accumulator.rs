@@ -80,11 +80,16 @@
 //!    (basically all "objects" a user interacts with would be handles). My
 //!    gut instinct is "no" (we can get by with "smart pointers"), but it
 //!    would certainly simplify some things...
-use crate::{Error, reducers::get_output};
-use std::collections::HashMap;
+use crate::{
+    Error,
+    reducers::{EuclideanNormHistogram, EuclideanNormMean, get_output},
+};
+use std::{collections::HashMap, sync::LazyLock};
 
 use pairwise_nostd_internal::{
-    merge_full_statepacks, validate_bin_edges, PairOperation, PointProps, Reducer, RegularBinEdges, StatePackViewMut
+    ComponentSumHistogram, ComponentSumMean, IrregularBinEdges, PairOperation, PointProps, Reducer,
+    RegularBinEdges, StatePackView, StatePackViewMut, apply_accum, merge_full_statepacks,
+    reset_full_statepack, validate_bin_edges,
 };
 
 // current design:
@@ -111,9 +116,65 @@ use pairwise_nostd_internal::{
 /// # Implementation Note
 /// This should probably not implement [`Clone`]. See [`AccumulatorData`] for
 /// more details
-pub struct Accumulator{
+pub struct Accumulator {
     data: AccumulatorData,
     descr: AccumulatorDescr,
+}
+
+impl Accumulator {
+    /// merge the state information tracked by `accum_state` and `other`, and
+    /// update `accum_state` accordingly
+    pub fn merge(&mut self, other: &Accumulator) -> Result<(), Error> {
+        if self.descr == other.descr {
+            self.descr
+                .reducer
+                .merge(&mut self.data.mut_view(), &other.data.view());
+            Ok(())
+        } else {
+            todo!("create and return the appropriate error type");
+        }
+    }
+
+    /// compute the output quantities from the accumulator's state and return
+    /// the result in a HashMap.
+    ///
+    /// # Note
+    /// We should probably let the caller provide the output memory.
+    pub fn get_output(&self) -> HashMap<&'static str, Vec<f64>> {
+        self.descr.reducer.get_output(&self.data.view())
+    }
+
+    /// Reset the tracked accumulator state
+    pub fn reset_data(&mut self) {
+        self.descr
+            .reducer
+            .reset_full_statepack(&mut self.data.mut_view());
+    }
+}
+
+// this is the logic that actually executes the reductions
+impl Accumulator {
+    // a compelling case could be made that this should be a standalone fn
+    pub fn collect_unstructured_contributions<'a>(
+        &mut self,
+        points_a: PointProps<'a>,
+        points_b: Option<PointProps<'a>>,
+    ) -> Result<(), Error> {
+        self.launch_reduction_helper(SpatialInfo::Unstructured { points_a, points_b })
+    }
+
+    fn launch_reduction_helper<'a>(&mut self, spatial_info: SpatialInfo<'a>) -> Result<(), Error> {
+        let reducer = &self.descr.reducer;
+        let Some(ref squared_distance_edges) = self.descr.config.squared_distance_bin_edges else {
+            panic!("Bug:this should be unreachable!")
+        };
+
+        reducer.exec_reduction(
+            &mut self.data.mut_view(),
+            spatial_info,
+            squared_distance_edges,
+        )
+    }
 }
 
 /// Holds the data associated with an accumulator
@@ -139,43 +200,41 @@ pub struct Accumulator{
 ///
 /// For now, we explicitly choose not to derive [`Clone`] since some of these
 /// choices are somewhat incompatible with cloning.
-struct AccumulatorData{
+struct AccumulatorData {
     // it would be nice to hold externally allocated data...
     // -> Maybe the answer is to create an enum with 2 variants?
     //    - the 1st variant is `Vec<f64>`
     //    - the other variant is
     data: Vec<f64>,
     n_state: usize,
-    state_size: usize
+    state_size: usize,
 }
 
 impl AccumulatorData {
-    fn merge(&mut self, )
-}
-
-impl AccumulatorData {
-
     // I'm hesitant to implement DerefMut because it forces us to publicly
     // expose StatePackViewMut
     fn mut_view<'a>(&'a mut self) -> StatePackViewMut<'a> {
         StatePackViewMut::from_slice(self.n_state, self.state_size, self.data.as_mut_slice())
     }
+
+    fn view<'a>(&'a self) -> StatePackView<'a> {
+        StatePackView::from_slice(self.n_state, self.state_size, self.data.as_slice())
+    }
 }
 
-
 /// Encapsulates the accumulator properties
-struct AccumulatorDescr{
+struct AccumulatorDescr {
     config: Config,
-    reducer: Box<dyn WrappedReducer>
+    reducer: Box<dyn WrappedReducer>,
 }
 
 impl Clone for AccumulatorDescr {
     fn clone(&self) -> AccumulatorDescr {
-        AccumulatorDescr{
+        AccumulatorDescr {
             config: self.config.clone(),
             // since self was already constructed from self.config, we should
             // be able to construct the new instance from config
-            reducer: wrapper_reducer_from_config(&self.config).expect("there is a bug")
+            reducer: wrapper_reducer_from_config(&self.config).expect("there is a bug"),
         }
     }
 }
@@ -186,7 +245,7 @@ impl PartialEq for AccumulatorDescr {
     }
 }
 
-impl Eq for AccumulatorDescr { }
+impl Eq for AccumulatorDescr {}
 
 // Our current approach leverages dynamic dispatch. My concern with an
 // enum-based approach:
@@ -198,7 +257,6 @@ impl Eq for AccumulatorDescr { }
 //     available Reducers
 //   - I think the enum code would be far more scattered
 // I'm happy to be proven wrong!
-
 
 /// A wrapper type that only exists so we can implement the `Eq` trait.
 ///
@@ -233,23 +291,25 @@ enum BinEdgeSpec {
 /// A configuration object
 #[derive(Clone, Default, PartialEq, Eq)]
 struct Config {
+    // TODO: make this not an option
     reducer_name: Option<String>,
     // I'm fairly confident that supporting the Histogram with the
     // [`IrregularBinEdges`] type introduces self-referential struct issues
     // (at a slightly higher level)
     hist_reducer_bucket: Option<RegularBinEdges>,
-    // eventually add an option for variance
-    pair_op: Option<PairOperation>,
+    // eventually, we should add an option for variance
+
     // I'm not so sure the following should actually be tracked in this struct
+    // TODO: make this not an option
     squared_distance_bin_edges: Option<BinEdgeSpec>,
 }
 
 /// an internal type that will be used to encode the spatial information
 #[derive(Clone)]
 enum SpatialInfo<'a> {
-    Unstructured{
+    Unstructured {
         points_a: PointProps<'a>,
-        points_b: Option<PointProps<'a>>
+        points_b: Option<PointProps<'a>>,
     },
     //Cartesian{ // <- (to be uncommented)
     //    block_a: CartesianBlock<'a>,
@@ -258,9 +318,88 @@ enum SpatialInfo<'a> {
     //}
 }
 
+type MkWrappedReducerFn = fn(&Config) -> Result<Box<dyn WrappedReducer>, Error>;
 
-fn wrapper_reducer_from_config(_config: &Config) -> Result<Box<dyn WrappedReducer>, Error> {
-    todo!("implement me!")
+fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
+    // - "2pcf", "hist_cf"
+    // - "hist_astro_sf1", "astro_sf1", "astro_sf2", "sf2_tensor",
+    //   "sf3_tensor"
+    // - "longitudinal_sf2", "longitudinal_sf3"
+    //let func = ;
+    let mut out: HashMap<String, MkWrappedReducerFn> = HashMap::new();
+    // correlation function machinery
+    out.insert(
+        "hist_cf".to_owned(),
+        |config: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
+            if let Some(ref edges) = config.hist_reducer_bucket {
+                Ok(Box::new(WrappedReducerImpl {
+                    reducer: ComponentSumHistogram::from_bin_edges(edges.clone()),
+                    pair_op: PairOperation::ElementwiseMultiply,
+                }) as Box<dyn WrappedReducer>)
+            } else {
+                todo!("properly handle this error!")
+            }
+        },
+    );
+    out.insert(
+        "2pcf".to_owned(),
+        |config: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
+            if config.hist_reducer_bucket.is_some() {
+                todo!("properly handle this error!")
+            } else {
+                Ok(Box::new(WrappedReducerImpl {
+                    reducer: ComponentSumMean::new(),
+                    pair_op: PairOperation::ElementwiseMultiply,
+                }) as Box<dyn WrappedReducer>)
+            }
+        },
+    );
+
+    // shift to structure functions
+    out.insert(
+        "hist_astro_sf1".to_owned(),
+        |config: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
+            if let Some(ref edges) = config.hist_reducer_bucket {
+                Ok(Box::new(WrappedReducerImpl {
+                    reducer: EuclideanNormHistogram::from_bin_edges(edges.clone()),
+                    pair_op: PairOperation::ElementwiseSub,
+                }) as Box<dyn WrappedReducer>)
+            } else {
+                todo!("properly handle this error!")
+            }
+        },
+    );
+    out.insert(
+        "astro_sf1".to_owned(),
+        |config: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
+            if config.hist_reducer_bucket.is_some() {
+                todo!("properly handle this error!")
+            } else {
+                Ok(Box::new(WrappedReducerImpl {
+                    reducer: EuclideanNormMean::new(),
+                    pair_op: PairOperation::ElementwiseSub,
+                }) as Box<dyn WrappedReducer>)
+            }
+        },
+    );
+
+    out
+}
+
+static REDUCER_MAKER_REGISTRY: LazyLock<HashMap<String, MkWrappedReducerFn>> =
+    LazyLock::new(build_registry);
+
+fn wrapper_reducer_from_config(config: &Config) -> Result<Box<dyn WrappedReducer>, Error> {
+    // todo: reducer_name shouldn't be an option
+    let name = config.reducer_name.as_ref().unwrap();
+    if let Some(func) = REDUCER_MAKER_REGISTRY.get(name) {
+        func(config)
+    } else {
+        Err(Error::reducer_name(
+            name.clone(),
+            REDUCER_MAKER_REGISTRY.keys().cloned().collect(),
+        ))
+    }
 }
 
 trait WrappedReducer {
@@ -269,13 +408,11 @@ trait WrappedReducer {
     fn merge(
         &self,
         binned_statepack: &mut StatePackViewMut,
-        other_binned_statepack: &StatePackViewMut,
-    ) -> Result<(), &'static str>;
+        other_binned_statepack: &StatePackView,
+    );
 
     // we should probably let the caller provide the output memory
-    // (it would be nice if we could pass in a type that is more clearly
-    // immutable than StatePackViewMut)
-    fn get_output(&self, binned_statepack: &StatePackViewMut) -> HashMap<&'static str, Vec<f64>>;
+    fn get_output(&self, binned_statepack: &StatePackView) -> HashMap<&'static str, Vec<f64>>;
 
     fn reset_full_statepack(&self, binned_statepack: &mut StatePackViewMut);
 
@@ -286,8 +423,8 @@ trait WrappedReducer {
         &self,
         binned_statepack: &mut StatePackViewMut,
         spatial_info: SpatialInfo,
-        distance_squared_bin_edges: &BinEdgeSpec
-    ) -> Result<(), &'static str>;
+        squared_distance_bin_edges: &BinEdgeSpec,
+    ) -> Result<(), Error>;
 }
 
 /// Represents a wrapped [`Reducer`].
@@ -299,37 +436,73 @@ trait WrappedReducer {
 /// method and reconstruct the reducer exactly when we need it...
 struct WrappedReducerImpl<R: Reducer> {
     reducer: R,
+    pair_op: PairOperation,
 }
 
 impl<R: Reducer> WrappedReducer for WrappedReducerImpl<R> {
     fn merge(
         &self,
         binned_statepack: &mut StatePackViewMut,
-        other_binned_statepack: &StatePackViewMut,
-    ) -> {
-        merge_full_statepacks(self.reducer, binned_statepack, other_binned_statepack);
+        other_binned_statepack: &StatePackView,
+    ) {
+        merge_full_statepacks(&self.reducer, binned_statepack, other_binned_statepack);
     }
 
     // we should probably let the caller provide the output memory
     // (it would be nice if we could pass in a type that is more clearly
     // immutable than StatePackViewMut)
-    fn get_output(&self, binned_statepack: &StatePackViewMut) -> HashMap<&'static str, Vec<f64>> {
-        get_output(self.reducer, binned_statepack)
+    fn get_output(&self, binned_statepack: &StatePackView) -> HashMap<&'static str, Vec<f64>> {
+        get_output(&self.reducer, binned_statepack)
     }
 
-    fn reset_full_statepack(&self, binned_statepack: &mut StatePackViewMut);
+    fn reset_full_statepack(&self, binned_statepack: &mut StatePackViewMut) {
+        reset_full_statepack(&self.reducer, binned_statepack)
+    }
 
-    fn accum_state_size(&self) -> usize;
+    fn accum_state_size(&self) -> usize {
+        self.reducer.accum_state_size()
+    }
 
     // we probably need to pass other arguments...
     fn exec_reduction(
         &self,
         binned_statepack: &mut StatePackViewMut,
         spatial_info: SpatialInfo,
-        distance_squared_bin_edges: &BinEdgeSpec
-    ) -> Result<(), &'static str>;
+        squared_distance_bin_edges: &BinEdgeSpec,
+    ) -> Result<(), Error> {
+        match spatial_info {
+            SpatialInfo::Unstructured {
+                ref points_a,
+                ref points_b,
+            } => {
+                match squared_distance_bin_edges {
+                    BinEdgeSpec::Vec(v) => {
+                        // there shouldn't be any problem unwrapping (since was already validated)
+                        let edges = IrregularBinEdges::new(v.0.as_slice()).expect("this is a bug");
+                        apply_accum(
+                            binned_statepack,
+                            &self.reducer,
+                            points_a,
+                            points_b.as_ref(),
+                            &edges,
+                            self.pair_op,
+                        )
+                        .map_err(Error::internal_legacy_adhoc)
+                    }
+                    BinEdgeSpec::Regular(edges) => apply_accum(
+                        binned_statepack,
+                        &self.reducer,
+                        points_a,
+                        points_b.as_ref(),
+                        edges,
+                        self.pair_op,
+                    )
+                    .map_err(Error::internal_legacy_adhoc),
+                }
+            }
+        }
+    }
 }
-
 
 /*
 /// Describes the accumulator for a two-point calculation.
@@ -398,5 +571,27 @@ impl AccumulatorBuilder {
         self
     }
 
-    //pub fn build(&self) -> Result<
+    pub fn build(&self) -> Result<Accumulator, Error> {
+        //todo!("not implemented yet!")
+
+        // construct the Config
+        let mut config = Config::default();
+        config.reducer_name = self.calc_kind.clone();
+        // todo: set up hist_reducer_bucket
+        // todo: set up squared_distance_bin_edges
+
+        let reducer = wrapper_reducer_from_config(&config)?;
+        let descr = AccumulatorDescr { config, reducer };
+
+        let state_size = descr.reducer.accum_state_size() as usize;
+        let n_state = 1; // FIXME
+        let data = AccumulatorData {
+            data: vec![0.0; state_size * n_state],
+            n_state,
+            state_size,
+        };
+        let mut out = Accumulator { data, descr };
+        out.reset_data();
+        Ok(out)
+    }
 }

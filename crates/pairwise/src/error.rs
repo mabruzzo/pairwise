@@ -47,6 +47,8 @@ enum ErrorKind {
     // /// The idea is to wrap the error type introduced within
     // /// `pairwise_nostd_internal`, whenever that actually gets introduced...
     // InternalError(InternalError)
+    /// An error occurs when an unknown reducer name is specified
+    ReducerName(ReducerNameError),
 }
 
 // define constructor methods for Error
@@ -93,6 +95,13 @@ impl Error {
             kind: ErrorKind::InternalLegacyAdHoc(InternalLegacyAdHocError(message)),
         }
     }
+
+    /// produce an error indicating that an unknown reducer name was specified
+    pub(crate) fn reducer_name(actual: String, choices: Vec<String>) -> Self {
+        Error {
+            kind: ErrorKind::ReducerName(ReducerNameError { actual, choices }),
+        }
+    }
 }
 
 impl std::error::Error for Error {}
@@ -111,6 +120,7 @@ impl core::fmt::Display for ErrorKind {
             ErrorKind::BinnedStatePackShape(ref err) => err.fmt(f),
             ErrorKind::IntegerRanger(ref err) => err.fmt(f),
             ErrorKind::InternalLegacyAdHoc(ref msg) => msg.fmt(f),
+            ErrorKind::ReducerName(ref err) => err.fmt(f),
         }
     }
 }
@@ -184,5 +194,24 @@ impl core::fmt::Display for InternalLegacyAdHocError {
 impl core::fmt::Debug for InternalLegacyAdHocError {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         core::fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+/// An error occurs when an unknown reducer name is specified
+#[derive(Clone, Debug)]
+struct ReducerNameError {
+    actual: String,
+    choices: Vec<String>,
+}
+
+impl std::error::Error for ReducerNameError {}
+
+impl core::fmt::Display for ReducerNameError {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(
+            f,
+            "{} is not a reducer name. Choices include: {:?}",
+            self.actual, self.choices
+        )
     }
 }
