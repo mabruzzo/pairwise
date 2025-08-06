@@ -88,7 +88,8 @@ impl<'a> PointProps<'a> {
 pub struct TwoPoint<'a, R: Reducer, B: BinEdges> {
     reducer: R,
     points_a: PointProps<'a>,
-    points_b: Option<PointProps<'a>>,
+    points_b: PointProps<'a>,
+    is_auto: bool, // true when points_a is the same as points_b
     squared_distance_bin_edges: B,
     pair_op: PairOperation,
 }
@@ -104,7 +105,7 @@ impl<'a, R: Reducer, B: BinEdges> TwoPoint<'a, R, B> {
     ) -> Result<Self, &'static str> {
         //  if points_b is not None, make sure a and b have the same number of
         // spatial dimensions
-        if let Some(points_b) = &points_b {
+        if let Some(points_b) = points_b {
             if points_a.n_spatial_dims != points_b.n_spatial_dims {
                 return Err(
                     "points_a and points_b must have the same number of spatial dimensions",
@@ -115,15 +116,25 @@ impl<'a, R: Reducer, B: BinEdges> TwoPoint<'a, R, B> {
                     should provide weights",
                 );
             }
-        }
 
-        Ok(Self {
-            reducer,
-            points_a,
-            points_b,
-            squared_distance_bin_edges,
-            pair_op,
-        })
+            Ok(Self {
+                reducer,
+                points_a,
+                points_b,
+                is_auto: false,
+                squared_distance_bin_edges,
+                pair_op,
+            })
+        } else {
+            Ok(Self {
+                reducer,
+                points_a: points_a.clone(),
+                points_b: points_a,
+                is_auto: true,
+                squared_distance_bin_edges,
+                pair_op,
+            })
+        }
     }
 }
 
@@ -162,10 +173,10 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPoint<'a, R, B> {
         assert_eq!(team_info.n_members_per_team, 1);
         assert_eq!(team_info.n_teams, 1);
 
-        if let Some(points_b) = &self.points_b {
-            (0, points_b.n_points)
-        } else {
+        if self.is_auto {
             (outer_index + 1, self.points_a.n_points)
+        } else {
+            (0, self.points_b.n_points)
         }
     }
 
@@ -178,64 +189,36 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPoint<'a, R, B> {
         inner_index: usize,
         team: &mut T,
     ) {
-        if let Some(ref points_b) = self.points_b {
-            match &self.pair_op {
-                PairOperation::ElementwiseMultiply => {
-                    apply_accum_helper::<T, false>(
-                        binned_statepack,
-                        &self.reducer,
-                        outer_index,
-                        inner_index,
-                        &self.points_a,
-                        points_b,
-                        &self.squared_distance_bin_edges,
-                        team,
-                    );
-                }
-                PairOperation::ElementwiseSub => {
-                    apply_accum_helper::<T, true>(
-                        binned_statepack,
-                        &self.reducer,
-                        outer_index,
-                        inner_index,
-                        &self.points_a,
-                        points_b,
-                        &self.squared_distance_bin_edges,
-                        team,
-                    );
-                }
+        match &self.pair_op {
+            PairOperation::ElementwiseMultiply => {
+                apply_accum_helper::<T, false>(
+                    binned_statepack,
+                    &self.reducer,
+                    outer_index,
+                    inner_index,
+                    &self.points_a,
+                    &self.points_b,
+                    &self.squared_distance_bin_edges,
+                    team,
+                );
             }
-        } else {
-            match &self.pair_op {
-                PairOperation::ElementwiseMultiply => {
-                    apply_accum_helper::<T, false>(
-                        binned_statepack,
-                        &self.reducer,
-                        outer_index,
-                        inner_index,
-                        &self.points_a,
-                        &self.points_a,
-                        &self.squared_distance_bin_edges,
-                        team,
-                    );
-                }
-                PairOperation::ElementwiseSub => {
-                    apply_accum_helper::<T, true>(
-                        binned_statepack,
-                        &self.reducer,
-                        outer_index,
-                        inner_index,
-                        &self.points_a,
-                        &self.points_a,
-                        &self.squared_distance_bin_edges,
-                        team,
-                    );
-                }
+            PairOperation::ElementwiseSub => {
+                apply_accum_helper::<T, true>(
+                    binned_statepack,
+                    &self.reducer,
+                    outer_index,
+                    inner_index,
+                    &self.points_a,
+                    &self.points_b,
+                    &self.squared_distance_bin_edges,
+                    team,
+                );
             }
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_accum_helper<T: Team, const SUBTRACT: bool>(
     binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
     reducer: &impl Reducer,
