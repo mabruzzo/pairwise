@@ -30,13 +30,21 @@ pub struct Error {
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 enum ErrorKind {
+    /// An error that occurs when a problematic bin edge is specified
+    ///
+    /// Issues with whether or not bin_edges are specified at all are handled
+    /// separately (see [`BucketEdgePresence`] and [`DistanceEdgePresence`])
+    BinEdge(BinEdgeError),
     /// An error that occurs when a binned_statepack has the wrong shape
     BinnedStatePackShape(BinnedStatePackShapeError),
-    /// An error related to specifying (or not specifying) the Bin Edges
-    /// for the Buckets in a Histogram Reducer
-    BucketEdge(BucketEdgeError),
-    /// An error that occurs when a problematic distance bin edge is specified
-    DistanceEdge(DistanceEdgeError),
+    /// An error related to whether bucket bin edges for a Histogram Reducer are
+    /// present
+    ///
+    /// This may be raised when using a Histogram Reducer and the bin edges are
+    /// missing or the bin edges are specified for an incompatible reducer.
+    BucketEdgePresence(BucketEdgePresenceError),
+    /// An error that occurs when distance bin edges aren't specified
+    DistanceEdgePresence(DistanceEdgePresenceError),
     /// An error that occurs when an integer lies outside of the acceptable
     /// range of values
     IntegerRanger(IntegerRangeError),
@@ -52,14 +60,44 @@ enum ErrorKind {
     // /// The idea is to wrap the error type introduced within
     // /// `pairwise_nostd_internal`, whenever that actually gets introduced...
     // InternalError(InternalError)
-    /// An error that occurs when distance bin edges aren't specified
-    MissingDistanceEdge(MissingDistanceEdgeError),
     /// An error that occurs when an unknown reducer name is specified
     ReducerName(ReducerNameError),
 }
 
 // define constructor methods for Error
 impl Error {
+    /// produce an error indicating that occurs when a problematic bin edge is
+    /// specified.
+    ///
+    /// This version handles a custom error message (we may be able to remove
+    /// it)
+    ///
+    /// Issues with whether or not bin_edges are specified at all are handled
+    /// separately (see [`bucket_edge_presence`] & [`distance_edge_presence`])
+    pub(crate) fn bin_edge(who: String, err: Error) -> Self {
+        Error {
+            kind: ErrorKind::BinEdge(BinEdgeError {
+                who,
+                // todo: consider introducing more proper error chaining
+                what: err.to_string(),
+            }),
+        }
+    }
+
+    /// produce an error indicating that occurs when a problematic bin edge is
+    /// specified.
+    ///
+    /// This version handles a custom error message (we may be able to remove
+    /// it)
+    ///
+    /// Issues with whether or not bin_edges are specified at all are handled
+    /// separately (see [`bucket_edge_presence`] & [`distance_edge_presence`])
+    pub(crate) fn bin_edge_custom(who: String, what: String) -> Self {
+        Error {
+            kind: ErrorKind::BinEdge(BinEdgeError { who, what }),
+        }
+    }
+
     /// produce an error indicating that a binned_statepack has the wrong shape
     pub(crate) fn binned_statepack_shape(
         expected_n_states: u64,
@@ -79,16 +117,16 @@ impl Error {
 
     /// produce an error indicating the presence/ommision of the bucket
     /// bin-edges for configuring the Reducer within an Accumulator
-    pub(crate) fn bucket_edges(name: String, expect_edges: bool) -> Self {
+    pub(crate) fn bucket_edge_presence(name: String, expect_edges: bool) -> Self {
         Error {
-            kind: ErrorKind::BucketEdge(BucketEdgeError { name, expect_edges }),
+            kind: ErrorKind::BucketEdgePresence(BucketEdgePresenceError { name, expect_edges }),
         }
     }
 
-    /// produce an error indicating that a problematic distance bin edge was specified
-    pub(crate) fn distance_edge(what: String) -> Self {
+    /// produce an error indicating that distance bin edges aren't specified
+    pub(crate) fn distance_edge_presence() -> Self {
         Error {
-            kind: ErrorKind::DistanceEdge(DistanceEdgeError { what }),
+            kind: ErrorKind::DistanceEdgePresence(DistanceEdgePresenceError),
         }
     }
 
@@ -118,13 +156,6 @@ impl Error {
         }
     }
 
-    /// produce an error indicating that distance bin edges aren't specified
-    pub(crate) fn missing_distance_edge() -> Self {
-        Error {
-            kind: ErrorKind::MissingDistanceEdge(MissingDistanceEdgeError),
-        }
-    }
-
     /// produce an error indicating that an unknown reducer name was specified
     pub(crate) fn reducer_name(actual: String, choices: Vec<String>) -> Self {
         Error {
@@ -147,13 +178,36 @@ impl core::fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match *self {
             ErrorKind::BinnedStatePackShape(ref err) => err.fmt(f),
-            ErrorKind::BucketEdge(ref err) => err.fmt(f),
-            ErrorKind::DistanceEdge(ref err) => err.fmt(f),
+            ErrorKind::BucketEdgePresence(ref err) => err.fmt(f),
+            ErrorKind::BinEdge(ref err) => err.fmt(f),
             ErrorKind::IntegerRanger(ref err) => err.fmt(f),
             ErrorKind::InternalLegacyAdHoc(ref msg) => msg.fmt(f),
-            ErrorKind::MissingDistanceEdge(ref err) => err.fmt(f),
+            ErrorKind::DistanceEdgePresence(ref err) => err.fmt(f),
             ErrorKind::ReducerName(ref err) => err.fmt(f),
         }
+    }
+}
+
+/// An error that occurs when a problematic bin edge is specified
+///
+/// Issues with whether or not bin_edges are specified at all are handled
+/// separately (see [`BucketEdgePresenceError`] and
+/// [`DistanceEdgePresenceError`])
+#[derive(Clone, Debug)]
+struct BinEdgeError {
+    who: String,
+    // TODO we probably want to handle this more carefully (the proper thing
+    // to do is to probably chain errors)
+    what: String,
+}
+
+impl std::error::Error for BinEdgeError {}
+
+impl core::fmt::Display for BinEdgeError {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        let who = self.who.as_str();
+        let what = self.what.as_str();
+        write!(f, "problem with {who}: {what}")
     }
 }
 
@@ -186,24 +240,39 @@ impl core::fmt::Display for BinnedStatePackShapeError {
     }
 }
 
-/// An error related to specifying (or not specifying) the Bin Edges
-/// for the Buckets in a Histogram Reducer
+/// An error related to whether bucket bin edges for a Histogram Reducer are
+/// present
+///
+/// This may be raised when using a Histogram Reducer and the bin edges are
+/// missing or the bin edges are specified for an incompatible reducer.
 #[derive(Clone, Debug)]
-struct BucketEdgeError {
+struct BucketEdgePresenceError {
     name: String,
     expect_edges: bool,
 }
 
-impl std::error::Error for BucketEdgeError {}
+impl std::error::Error for BucketEdgePresenceError {}
 
-impl core::fmt::Display for BucketEdgeError {
+impl core::fmt::Display for BucketEdgePresenceError {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        let BucketEdgeError { name, expect_edges } = self;
+        let BucketEdgePresenceError { name, expect_edges } = self;
         if *expect_edges {
             write!(f, "The \"{name}\" reducer didn't recieve bucket edges")
         } else {
             write!(f, "The \"{name}\" reducer shouldn't recieve bucket edges")
         }
+    }
+}
+
+/// An error that occurs when distance bin edges aren't specified
+#[derive(Clone, Debug)]
+struct DistanceEdgePresenceError;
+
+impl std::error::Error for DistanceEdgePresenceError {}
+
+impl core::fmt::Display for DistanceEdgePresenceError {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f, "distance bin edges were not specified")
     }
 }
 
@@ -247,33 +316,6 @@ impl core::fmt::Display for InternalLegacyAdHocError {
 impl core::fmt::Debug for InternalLegacyAdHocError {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         core::fmt::Debug::fmt(&self.0, f)
-    }
-}
-
-/// An error that occurs when distance bin edges aren't specified
-#[derive(Clone, Debug)]
-struct MissingDistanceEdgeError;
-
-impl std::error::Error for MissingDistanceEdgeError {}
-
-impl core::fmt::Display for MissingDistanceEdgeError {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "distance bin edges were not specified")
-    }
-}
-
-/// An error that occurs when a problematic distance bin edge is specified
-#[derive(Clone, Debug)]
-struct DistanceEdgeError {
-    what: String,
-}
-
-impl std::error::Error for DistanceEdgeError {}
-
-impl core::fmt::Display for DistanceEdgeError {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        let what = self.what.as_str();
-        write!(f, "problem with squared distance bin: {what}")
     }
 }
 

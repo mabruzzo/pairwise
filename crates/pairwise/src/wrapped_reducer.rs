@@ -48,6 +48,13 @@ impl BinEdgeSpec {
             BinEdgeSpec::Vec(v) => v.0[0],
         }
     }
+
+    pub(crate) fn n_bins(&self) -> usize {
+        match self {
+            BinEdgeSpec::Regular(edges) => edges.n_bins(),
+            BinEdgeSpec::Vec(v) => v.0.len() - 1,
+        }
+    }
 }
 
 /// A configuration object
@@ -57,11 +64,10 @@ pub(crate) struct Config {
     // I'm fairly confident that supporting the Histogram with the
     // [`IrregularBinEdges`] type introduces self-referential struct issues
     // (at a slightly higher level)
-    pub(crate) hist_reducer_bucket: Option<RegularBinEdges>,
+    pub(crate) hist_reducer_bucket: Option<BinEdgeSpec>,
     // eventually, we should add an option for variance
 
     // I'm not so sure the following should actually be tracked in this struct
-    // TODO: this shouldn't be an option
     pub(crate) squared_distance_bin_edges: BinEdgeSpec,
 }
 
@@ -88,21 +94,25 @@ fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
         // correlation function machinery
         (
             "hist_cf".to_owned(),
-            MkWrappedReducerFn(|conf: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
-                let Some(ref edges) = conf.hist_reducer_bucket else {
-                    return Err(Error::bucket_edges(conf.reducer_name.clone(), true));
+            MkWrappedReducerFn(|c: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
+                let Some(ref edges) = c.hist_reducer_bucket else {
+                    return Err(Error::bucket_edge_presence(c.reducer_name.clone(), true));
                 };
-                Ok(Box::new(WrappedReducerImpl {
-                    reducer: ComponentSumHistogram::from_bin_edges(edges.clone()),
-                    pair_op: PairOperation::ElementwiseMultiply,
-                }) as Box<dyn WrappedReducer>)
+                if let BinEdgeSpec::Regular(edges) = edges {
+                    Ok(Box::new(WrappedReducerImpl {
+                        reducer: ComponentSumHistogram::from_bin_edges(edges.clone()),
+                        pair_op: PairOperation::ElementwiseMultiply,
+                    }) as Box<dyn WrappedReducer>)
+                } else {
+                    todo!("haven't handled this case yet")
+                }
             }),
         ),
         (
             "2pcf".to_owned(),
-            MkWrappedReducerFn(|conf: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
-                if conf.hist_reducer_bucket.is_some() {
-                    return Err(Error::bucket_edges(conf.reducer_name.clone(), false));
+            MkWrappedReducerFn(|c: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
+                if c.hist_reducer_bucket.is_some() {
+                    return Err(Error::bucket_edge_presence(c.reducer_name.clone(), false));
                 }
                 Ok(Box::new(WrappedReducerImpl {
                     reducer: ComponentSumMean::new(),
@@ -113,21 +123,25 @@ fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
         // shift to structure functions
         (
             "hist_astro_sf1".to_owned(),
-            MkWrappedReducerFn(|conf: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
-                let Some(ref edges) = conf.hist_reducer_bucket else {
-                    return Err(Error::bucket_edges(conf.reducer_name.clone(), true));
+            MkWrappedReducerFn(|c: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
+                let Some(ref edges) = c.hist_reducer_bucket else {
+                    return Err(Error::bucket_edge_presence(c.reducer_name.clone(), true));
                 };
-                Ok(Box::new(WrappedReducerImpl {
-                    reducer: EuclideanNormHistogram::from_bin_edges(edges.clone()),
-                    pair_op: PairOperation::ElementwiseSub,
-                }) as Box<dyn WrappedReducer>)
+                if let BinEdgeSpec::Regular(edges) = edges {
+                    Ok(Box::new(WrappedReducerImpl {
+                        reducer: EuclideanNormHistogram::from_bin_edges(edges.clone()),
+                        pair_op: PairOperation::ElementwiseSub,
+                    }) as Box<dyn WrappedReducer>)
+                } else {
+                    todo!("haven't handled this case yet")
+                }
             }),
         ),
         (
             "astro_sf1".to_owned(),
-            MkWrappedReducerFn(|conf: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
-                if conf.hist_reducer_bucket.is_some() {
-                    return Err(Error::bucket_edges(conf.reducer_name.clone(), false));
+            MkWrappedReducerFn(|c: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
+                if c.hist_reducer_bucket.is_some() {
+                    return Err(Error::bucket_edge_presence(c.reducer_name.clone(), false));
                 }
                 Ok(Box::new(WrappedReducerImpl {
                     reducer: EuclideanNormMean::new(),

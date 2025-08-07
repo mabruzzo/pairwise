@@ -323,23 +323,36 @@ impl AccumulatorBuilder {
 
     pub fn build(&self) -> Result<Accumulator, Error> {
         //todo!("not implemented yet!")
+        let hist_reducer_bucket = match &self.bucket_edges {
+            Some(RawBinEdgeSpec::Regular(edges)) => Some(BinEdgeSpec::Regular(edges.clone())),
+            Some(RawBinEdgeSpec::Vec(v)) => Some(BinEdgeSpec::Vec(
+                ValidatedBinEdgeVec::new(v.clone())
+                    .map_err(|err| Error::bin_edge("hist_bucket_edges".to_owned(), err))?,
+            )),
+            None => None,
+        };
 
         let squared_distance_bin_edges = match &self.distance_sqr_bin_edges {
             Some(RawBinEdgeSpec::Regular(edges)) => BinEdgeSpec::Regular(edges.clone()),
-            Some(RawBinEdgeSpec::Vec(v)) => BinEdgeSpec::Vec(ValidatedBinEdgeVec::new(v.clone())?),
-            None => return Err(Error::missing_distance_edge()),
+            Some(RawBinEdgeSpec::Vec(v)) => BinEdgeSpec::Vec(
+                ValidatedBinEdgeVec::new(v.clone())
+                    .map_err(|err| Error::bin_edge("distance_squared_bin_edges".to_owned(), err))?,
+            ),
+            None => return Err(Error::distance_edge_presence()),
         };
 
         if squared_distance_bin_edges.leftmost_edge() < 0.0 {
-            return Err(Error::distance_edge("contains negative value".to_owned()));
+            return Err(Error::bin_edge_custom(
+                "distance_squared_bin_edges".to_owned(),
+                "contains negative value".to_owned(),
+            ));
         }
 
         // construct the Config
         let config = Config {
             reducer_name: self.calc_kind.clone().unwrap(),
             // TODO deal with me!
-            hist_reducer_bucket: None,
-            // TODO deal with me!
+            hist_reducer_bucket,
             squared_distance_bin_edges,
         };
 
@@ -347,7 +360,7 @@ impl AccumulatorBuilder {
         let descr = AccumulatorDescr { config, reducer };
 
         let state_size = descr.reducer.accum_state_size() as usize;
-        let n_state = 1; // FIXME
+        let n_state = descr.config.squared_distance_bin_edges.n_bins();
         let data = AccumulatorData {
             data: vec![0.0; state_size * n_state],
             n_state,
