@@ -115,7 +115,7 @@ impl Error {
         }
     }
 
-    /// produce an error indicating the presence/ommision of the bucket
+    /// produce an error indicating the presence/omission of the bucket
     /// bin-edges for configuring the Reducer within an Accumulator
     pub(crate) fn bucket_edge_presence(name: String, expect_edges: bool) -> Self {
         Error {
@@ -257,9 +257,9 @@ impl core::fmt::Display for BucketEdgePresenceError {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let BucketEdgePresenceError { name, expect_edges } = self;
         if *expect_edges {
-            write!(f, "The \"{name}\" reducer didn't recieve bucket edges")
+            write!(f, "The \"{name}\" reducer didn't receive bucket edges")
         } else {
-            write!(f, "The \"{name}\" reducer shouldn't recieve bucket edges")
+            write!(f, "The \"{name}\" reducer shouldn't receive bucket edges")
         }
     }
 }

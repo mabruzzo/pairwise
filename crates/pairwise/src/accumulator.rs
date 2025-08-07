@@ -3,7 +3,7 @@
 //! # A bird's eye view (motivation)
 //! - we leverage Rust's generics and type system to write a lot of highly
 //!   specialized code paths
-//! - however, there is a large combinatorical problem with selecting the
+//! - however, there is a large combinatorial problem with selecting the
 //!   appropriate configuration.
 //!   - we don't want to demand that users be familiar with all of the
 //!     highly tuned implementation paths. A similar philosophy applies to
@@ -127,9 +127,11 @@ impl Accumulator {
     /// update `accum_state` accordingly
     pub fn merge(&mut self, other: &Accumulator) -> Result<(), Error> {
         if self.descr == other.descr {
-            self.descr
-                .reducer
-                .merge(&mut self.data.mut_view(), &other.data.view());
+            self.descr.reducer.merge(
+                &mut self.data.mut_view(),
+                &other.data.view(),
+                &self.descr.config,
+            );
             Ok(())
         } else {
             todo!("create and return the appropriate error type");
@@ -142,14 +144,16 @@ impl Accumulator {
     /// # Note
     /// We should probably let the caller provide the output memory.
     pub fn get_output(&self) -> HashMap<&'static str, Vec<f64>> {
-        self.descr.reducer.get_output(&self.data.view())
+        self.descr
+            .reducer
+            .get_output(&self.data.view(), &self.descr.config)
     }
 
     /// Reset the tracked accumulator state
     pub fn reset_data(&mut self) {
         self.descr
             .reducer
-            .reset_full_statepack(&mut self.data.mut_view());
+            .reset_full_statepack(&mut self.data.mut_view(), &self.descr.config);
     }
 }
 
@@ -168,7 +172,7 @@ impl Accumulator {
         self.descr.reducer.exec_reduction(
             &mut self.data.mut_view(),
             spatial_info,
-            &self.descr.config.squared_distance_bin_edges,
+            &self.descr.config,
         )
     }
 }
@@ -243,17 +247,6 @@ impl PartialEq for AccumulatorDescr {
 
 impl Eq for AccumulatorDescr {}
 
-// Our current approach leverages dynamic dispatch. My concern with an
-// enum-based approach:
-// - it won't very well with the dynanamic plugin approach that is described
-//   up above..
-// - readability and maintainability...
-//   - there are "a lot" of variations to support. Combinatorics from the
-//     number of available "knobs" make this larger than just the number of
-//     available Reducers
-//   - I think the enum code would be far more scattered
-// I'm happy to be proven wrong!
-
 // ugh... its inelegant that this is separate from BinEdgeSpec
 enum RawBinEdgeSpec {
     Vec(Vec<f64>), // unvalidated
@@ -263,7 +256,7 @@ enum RawBinEdgeSpec {
 #[derive(Default)]
 pub struct AccumulatorBuilder {
     // ugh... its very inelegant that we aren't directly modifying a Config
-    // object!
+    // object! But, I think it's necessary given the way that
     calc_kind: Option<String>,
     bucket_edges: Option<RawBinEdgeSpec>,
     distance_sqr_bin_edges: Option<RawBinEdgeSpec>,
@@ -359,7 +352,7 @@ impl AccumulatorBuilder {
         let reducer = wrapped_reducer_from_config(&config)?;
         let descr = AccumulatorDescr { config, reducer };
 
-        let state_size = descr.reducer.accum_state_size() as usize;
+        let state_size = descr.reducer.accum_state_size(&descr.config) as usize;
         let n_state = descr.config.squared_distance_bin_edges.n_bins();
         let data = AccumulatorData {
             data: vec![0.0; state_size * n_state],
