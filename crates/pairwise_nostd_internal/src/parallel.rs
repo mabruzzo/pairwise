@@ -102,8 +102,8 @@ pub trait Team {
     /// 1. Team members collectively call the `get_member_contrib` closure.
     ///    Each member records the contributions from the call in a distinct
     ///    `accum_state` (NOT binned_statepack, which is untouched).
-    ///    `accum_state` is passed into `get_member_contrib` within a
-    ///    [`StatePackViewMut`] type.
+    ///    The arguments of `get_member_contrib` are the `accum_state` (as
+    ///    [`StatePackViewMut`]) and the member id.
     /// 2. Combines the contributions from each member (in a "nested
     ///    reduction") so a single member holds the total contribution.
     /// 3. This member updates `accum_state` stored at `bin_index` in
@@ -117,9 +117,9 @@ pub trait Team {
     );
 
     /// Ensures all team members are synchronized, then does 3 things:
-    /// 1. each team member calls the `get_datum_bin_pair` closure. Each member
-    ///    computes and records a [`BinnedDatum`] instance to memory provided by
-    ///    `&mut self`.
+    /// 1. each team member calls the `get_datum_bin_pair` closure, which takes
+    ///    a mutable reference to an `&mut [BinnedDatum]` (to which it writes),
+    ///    the member id.
     /// 2. gathers the recorded [`BinnedDatum`] instances into memory accessible
     ///    by one of the team members
     /// 3. that team member uses the batch of [`BinnedDatum`] instances to
