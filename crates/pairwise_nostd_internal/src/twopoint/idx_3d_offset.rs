@@ -126,9 +126,9 @@ pub(crate) fn get_block_a_start_stop_indices(
 /// instances that describe pairs of measurements, where separate measurements
 /// are drawn from distinct [`CartesianBlocks`].
 ///
-/// Specifically, an [`Idx3DOffset`] instance, `idxoff`, belongs to each this
-/// "family" if, for each axis `i`, the value `idxoff.value()[i]` lies in the
-/// interval `[start_offsets_zyx[i], stop_offsets_zyx[i])`.
+/// An [`Idx3DOffset`] instance, `idxoff`, satisfies bounds if, for each axis
+/// `i`, the value `idxoff.value()[i]` lies in the interval
+/// `[start_offsets_zyx[i], stop_offsets_zyx[i])`.
 ///
 /// When considering 2 [`CartesianBlock`]s, block_a and block_b, the family
 /// then, for each `i`:
