@@ -1,6 +1,6 @@
 use crate::bins::BinEdges;
 use crate::misc::squared_diff_norm;
-use crate::parallel::{BinnedDatum, MemberID, ReductionSpec, StandardTeamParam, Team};
+use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, Team};
 use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
 use crate::twopoint::common::PairOperation;
@@ -232,12 +232,12 @@ fn apply_accum_helper<T: Team, const SUBTRACT: bool>(
     team.collect_pairs_then_apply(
         binned_statepack,
         reducer,
-        &|collect_pad: &mut [BinnedDatum], member_id: MemberID| {
+        &|collect_pad: &mut [BinnedDatum], member_id: usize| {
             assert!(!T::IS_VECTOR_PROCESSOR);
 
             let i_a = outer_index;
             // this will change when we have more that 1 member per team
-            let i_b = inner_index + member_id.0;
+            let i_b = inner_index + member_id;
 
             let distance_squared = squared_diff_norm(
                 points_a.positions,

@@ -25,7 +25,7 @@
 //! comparisons
 
 use crate::misc::segment_idx_bounds;
-use crate::parallel::{MemberID, ReductionSpec, StandardTeamParam, Team};
+use crate::parallel::{ReductionSpec, StandardTeamParam, Team};
 use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
     serial_merge_accum_states,
@@ -419,7 +419,7 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
                 binned_statepack,
                 &self.reducer,
                 bin_index,
-                &|tmp_accum_states: &mut StatePackViewMut, member_id: MemberID| {
+                &|tmp_accum_states: &mut StatePackViewMut, member_id: usize| {
                     // to achieve auto-vectorization:
                     // - we'd probably need to massage the way this loop is
                     //   implemented so that we are updating the states of all
@@ -438,7 +438,7 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
                     assert_eq!(tmp_accum_states.n_states(), team_param.n_teams);
                     for offset in 0..team_param.n_members_per_team {
                         let mut tmp_accum_state = tmp_accum_states.get_state_mut(offset);
-                        let i_itr = ((i_global + member_id.0)..(i_global + chunk_len))
+                        let i_itr = ((i_global + member_id)..(i_global + chunk_len))
                             .step_by(team_param.n_members_per_team);
                         for i in i_itr {
                             self.reducer.consume(
@@ -457,11 +457,11 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
                 binned_statepack,
                 &self.reducer,
                 bin_index,
-                &|tmp_accum_states: &mut StatePackViewMut, member_id: MemberID| {
+                &|tmp_accum_states: &mut StatePackViewMut, member_id: usize| {
                     assert_eq!(tmp_accum_states.n_states(), 1);
                     let mut tmp_accum_state = tmp_accum_states.get_state_mut(0);
 
-                    let i_itr = ((i_global + member_id.0)..(i_global + chunk_len))
+                    let i_itr = ((i_global + member_id)..(i_global + chunk_len))
                         .step_by(team_param.n_members_per_team);
                     for i in i_itr {
                         self.reducer.consume(

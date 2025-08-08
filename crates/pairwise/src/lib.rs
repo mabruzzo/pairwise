@@ -52,6 +52,8 @@ pub use apply::apply_accum;
 pub use error::Error;
 pub use func::{RuntimeSpec, process_unstructured};
 pub use pairwise_nostd_internal::{
+    CartesianBlock,
+    CellWidth,
     Comp0Histogram,
     Comp0Mean,
     ComponentSumHistogram,

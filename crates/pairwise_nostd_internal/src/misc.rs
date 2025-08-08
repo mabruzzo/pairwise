@@ -164,6 +164,10 @@ impl View3DSpec {
         (max_idx_1d as usize) + 1_usize
     }
 
+    pub fn n_elements(&self) -> usize {
+        (self.shape_zyx[0] * self.shape_zyx[1] * self.shape_zyx[2]) as usize
+    }
+
     pub fn shape(&self) -> &[isize; 3] {
         &self.shape_zyx
     }

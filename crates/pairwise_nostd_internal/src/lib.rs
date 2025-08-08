@@ -236,7 +236,7 @@ these categories _"Nested"_ and _"Batched"_.
 
 */
 
-#![no_std]
+#![cfg_attr(not(test), no_std)] // (we allow std for testing)
 #![deny(rustdoc::broken_intra_doc_links)]
 
 mod bins;
@@ -253,7 +253,7 @@ pub mod reduce_sample;
 
 pub use bins::*;
 pub use parallel::{
-    BinnedDatum, Executor, MemberID, ReductionSpec, StandardTeamParam, Team,
+    BinnedDatum, Executor, ReductionSpec, StandardTeamParam, Team,
     fill_single_team_binned_statepack,
 };
 pub use reduce_utils::{merge_full_statepacks, reset_full_statepack};
@@ -264,5 +264,6 @@ pub use reducer::{
 pub use state::{AccumStateView, AccumStateViewMut, StatePackView, StatePackViewMut};
 pub use twopoint::{
     common::PairOperation,
+    spatial::{CartesianBlock, CellWidth},
     unstructured::{TwoPointUnstructured, UnstructuredPoints},
 };
