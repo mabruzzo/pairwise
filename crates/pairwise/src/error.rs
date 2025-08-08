@@ -92,9 +92,12 @@ impl Error {
     ///
     /// Issues with whether or not bin_edges are specified at all are handled
     /// separately (see [`bucket_edge_presence`] & [`distance_edge_presence`])
-    pub(crate) fn bin_edge_custom(who: String, what: String) -> Self {
+    pub(crate) fn bin_edge_custom(who: &str, what: &str) -> Self {
         Error {
-            kind: ErrorKind::BinEdge(BinEdgeError { who, what }),
+            kind: ErrorKind::BinEdge(BinEdgeError {
+                who: who.to_owned(),
+                what: what.to_owned(),
+            }),
         }
     }
 
@@ -117,9 +120,12 @@ impl Error {
 
     /// produce an error indicating the presence/omission of the bucket
     /// bin-edges for configuring the Reducer within an Accumulator
-    pub(crate) fn bucket_edge_presence(name: String, expect_edges: bool) -> Self {
+    pub(crate) fn bucket_edge_presence(name: &str, expect_edges: bool) -> Self {
         Error {
-            kind: ErrorKind::BucketEdgePresence(BucketEdgePresenceError { name, expect_edges }),
+            kind: ErrorKind::BucketEdgePresence(BucketEdgePresenceError {
+                name: name.to_owned(),
+                expect_edges,
+            }),
         }
     }
 

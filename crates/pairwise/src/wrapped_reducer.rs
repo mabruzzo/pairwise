@@ -17,8 +17,10 @@ use pairwise_nostd_internal::{
 };
 use std::{collections::HashMap, sync::LazyLock};
 
-/// A wrapper type that only exists so we can implement the `Eq` trait.
+/// Wraps a vector holding pre-validated bin edges. This primarily exists so
+/// that we can implement the `Eq` trait.
 ///
+/// # Note
 /// Ordinarily, [`f64`], and by extension `Vec<f64>` doesn't implement `Eq`
 /// since `NaN` != `NaN`. We can implement it here since
 /// [`pairwise_nostd_internal::validate_bin_edges`] ensures there aren't any
@@ -51,6 +53,11 @@ impl PartialEq for ValidatedBinEdgeVec {
 
 impl Eq for ValidatedBinEdgeVec {}
 
+/// Holds data that represent bin edges. Importantly, all variants have been
+/// pre-validated.
+///
+/// # Note
+/// It's important that this type implements the [`Eq`] trait.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) enum BinEdgeSpec {
     Regular(RegularBinEdges),
@@ -73,18 +80,46 @@ impl BinEdgeSpec {
     }
 }
 
-/// A configuration object
+/// A configuration object for a two-point calculation.
+///
+/// It tracks distance bin-edge information and specifies the reducer
+/// properties used in the calculation. The basic premise is that this
+/// serves as the "single source of truth" for the calculation properties.
+/// We want to make it easy to serialize this information to communicate
+/// between processes (or potentially to dynamic plugins that implement
+/// GPU functionality that is that is briefly described in the module-level
+/// documentation of [`crate::accumulator`].)
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Config {
-    pub(crate) reducer_name: String,
+    reducer_name: String,
     // I'm fairly confident that supporting the Histogram with the
     // [`IrregularBinEdges`] type introduces self-referential struct issues
     // (at a slightly higher level)
-    pub(crate) hist_reducer_bucket: Option<BinEdgeSpec>,
+    hist_reducer_bucket: Option<BinEdgeSpec>,
     // eventually, we should add an option for variance
 
-    // I'm not so sure the following should actually be tracked in this struct
-    pub(crate) squared_distance_bin_edges: BinEdgeSpec,
+    // A compelling case could be made that we should be tracking this in
+    // a different struct, and focus the current trait on "just" the
+    // properties directly related to the Reducer
+    squared_distance_bin_edges: BinEdgeSpec,
+}
+
+impl Config {
+    // a case could be made that to replace this with a function that
+    // constructs both a Config and a boxed WrappedReducer in a single
+    // operation so that we make sure Config **always** corresponds to a
+    // valid calculation...
+    pub(crate) fn new(
+        reducer_name: String,
+        hist_reducer_bucket: Option<BinEdgeSpec>,
+        squared_distance_bin_edges: BinEdgeSpec,
+    ) -> Config {
+        Config {
+            reducer_name,
+            hist_reducer_bucket,
+            squared_distance_bin_edges,
+        }
+    }
 }
 
 /// an internal type that is used to encode the spatial information
@@ -121,7 +156,7 @@ fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
             "hist_cf".to_owned(),
             MkWrappedReducerFn(|c: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
                 let Some(ref edges) = c.hist_reducer_bucket else {
-                    return Err(Error::bucket_edge_presence(c.reducer_name.clone(), true));
+                    return Err(Error::bucket_edge_presence(&c.reducer_name, true));
                 };
                 if let BinEdgeSpec::Regular(edges) = edges {
                     Ok(Box::new(WrappedReducerImpl {
@@ -139,7 +174,7 @@ fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
             "2pcf".to_owned(),
             MkWrappedReducerFn(|c: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
                 if c.hist_reducer_bucket.is_some() {
-                    return Err(Error::bucket_edge_presence(c.reducer_name.clone(), false));
+                    return Err(Error::bucket_edge_presence(&c.reducer_name, false));
                 }
                 Ok(Box::new(WrappedReducerImpl {
                     reducer: ComponentSumMean::new(),
@@ -154,7 +189,7 @@ fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
             "hist_astro_sf1".to_owned(),
             MkWrappedReducerFn(|c: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
                 let Some(ref edges) = c.hist_reducer_bucket else {
-                    return Err(Error::bucket_edge_presence(c.reducer_name.clone(), true));
+                    return Err(Error::bucket_edge_presence(&c.reducer_name, true));
                 };
                 if let BinEdgeSpec::Regular(edges) = edges {
                     Ok(Box::new(WrappedReducerImpl {
@@ -163,7 +198,7 @@ fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
                     }) as Box<dyn WrappedReducer>)
                 } else {
                     Ok(Box::new(WrappedIrregularHist {
-                        pair_op: PairOperation::ElementwiseMultiply,
+                        pair_op: PairOperation::ElementwiseSub,
                     }) as Box<dyn WrappedReducer>)
                 }
             }),
@@ -172,7 +207,7 @@ fn build_registry() -> HashMap<String, MkWrappedReducerFn> {
             "astro_sf1".to_owned(),
             MkWrappedReducerFn(|c: &Config| -> Result<Box<dyn WrappedReducer>, Error> {
                 if c.hist_reducer_bucket.is_some() {
-                    return Err(Error::bucket_edge_presence(c.reducer_name.clone(), false));
+                    return Err(Error::bucket_edge_presence(&c.reducer_name, false));
                 }
                 Ok(Box::new(WrappedReducerImpl {
                     reducer: EuclideanNormMean::new(),
@@ -221,18 +256,25 @@ pub(crate) fn wrapped_reducer_from_config(
 ///
 /// # Dynamic Dispatch vs "Enum Dispatch"
 ///
-/// TODO: EDIT ME
-/// My concern with an enum-based approach:
-/// - it won't very well with the dynanamic plugin approach that is described
-///   up in comments within accumulator.rs.
-///   - Update: actually, if we continue to treat `Config` in a similar manner,
-///     to how its treated now (i.e. its synchronized with the wrapped reducer
-///     and the "source-of-truth" for serialization), then I'm not as concerned
-/// - My main concern focuses on readability and maintainability...
-///   - there are "a lot" of variations to support. Combinatorics from generic
-///     types (especially when we want to make different choices for structure
-///     functions and correlation functions), significantly increase the
-///     number of variations...
+/// There isn't a particularly strong reason behind our choice of dynamic
+/// dispatch. We summarize some considerations down below, but we are very
+/// willing to change the implementation.
+///
+/// Our initial choice was primarily influenced by some concerns about an
+/// enum-dispatch approach:
+/// - I was originally concerned that enum-dispatch may not work very well
+///   with the dynamic plugin approach (for GPU support) that is briefly
+///   described in the module-level documentation of [`crate::accumulator`].
+///   Upon reflection, I realized that if [`AccumulatorDescr`] continues to
+///   treat the [`Config`] type in a similar way to its current treatment
+///   (i.e. the [`Config`] instance is stored alongside the [`WrappedReducer`]
+///   that was constructed from it and serves as the "source-of-truth" for
+///   serialization). **In other words, this isn't a significant concern.**
+/// - My main concern focuses on readability and maintainability:
+///   - there are "a lot" of Reducer variations to support. Combinatorics from
+///     generic types (especially when we want to make different choices for
+///     structure functions and correlation functions), significantly increase
+///     the number of variations...
 ///   - Let's consider what it takes to add a new reducer:
 ///     - under the current system, we just need to update [`build_registry`].
 ///     - under an enum-system, we would need to update
@@ -273,7 +315,7 @@ pub(crate) trait WrappedReducer {
     /// `other_binned_statepack`, and update `binned_statepack` accordingly
     ///
     /// # Note
-    /// The `config` argument **must** be identical to the argument passed
+    /// The `config` argument **must** be identical to the value passed
     /// into [`wrapped_reducer_from_config`]. It is _only_ used to help
     /// implement the [`WrappedIrregularHist`] type
     fn merge(
@@ -283,15 +325,25 @@ pub(crate) trait WrappedReducer {
         config: &Config,
     );
 
-    /// constructs a hashmap holding the calculation outputs
+    /// compute the output quantities from the accumulator's state and return
+    /// the result in a HashMap.
     ///
+    /// # Note
+    /// The `config` argument **must** be identical to the value passed
+    /// into [`wrapped_reducer_from_config`]. It is _only_ used to help
+    /// implement the [`WrappedIrregularHist`] type
     fn get_output(
         &self,
         binned_statepack: &StatePackView,
         config: &Config,
     ) -> HashMap<&'static str, Vec<f64>>;
 
-    /// Res
+    /// Reset the state within the binned statepack.
+    ///
+    /// # Note
+    /// The `config` argument **must** be identical to the value passed
+    /// into [`wrapped_reducer_from_config`]. it is _only_ used to help
+    /// implement the [`wrappedirregularhist`] type
     fn reset_full_statepack(&self, binned_statepack: &mut StatePackViewMut, config: &Config);
 
     /// Returns the size of individual accumulator states.
@@ -299,14 +351,39 @@ pub(crate) trait WrappedReducer {
     /// In a binned_statepack, the total number of entries is the product of
     /// the number returned by this method and the number of bins.
     ///
-    /// # Note
+    /// # Notes
     /// While the number of outputs per bin is commonly the same as the value
     /// returned by this function, that need not be the case. For example,
     /// imagine we used an algorithm like Kahan summation to attain improved
     /// accuracy.
+    ///
+    /// The `config` argument **must** be identical to the value passed
+    /// into [`wrapped_reducer_from_config`]. It is _only_ used to help
+    /// implement the [`WrappedIrregularHist`] type
     fn accum_state_size(&self, config: &Config) -> usize;
 
-    // we probably need to pass other arguments...
+    /// Executes the reduction on the supplied spatial data and updates
+    /// binned_statepack accordingly.
+    ///
+    /// # Extra Arguments
+    /// We will definitely need to accept more arguments in the future
+    /// (e.g. to control parallelism)
+    ///
+    /// # Note
+    /// The `config` argument **must** be identical to the value passed
+    /// into [`wrapped_reducer_from_config`]. We _only_ require a full
+    /// [`Config`] instance, rather than _just_ the distance bin edges in
+    /// order to help implement the [`WrappedIrregularHist`] type
+    ///
+    /// # Why this exists?
+    /// At a high-level, one might ask why does this exist? The full reduction
+    /// has multiple inputs and it doesn't really seem like it should be a
+    /// method of the Reducer... The answer: "because it has to."
+    ///
+    /// Aside: In an enum-dispatch approach, the reduction-launcher function
+    /// wouldn't *need* to directly be a method attached to the enum, but the
+    /// function would still need to have access to all the enum's details
+    /// (in order to perform a match over every variant)
     fn exec_reduction(
         &self,
         binned_statepack: &mut StatePackViewMut,

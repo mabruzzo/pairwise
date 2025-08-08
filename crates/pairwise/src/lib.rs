@@ -48,8 +48,19 @@ pub use accumulator::{Accumulator, AccumulatorBuilder};
 pub use apply::apply_accum;
 pub use error::Error;
 pub use pairwise_nostd_internal::{
-    Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean, Executor, OutputDescr,
-    PairOperation, Reducer, StatePackViewMut, TwoPointUnstructured, UnstructuredPoints,
+    Comp0Histogram,
+    Comp0Mean,
+    ComponentSumHistogram,
+    ComponentSumMean,
+    Executor,
+    OutputDescr,
+    PairOperation,
+    Reducer,
+    // todo: consider renaming RegularBinEdges so that its called LinearBinEdges?
+    RegularBinEdges,
+    StatePackViewMut,
+    TwoPointUnstructured,
+    UnstructuredPoints,
 };
 pub use parallel_serial::SerialExecutor;
 pub use reducers::{

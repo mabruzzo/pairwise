@@ -247,19 +247,21 @@ impl PartialEq for AccumulatorDescr {
 
 impl Eq for AccumulatorDescr {}
 
-// ugh... its inelegant that this is separate from BinEdgeSpec
 enum RawBinEdgeSpec {
-    Vec(Vec<f64>), // unvalidated
+    EdgeVec(Vec<f64>),  // unvalidated
+    Edge2Vec(Vec<f64>), // unvalidated
     Regular(RegularBinEdges),
+    Regular2(RegularBinEdges),
 }
 
 #[derive(Default)]
 pub struct AccumulatorBuilder {
     // ugh... its very inelegant that we aren't directly modifying a Config
-    // object! But, I think it's necessary given the way that
+    // object! But, I think it's necessary given that Config isn't meant to be
+    // partially initialized
     calc_kind: Option<String>,
     bucket_edges: Option<RawBinEdgeSpec>,
-    distance_sqr_bin_edges: Option<RawBinEdgeSpec>,
+    distance_bin_edges: Option<RawBinEdgeSpec>,
 }
 
 impl AccumulatorBuilder {
@@ -284,14 +286,20 @@ impl AccumulatorBuilder {
     ///
     /// Also need to think about the fact that we probably want to be able to
     /// compute variance in each case. That can probably be a separate argument
-    pub fn calc_kind(&mut self, calc_kind: String) -> &mut AccumulatorBuilder {
-        self.calc_kind = Some(calc_kind);
+    pub fn calc_kind(&mut self, calc_kind: &str) -> &mut AccumulatorBuilder {
+        self.calc_kind = Some(calc_kind.to_owned());
         self
     }
 
-    // todo: maybe we force people to specify a BinEdgeSpec instead?
-    pub fn irregular_hist_bucket_edges(&mut self, edges: &[f64]) -> &mut AccumulatorBuilder {
-        self.bucket_edges = Some(RawBinEdgeSpec::Vec(edges.to_vec()));
+    // todo: maybe we force people to specify a BinEdgeSpec instead of having
+    // 2 versions of this method?
+    // - I worry that won't be very ergonomic...
+    // - I don't think we can implement the `From` or `Into` traits to convert
+    //   an arbitrary slice to BinEdgeSpec since the conversion shouldn't be
+    //   allowed to fail. We could only do that with RawBinEdgeSpec, and I
+    //   don't want to expose that underlying type...
+    pub fn hist_bucket_edges(&mut self, edges: &[f64]) -> &mut AccumulatorBuilder {
+        self.bucket_edges = Some(RawBinEdgeSpec::EdgeVec(edges.to_vec()));
         self
     }
 
@@ -300,60 +308,96 @@ impl AccumulatorBuilder {
         self
     }
 
-    pub fn irregular_distance_squared_edges(&mut self, edges: &[f64]) -> &mut AccumulatorBuilder {
-        self.distance_sqr_bin_edges = Some(RawBinEdgeSpec::Vec(edges.to_vec()));
+    /// Specifies the squared distance bin edges for the calculation
+    ///
+    /// This overwrites any previously specified value (including values
+    /// specified with [`Self::dist_bin_edges`] or
+    /// [`Self::regular_dist2_bin_edges`])
+    pub fn dist2_bin_edges(&mut self, edges: &[f64]) -> &mut AccumulatorBuilder {
+        // do we really need this method?  (I think we can probably delete it...)
+        self.distance_bin_edges = Some(RawBinEdgeSpec::Edge2Vec(edges.to_vec()));
         self
     }
 
-    // do we really want this? (I think we can probably delete it...)
-    pub fn regular_distance_squared_edges(
+    /// Specifies the squared distance bin edges for the calculation
+    ///
+    /// This overwrites any previously specified value (including values
+    /// specified with [`Self::dist_bin_edges`] or [`Self::dist2_bin_edges`])
+    pub fn regular_distance2_bin_edges(
         &mut self,
         edges: RegularBinEdges,
     ) -> &mut AccumulatorBuilder {
-        self.distance_sqr_bin_edges = Some(RawBinEdgeSpec::Regular(edges));
+        // do we really want this method?
+        self.distance_bin_edges = Some(RawBinEdgeSpec::Regular2(edges));
+        self
+    }
+
+    /// Specifies the distance bin edges for the calculation
+    ///
+    /// This overwrites any previously specified value (including values
+    /// specified with [`Self::dist_bin_edges`] or
+    /// [`Self::regular_dist2_bin_edges`])
+    pub fn dist_bin_edges(&mut self, edges: &[f64]) -> &mut AccumulatorBuilder {
+        self.distance_bin_edges = Some(RawBinEdgeSpec::EdgeVec(Vec::from(edges)));
         self
     }
 
     pub fn build(&self) -> Result<Accumulator, Error> {
-        //todo!("not implemented yet!")
         let hist_reducer_bucket = match &self.bucket_edges {
-            Some(RawBinEdgeSpec::Regular(edges)) => Some(BinEdgeSpec::Regular(edges.clone())),
-            Some(RawBinEdgeSpec::Vec(v)) => Some(BinEdgeSpec::Vec(
+            Some(RawBinEdgeSpec::EdgeVec(v)) => Some(BinEdgeSpec::Vec(
                 ValidatedBinEdgeVec::new(v.clone())
                     .map_err(|err| Error::bin_edge("hist_bucket_edges".to_owned(), err))?,
             )),
+            Some(RawBinEdgeSpec::Regular(edges)) => Some(BinEdgeSpec::Regular(edges.clone())),
+            Some(_) => panic!("should be unreachable"),
             None => None,
         };
 
-        let squared_distance_bin_edges = match &self.distance_sqr_bin_edges {
-            Some(RawBinEdgeSpec::Regular(edges)) => BinEdgeSpec::Regular(edges.clone()),
-            Some(RawBinEdgeSpec::Vec(v)) => BinEdgeSpec::Vec(
+        let squared_distance_bin_edges = match &self.distance_bin_edges {
+            Some(RawBinEdgeSpec::EdgeVec(v)) => {
+                if v.iter().any(|x| *x < 0.0) {
+                    return Err(Error::bin_edge_custom(
+                        "distance_bin_edges",
+                        "contains negative value",
+                    ));
+                }
+                BinEdgeSpec::Vec(
+                    ValidatedBinEdgeVec::new(v.iter().map(|x| x * x).collect()).map_err(|err| {
+                        Error::bin_edge("distance_squared_bin_edges".to_owned(), err)
+                    })?,
+                )
+            }
+            Some(RawBinEdgeSpec::Edge2Vec(v)) => BinEdgeSpec::Vec(
                 ValidatedBinEdgeVec::new(v.clone())
                     .map_err(|err| Error::bin_edge("distance_squared_bin_edges".to_owned(), err))?,
             ),
+            Some(RawBinEdgeSpec::Regular(_)) => panic!("should be unreachable!"),
+            Some(RawBinEdgeSpec::Regular2(edges)) => BinEdgeSpec::Regular(edges.clone()),
             None => return Err(Error::distance_edge_presence()),
         };
 
         if squared_distance_bin_edges.leftmost_edge() < 0.0 {
             return Err(Error::bin_edge_custom(
-                "distance_squared_bin_edges".to_owned(),
-                "contains negative value".to_owned(),
+                "distance_squared_bin_edges",
+                "contains negative value",
             ));
         }
 
+        // it's more convenient to get the number of states, before we create
+        // the config instance
+        let n_state = squared_distance_bin_edges.n_bins();
+
         // construct the Config
-        let config = Config {
-            reducer_name: self.calc_kind.clone().unwrap(),
-            // TODO deal with me!
+        let config = Config::new(
+            self.calc_kind.clone().unwrap(),
             hist_reducer_bucket,
             squared_distance_bin_edges,
-        };
+        );
 
         let reducer = wrapped_reducer_from_config(&config)?;
         let descr = AccumulatorDescr { config, reducer };
 
         let state_size = descr.reducer.accum_state_size(&descr.config) as usize;
-        let n_state = descr.config.squared_distance_bin_edges.n_bins();
         let data = AccumulatorData {
             data: vec![0.0; state_size * n_state],
             n_state,

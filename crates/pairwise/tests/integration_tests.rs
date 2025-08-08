@@ -1,10 +1,10 @@
 mod common;
 
-use common::prepare_statepack;
+use common::{assert_consistent_results, prepare_statepack};
 use ndarray::ArrayView2;
 use pairwise::{
-    ComponentSumMean, EuclideanNormHistogram, EuclideanNormMean, PairOperation, StatePackViewMut,
-    UnstructuredPoints, apply_accum, get_output_from_statepack_array,
+    AccumulatorBuilder, EuclideanNormMean, PairOperation, StatePackViewMut, UnstructuredPoints,
+    apply_accum,
 };
 
 // Things are a little unergonomic!
@@ -12,25 +12,11 @@ use pairwise::{
 #[cfg(test)]
 mod tests {
 
+    use std::collections::HashMap;
+
     use pairwise_nostd_internal::IrregularBinEdges;
 
     use super::*;
-
-    // based on numpy!
-    // https://numpy.org/doc/stable/reference/generated/numpy.isclose.html
-    //
-    // I suspect we'll use this a lot! If we may want to define
-    // a `assert_isclose!` macro to provide a nice error message (or an
-    // `assert_allclose!` macro to operate upon arrays)
-    fn _isclose(actual: f64, ref_val: f64, rtol: f64, atol: f64) -> bool {
-        let actual_nan = actual.is_nan();
-        let ref_nan = ref_val.is_nan();
-        if actual_nan || ref_nan {
-            actual_nan && ref_nan
-        } else {
-            (actual - ref_val).abs() <= (atol + rtol * ref_val.abs())
-        }
-    }
 
     #[test]
     fn apply_accum_errors() {
@@ -104,78 +90,79 @@ mod tests {
         let positions: Vec<f64> = (6..24).map(|x| x as f64).collect();
         let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
 
-        // the bin edges are chosen so that some values don't fit
-        // inside the bottom bin
-        let distance_bin_edges: [f64; 4] = [2.0, 6., 10., 15.];
-        let squared_bin_edges = distance_bin_edges.map(|x| x.powi(2));
-        let squared_distance_bins = IrregularBinEdges::new(&squared_bin_edges).unwrap();
-
-        // check the means (using results computed by pyvsf)
-        let expected_mean = [8.41281820819169, 15.01110699893027, f64::NAN];
-        let expected_weight = [7., 3., 0.];
-        let mean_reducer = EuclideanNormMean::new();
-        let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
         let points = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
             ArrayView2::from_shape((3, 6), &values).unwrap(),
             None,
         )
         .unwrap();
-        let result = apply_accum(
-            &mut StatePackViewMut::from_array_view(mean_statepack.view_mut()),
-            &mean_reducer,
-            &points,
-            None,
-            &squared_distance_bins,
-            PairOperation::ElementwiseSub,
+
+        // the bin edges are chosen so that some values don't fit
+        // inside the bottom bin
+        let mut accumulator = AccumulatorBuilder::new()
+            .calc_kind("astro_sf1")
+            .dist_bin_edges(&[2.0, 6., 10., 15.])
+            .build()
+            .unwrap();
+
+        // the expected results were produced by pyvsf
+        let expected = HashMap::from([
+            ("weight", vec![7., 3., 0.]),
+            ("mean", vec![8.41281820819169, 15.01110699893027, f64::NAN]),
+        ]);
+        let rtol_atol_vals = HashMap::from([("weight", [0.0, 0.0]), ("mean", [3.0e-16, 0.0])]);
+
+        assert!(
+            accumulator
+                .collect_unstructured_contributions(points.clone(), None)
+                .is_ok()
         );
-        assert!(result.is_ok());
 
-        // output buffers
-        let mean_result_map =
-            get_output_from_statepack_array(&mean_reducer, &mean_statepack.view());
+        let mean_result_map = accumulator.get_output();
+        assert_consistent_results(&mean_result_map, &expected, &rtol_atol_vals);
+    }
 
-        for i in 0..n_spatial_bins {
-            // we might need to adopt an actual rtol
-            assert!(
-                _isclose(mean_result_map["mean"][i], expected_mean[i], 3.0e-16, 0.0),
-                "actual mean = {}, expected mean = {}",
-                mean_result_map["mean"][i],
-                expected_mean[i]
-            );
-            assert_eq!(
-                mean_result_map["weight"][i], expected_weight[i],
-                "unequal weights"
-            );
-        }
+    #[test]
+    fn test_apply_accum_auto_hist() {
+        // this is loosely based on some inputs from pyvsf:tests/test_vsf_props
 
-        // check the histograms (using results computed by pyvsf)
+        // keep in mind that we interpret positions as a (3, ...) array
+        // so position 0 is [6,12,18]
+        let positions: Vec<f64> = (6..24).map(|x| x as f64).collect();
+        let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
 
-        // the hist_buckets were picked such that:
-        // - the number of bins is unequal to the distance bin count
-        // - there would be a value smaller than the leftmost bin-edge
-        // - there would be a value larger than the leftmost bin-edge
-        let hist_buckets = IrregularBinEdges::new(&[6.0, 10.0, 14.0]).unwrap();
+        let points = UnstructuredPoints::new(
+            ArrayView2::from_shape((3, 6), &positions).unwrap(),
+            ArrayView2::from_shape((3, 6), &values).unwrap(),
+            None,
+        )
+        .unwrap();
+
+        let mut accumulator = AccumulatorBuilder::new()
+            .calc_kind("hist_astro_sf1")
+            // the bin edges are chosen so that some values don't fit
+            // inside the bottom bin
+            .dist_bin_edges(&[2.0, 6., 10., 15.])
+            // the hist_buckets were picked such that:
+            // - the number of bins is unequal to the distance bin count
+            // - there would be a value smaller than the leftmost bin-edge
+            // - there would be a value larger than the leftmost bin-edge
+            .hist_bucket_edges(&[6.0, 10.0, 14.0])
+            .build()
+            .unwrap();
 
         #[rustfmt::skip]
         let expected_hist_weights = [
             4., 0., 0.,
             3., 2., 0.,
         ];
-        let hist_reducer = EuclideanNormHistogram::from_bin_edges(hist_buckets);
-        let mut hist_statepack = prepare_statepack(distance_bin_edges.len() - 1, &hist_reducer);
-        let result = apply_accum(
-            &mut StatePackViewMut::from_array_view(hist_statepack.view_mut()),
-            &hist_reducer,
-            &points,
-            None,
-            &squared_distance_bins,
-            PairOperation::ElementwiseSub,
+        assert!(
+            accumulator
+                .collect_unstructured_contributions(points.clone(), None)
+                .is_ok()
         );
-        assert!(result.is_ok());
-        let hist_result_map =
-            get_output_from_statepack_array(&hist_reducer, &hist_statepack.view());
+        let hist_result_map = accumulator.get_output();
+        println!("{hist_result_map:#?}");
         for (i, expected) in expected_hist_weights.iter().enumerate() {
             assert_eq!(
                 hist_result_map["weight"][i], *expected,
@@ -224,41 +211,26 @@ mod tests {
         )
         .unwrap();
 
-        let distance_bin_edges: [f64; 3] = [17., 21., 25.];
-        let squared_bin_edges = distance_bin_edges.map(|x| x.powi(2));
-        let square_distance_bins = IrregularBinEdges::new(&squared_bin_edges).unwrap();
+        let mut accumulator = AccumulatorBuilder::new()
+            .calc_kind("astro_sf1")
+            .dist_bin_edges(&[17., 21., 25.])
+            .build()
+            .unwrap();
+        // I don't know if I like this... Instead, should we be passing
+        // &mut accumulator, and the other args to a standalone function?
+        let rslt = accumulator.collect_unstructured_contributions(points_a, Some(points_b));
+        assert!(rslt.is_ok());
 
-        // the expected results were printed by pyvsf
-        let expected_mean = [6.274664681905207, 6.068727871100932];
-        let expected_weight = [4., 6.];
+        let output = accumulator.get_output();
 
-        // perform the calculation!
-        let reducer = EuclideanNormMean::new();
-        let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut statepack = prepare_statepack(n_spatial_bins, &reducer);
+        // the expected results were produced by pyvsf
+        let expected = HashMap::from([
+            ("weight", vec![4., 6.]),
+            ("mean", vec![6.274664681905207, 6.068727871100932]),
+        ]);
+        let rtol_atol_vals = HashMap::from([("weight", [0.0, 0.0]), ("mean", [3.0e-16, 0.0])]);
 
-        let result = apply_accum(
-            &mut StatePackViewMut::from_array_view(statepack.view_mut()),
-            &reducer,
-            &points_a,
-            Some(&points_b),
-            &square_distance_bins,
-            PairOperation::ElementwiseSub,
-        );
-
-        assert!(result.is_ok());
-
-        let output = get_output_from_statepack_array(&reducer, &statepack.view());
-
-        for i in 0..n_spatial_bins {
-            assert!(
-                _isclose(output["mean"][i], expected_mean[i], 3.0e-16, 0.0),
-                "actual mean = {}, expected mean = {}",
-                output["mean"][i],
-                expected_mean[i]
-            );
-            assert_eq!(output["weight"][i], expected_weight[i], "unequal weights");
-        }
+        assert_consistent_results(&output, &expected, &rtol_atol_vals);
     }
 
     #[test]
@@ -268,47 +240,33 @@ mod tests {
         let positions: Vec<f64> = (6..24).map(|x| x as f64).collect();
         let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
 
-        // the bin edges are chosen so that some values don't fit
-        // inside the bottom bin
-        let distance_bin_edges: [f64; 4] = [2., 6., 10., 15.];
-        let squared_bin_edges = distance_bin_edges.map(|x| x.powi(2));
-        let squared_distance_bins = IrregularBinEdges::new(&squared_bin_edges).unwrap();
-
-        // check the means (using results computed by pyvsf)
-        let expected_mean = [284.57142857142856, 236.0, f64::NAN];
-        let expected_weight = [7., 3., 0.];
-        let mean_reducer = ComponentSumMean::new();
-        let n_spatial_bins = distance_bin_edges.len() - 1;
-        let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
-
         let points = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
             ArrayView2::from_shape((3, 6), &values).unwrap(),
             None,
         )
         .unwrap();
-        let result = apply_accum(
-            &mut StatePackViewMut::from_array_view(mean_statepack.view_mut()),
-            &mean_reducer,
-            &points,
-            None,
-            &squared_distance_bins,
-            PairOperation::ElementwiseMultiply,
-        );
 
-        assert!(result.is_ok());
+        let mut accumulator = AccumulatorBuilder::new()
+            .calc_kind("2pcf")
+            // the bin edges are chosen so that some values don't fit
+            // inside the bottom bin
+            .dist_bin_edges(&[2., 6., 10., 15.])
+            .build()
+            .unwrap();
+        // I don't know if I like this... Instead, should we be passing
+        // &mut accumulator, and the other args to a standalone function?
+        let rslt = accumulator.collect_unstructured_contributions(points, None);
+        assert!(rslt.is_ok());
 
-        let output = get_output_from_statepack_array(&mean_reducer, &mean_statepack.view());
+        let output = accumulator.get_output();
 
-        for i in 0..3 {
-            // we might need to adopt an actual rtol
-            assert!(
-                _isclose(output["mean"][i], expected_mean[i], 3.0e-16, 0.0),
-                "actual mean = {}, expected mean = {}",
-                output["mean"][i],
-                expected_mean[i]
-            );
-            assert_eq!(output["weight"][i], expected_weight[i], "unequal weights");
-        }
+        let expected = HashMap::from([
+            ("weight", vec![7., 3., 0.]),
+            ("mean", vec![284.57142857142856, 236.0, f64::NAN]),
+        ]);
+        let rtol_atol_vals = HashMap::from([("weight", [0.0, 0.0]), ("mean", [3.0e-16, 0.0])]);
+
+        assert_consistent_results(&output, &expected, &rtol_atol_vals);
     }
 }
