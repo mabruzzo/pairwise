@@ -239,7 +239,6 @@ these categories _"Nested"_ and _"Batched"_.
 #![cfg_attr(not(test), no_std)] // (we allow std for testing)
 #![deny(rustdoc::broken_intra_doc_links)]
 
-mod apply_points;
 mod bins;
 mod misc;
 mod parallel;
@@ -252,14 +251,19 @@ mod twopoint;
 // we expose it to support testing...
 pub mod reduce_sample;
 
-pub use apply_points::{PointProps, apply_accum};
 pub use bins::*;
-pub use misc::{dot_product, squared_diff_norm};
 pub use parallel::{
-    BinnedDatum, Executor, MemberID, ReductionSpec, StandardTeamParam, Team,
+    BinnedDatum, Executor, ReductionSpec, StandardTeamParam, Team,
     fill_single_team_binned_statepack,
 };
 pub use reduce_utils::reset_full_statepack;
-pub use reducer::{Datum, Histogram, Mean, OutputDescr, Reducer};
+pub use reducer::{
+    Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean, Datum, OutputDescr,
+    Reducer, ScalarHistogram, ScalarMean, ScalarizeOp,
+};
 pub use state::{AccumStateView, AccumStateViewMut, StatePackViewMut};
-pub use twopoint::spatial::{CartesianBlock, CellWidth};
+pub use twopoint::{
+    common::PairOperation,
+    spatial::{CartesianBlock, CellWidth},
+    unstructured::{TwoPointUnstructured, UnstructuredPoints},
+};

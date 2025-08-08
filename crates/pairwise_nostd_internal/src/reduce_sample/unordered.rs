@@ -1,14 +1,13 @@
 // this file is intended for illustrative purposes
 // see module-level documentation for chunked.rs for more detail
 
-use crate::MemberID;
 use crate::misc::segment_idx_bounds;
 use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, Team};
 use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
 use crate::reduce_utils::{
     merge_full_statepacks, reset_full_statepack, serial_consolidate_scratch_statepacks,
 };
-use crate::reducer::{Datum, Mean, Reducer};
+use crate::reducer::{Comp0Mean, Datum, Reducer};
 use crate::state::StatePackViewMut;
 
 // Version 0: our simple naive implementation
@@ -36,7 +35,7 @@ pub fn naive_mean_unordered(
 pub fn reducer_mean_unordered(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
-    reducer: &Mean,
+    reducer: &Comp0Mean,
     binned_statepack: &mut StatePackViewMut,
 ) {
     assert_eq!(reducer.accum_state_size(), binned_statepack.state_size());
@@ -44,10 +43,7 @@ pub fn reducer_mean_unordered(
 
     for i in 0..stream.len() {
         let bin_index = stream.bin_indices[i];
-        let datum = Datum {
-            value: f.call(stream.x_array[i]),
-            weight: stream.weights[i],
-        };
+        let datum = Datum::from_scalar_value(f.call(stream.x_array[i]), stream.weights[i]);
         if bin_index < n_bins {
             reducer.consume(&mut binned_statepack.get_state_mut(bin_index), &datum);
         }
@@ -101,7 +97,7 @@ pub fn reducer_mean_unordered(
 pub fn restructured1_mean_unordered(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
-    reducer: &Mean,
+    reducer: &Comp0Mean,
     binned_statepack: &mut StatePackViewMut,
     collect_pad: &mut [BinnedDatum],
     start_stop_idx: Option<(usize, usize)>,
@@ -131,10 +127,7 @@ pub fn restructured1_mean_unordered(
             } else {
                 BinnedDatum {
                     bin_index: stream.bin_indices[i],
-                    datum: Datum {
-                        value: f.call(stream.x_array[i]),
-                        weight: stream.weights[i],
-                    },
+                    datum: Datum::from_scalar_value(f.call(stream.x_array[i]), stream.weights[i]),
                 }
             };
         }
@@ -166,7 +159,7 @@ pub fn restructured1_mean_unordered(
 pub fn restructured2_mean_unordered(
     stream: &SampleDataStreamView,
     f: QuadraticPolynomial,
-    reducer: &Mean,
+    reducer: &Comp0Mean,
     binned_statepack: &mut StatePackViewMut,
     scratch_binned_statepacks: &mut [StatePackViewMut],
     collect_pad: &mut [BinnedDatum],
@@ -214,7 +207,7 @@ pub fn restructured2_mean_unordered(
 pub struct MeanUnorderedReduction<'a> {
     stream: SampleDataStreamView<'a>,
     f: QuadraticPolynomial,
-    reducer: Mean,
+    reducer: Comp0Mean,
     n_bins: usize,
 }
 
@@ -222,7 +215,7 @@ impl<'a> MeanUnorderedReduction<'a> {
     pub fn new(
         stream: SampleDataStreamView<'a>,
         f: QuadraticPolynomial,
-        reducer: Mean,
+        reducer: Comp0Mean,
         n_bins: usize,
     ) -> Self {
         Self {
@@ -235,7 +228,7 @@ impl<'a> MeanUnorderedReduction<'a> {
 }
 
 impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
-    type ReducerType = Mean;
+    type ReducerType = Comp0Mean;
 
     fn get_reducer(&self) -> &Self::ReducerType {
         &self.reducer
@@ -278,8 +271,8 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
             team.collect_pairs_then_apply(
                 binned_statepack,
                 self.get_reducer(),
-                &|collect_pad: &mut [BinnedDatum], member_id: MemberID| {
-                    assert_eq!(member_id.0, 0); // sanity check
+                &|collect_pad: &mut [BinnedDatum], member_id: usize| {
+                    assert_eq!(member_id, 0); // sanity check
                     assert_eq!(collect_pad.len(), team_param.n_members_per_team); // sanity check!
                     // we would need to do a lot of work to get this to
                     // auto-vectorize
@@ -298,10 +291,10 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
                         } else {
                             BinnedDatum {
                                 bin_index: self.stream.bin_indices[i],
-                                datum: Datum {
-                                    value: self.f.call(self.stream.x_array[i]),
-                                    weight: self.stream.weights[i],
-                                },
+                                datum: Datum::from_scalar_value(
+                                    self.f.call(self.stream.x_array[i]),
+                                    self.stream.weights[i],
+                                ),
                             }
                         };
                     }
@@ -311,18 +304,18 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
             team.collect_pairs_then_apply(
                 binned_statepack,
                 self.get_reducer(),
-                &|collect_pad: &mut [BinnedDatum], member_id: MemberID| {
+                &|collect_pad: &mut [BinnedDatum], member_id: usize| {
                     assert_eq!(collect_pad.len(), 1); // sanity check!
-                    let i = i_offset + member_id.0;
+                    let i = i_offset + member_id;
                     collect_pad[0] = if i >= stream_len {
                         BinnedDatum::zeroed()
                     } else {
                         BinnedDatum {
                             bin_index: self.stream.bin_indices[i],
-                            datum: Datum {
-                                value: self.f.call(self.stream.x_array[i]),
-                                weight: self.stream.weights[i],
-                            },
+                            datum: Datum::from_scalar_value(
+                                self.f.call(self.stream.x_array[i]),
+                                self.stream.weights[i],
+                            ),
                         }
                     };
                 },
