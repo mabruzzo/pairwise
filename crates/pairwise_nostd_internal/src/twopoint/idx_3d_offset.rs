@@ -328,7 +328,7 @@ impl Idx3DOffsetSeq {
 
     /// construct the sequence of all [`Idx3DOffset`] instances that describe
     /// every unique pair of measurements from a single [`CartesianBlock`]
-    pub(crate) fn new_auto(block: &CartesianBlock) -> Result<Self, &'static str> {
+    pub fn new_auto(block: &CartesianBlock) -> Result<Self, &'static str> {
         // construct bounds and mapping_props as if we had 2 cartesian blocks
         // with the same shape
         let (bounds, mapping_props) = Self::setup_bounds_and_viewspec(block, block)?;
@@ -355,7 +355,7 @@ impl Idx3DOffsetSeq {
 
     /// construct the sequence of all [`Idx3DOffset`] instances that describe
     /// every unique pair of measurements from 2 [`CartesianBlock`]s
-    pub(crate) fn new_cross(
+    pub fn new_cross(
         block_a: &CartesianBlock,
         block_b: &CartesianBlock,
     ) -> Result<Self, &'static str> {
@@ -378,7 +378,7 @@ impl Idx3DOffsetSeq {
     }
 
     /// get the number of elements in the sequence
-    pub(crate) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.mapping_props.n_elements() - self.internal_arr_offset
     }
 
@@ -389,7 +389,7 @@ impl Idx3DOffsetSeq {
     /// `obj[idx]`). The function used for indexing expects must return a
     /// reference. While this makes a lot of sense for a container, it
     /// doesn't make a ton of sense for a range-like object
-    pub(crate) fn get(&self, index: usize) -> Idx3DOffset {
+    pub fn get(&self, index: usize) -> Idx3DOffset {
         let [iz, iy, ix] = self
             .mapping_props
             .map_idx1d_to_3d((index + self.internal_arr_offset) as isize);
