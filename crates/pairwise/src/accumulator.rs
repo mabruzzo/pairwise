@@ -89,9 +89,7 @@ use crate::{
 };
 use std::collections::HashMap;
 
-use pairwise_nostd_internal::{
-    RegularBinEdges, StatePackView, StatePackViewMut, UnstructuredPoints,
-};
+use pairwise_nostd_internal::{RegularBinEdges, StatePackView, StatePackViewMut};
 
 // current design:
 // -> we have an `Accumulator`, which is composed of an `AccumulatorDescr` &
@@ -159,16 +157,27 @@ impl Accumulator {
 
 // this is the logic that actually executes the reductions
 impl Accumulator {
-    // a compelling case could be made that this should be a standalone fn
-    pub fn collect_unstructured_contributions<'a>(
+    /// Executes the reduction on the supplied spatial data and updates
+    /// binned_statepack accordingly.
+    ///
+    /// # Extra Arguments
+    /// We will definitely need to accept more arguments in the future
+    /// (e.g. to control parallelism)
+    ///
+    /// # Why this exists?
+    /// At a high-level, one might ask why does this exist? The full reduction
+    /// has multiple inputs and it doesn't really seem like it should be a
+    /// method of the accumulator... The short answer: "because it has to."
+    ///
+    /// In slightly more detail, the full reduction uses generics to
+    /// specialize (for optimization purposes) the calculation. Recall that
+    /// this effectively "erases" the reducer types by wrapping them in
+    /// trait objects. To call the full reduction we need to "unerase" the
+    /// reducer; the only way to do that is in a method of the trait object.
+    pub(crate) fn exec_reduction<'a>(
         &mut self,
-        points_a: UnstructuredPoints<'a>,
-        points_b: Option<UnstructuredPoints<'a>>,
+        spatial_info: SpatialInfo<'a>,
     ) -> Result<(), Error> {
-        self.launch_reduction_helper(SpatialInfo::Unstructured { points_a, points_b })
-    }
-
-    fn launch_reduction_helper<'a>(&mut self, spatial_info: SpatialInfo<'a>) -> Result<(), Error> {
         self.descr.reducer.exec_reduction(
             &mut self.data.mut_view(),
             spatial_info,
@@ -323,10 +332,7 @@ impl AccumulatorBuilder {
     ///
     /// This overwrites any previously specified value (including values
     /// specified with [`Self::dist_bin_edges`] or [`Self::dist2_bin_edges`])
-    pub fn regular_distance2_bin_edges(
-        &mut self,
-        edges: RegularBinEdges,
-    ) -> &mut AccumulatorBuilder {
+    pub fn regular_dist2_bin_edges(&mut self, edges: RegularBinEdges) -> &mut AccumulatorBuilder {
         // do we really want this method?
         self.distance_bin_edges = Some(RawBinEdgeSpec::Regular2(edges));
         self
@@ -406,5 +412,41 @@ impl AccumulatorBuilder {
         let mut out = Accumulator { data, descr };
         out.reset_data();
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_is_err_contains<T, E: std::error::Error>(rslt: &Result<T, E>, text: &str) {
+        let Err(e) = rslt else {
+            panic!("result is not an error");
+        };
+        let err_string = e.to_string();
+        if !err_string.contains(text) {
+            panic!(
+                "error doesn't expand to message containing \"{text}\". The \
+                message reads:\n> {err_string}",
+            );
+        }
+    }
+
+    #[test]
+    fn valid_name() {
+        let rslt = AccumulatorBuilder::new()
+            .calc_kind("2pcf")
+            .dist_bin_edges(&[0.0, 1.0])
+            .build();
+        assert!(rslt.is_ok());
+    }
+
+    #[test]
+    fn builder_invalid_name() {
+        let rslt = AccumulatorBuilder::new()
+            .calc_kind("unknown-string")
+            .dist_bin_edges(&[0.0, 1.0])
+            .build();
+        assert_is_err_contains(&rslt, "not a reducer name");
     }
 }

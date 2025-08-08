@@ -1,85 +1,15 @@
 mod common;
 
-use common::{assert_consistent_results, prepare_statepack};
+use common::assert_consistent_results;
 use ndarray::ArrayView2;
-use pairwise::{
-    AccumulatorBuilder, EuclideanNormMean, PairOperation, StatePackViewMut, UnstructuredPoints,
-    apply_accum,
-};
+use pairwise::{AccumulatorBuilder, RuntimeSpec, UnstructuredPoints, process_unstructured};
+use std::collections::HashMap;
 
-// Things are a little unergonomic!
-
+// todo: we can get rid of the test module in integration tests
 #[cfg(test)]
 mod tests {
 
-    use std::collections::HashMap;
-
-    use pairwise_nostd_internal::IrregularBinEdges;
-
     use super::*;
-
-    #[test]
-    fn apply_accum_errors() {
-        #[rustfmt::skip]
-        let positions = [
-             6.0,  7.0,
-            12.0, 13.0,
-            18.0, 19.0
-        ];
-
-        #[rustfmt::skip]
-        let values = [
-            -9., -8.,
-            -3., -2.,
-             3.,  4.
-        ];
-
-        let squared_distance_bin_edges = [0.0, 1.0, 9.0, 16.0];
-        let squared_distance_bins = IrregularBinEdges::new(&squared_distance_bin_edges).unwrap();
-        let reducer = EuclideanNormMean::new();
-        let mut statepack = prepare_statepack(squared_distance_bin_edges.len(), &reducer);
-        let points = UnstructuredPoints::new(
-            ArrayView2::from_shape((3, 2), &positions).unwrap(),
-            ArrayView2::from_shape((3, 2), &values).unwrap(),
-            None,
-        )
-        .unwrap();
-
-        // should fail for mismatched spatial dimensions
-        let points_b = UnstructuredPoints::new(
-            ArrayView2::from_shape((2, 3), &positions).unwrap(),
-            ArrayView2::from_shape((2, 3), &values).unwrap(),
-            None,
-        )
-        .unwrap();
-        let result = apply_accum(
-            &mut StatePackViewMut::from_array_view(statepack.view_mut()),
-            &reducer,
-            &points,
-            Some(&points_b),
-            &squared_distance_bins,
-            PairOperation::ElementwiseSub,
-        );
-        assert!(result.is_err());
-
-        // should fail if 1 points object provides weights an the other doesn't
-        let weights = [1.0, 0.0];
-        let points_b = UnstructuredPoints::new(
-            ArrayView2::from_shape((3, 2), &positions).unwrap(),
-            ArrayView2::from_shape((3, 2), &values).unwrap(),
-            Some(&weights),
-        )
-        .unwrap();
-        let result = apply_accum(
-            &mut StatePackViewMut::from_array_view(statepack.view_mut()),
-            &reducer,
-            &points,
-            Some(&points_b),
-            &squared_distance_bins,
-            PairOperation::ElementwiseSub,
-        );
-        assert!(result.is_err());
-    }
 
     #[test]
     fn test_apply_accum_auto() {
@@ -104,6 +34,7 @@ mod tests {
             .dist_bin_edges(&[2.0, 6., 10., 15.])
             .build()
             .unwrap();
+        assert!(process_unstructured(&mut accumulator, points, None, &RuntimeSpec).is_ok());
 
         // the expected results were produced by pyvsf
         let expected = HashMap::from([
@@ -111,15 +42,7 @@ mod tests {
             ("mean", vec![8.41281820819169, 15.01110699893027, f64::NAN]),
         ]);
         let rtol_atol_vals = HashMap::from([("weight", [0.0, 0.0]), ("mean", [3.0e-16, 0.0])]);
-
-        assert!(
-            accumulator
-                .collect_unstructured_contributions(points.clone(), None)
-                .is_ok()
-        );
-
-        let mean_result_map = accumulator.get_output();
-        assert_consistent_results(&mean_result_map, &expected, &rtol_atol_vals);
+        assert_consistent_results(&accumulator.get_output(), &expected, &rtol_atol_vals);
     }
 
     #[test]
@@ -156,11 +79,8 @@ mod tests {
             4., 0., 0.,
             3., 2., 0.,
         ];
-        assert!(
-            accumulator
-                .collect_unstructured_contributions(points.clone(), None)
-                .is_ok()
-        );
+
+        assert!(process_unstructured(&mut accumulator, points.clone(), None, &RuntimeSpec).is_ok());
         let hist_result_map = accumulator.get_output();
         println!("{hist_result_map:#?}");
         for (i, expected) in expected_hist_weights.iter().enumerate() {
@@ -216,12 +136,9 @@ mod tests {
             .dist_bin_edges(&[17., 21., 25.])
             .build()
             .unwrap();
-        // I don't know if I like this... Instead, should we be passing
-        // &mut accumulator, and the other args to a standalone function?
-        let rslt = accumulator.collect_unstructured_contributions(points_a, Some(points_b));
-        assert!(rslt.is_ok());
-
-        let output = accumulator.get_output();
+        assert!(
+            process_unstructured(&mut accumulator, points_a, Some(points_b), &RuntimeSpec).is_ok()
+        );
 
         // the expected results were produced by pyvsf
         let expected = HashMap::from([
@@ -230,7 +147,7 @@ mod tests {
         ]);
         let rtol_atol_vals = HashMap::from([("weight", [0.0, 0.0]), ("mean", [3.0e-16, 0.0])]);
 
-        assert_consistent_results(&output, &expected, &rtol_atol_vals);
+        assert_consistent_results(&accumulator.get_output(), &expected, &rtol_atol_vals);
     }
 
     #[test]
@@ -254,12 +171,7 @@ mod tests {
             .dist_bin_edges(&[2., 6., 10., 15.])
             .build()
             .unwrap();
-        // I don't know if I like this... Instead, should we be passing
-        // &mut accumulator, and the other args to a standalone function?
-        let rslt = accumulator.collect_unstructured_contributions(points, None);
-        assert!(rslt.is_ok());
-
-        let output = accumulator.get_output();
+        assert!(process_unstructured(&mut accumulator, points, None, &RuntimeSpec).is_ok());
 
         let expected = HashMap::from([
             ("weight", vec![7., 3., 0.]),
@@ -267,6 +179,6 @@ mod tests {
         ]);
         let rtol_atol_vals = HashMap::from([("weight", [0.0, 0.0]), ("mean", [3.0e-16, 0.0])]);
 
-        assert_consistent_results(&output, &expected, &rtol_atol_vals);
+        assert_consistent_results(&accumulator.get_output(), &expected, &rtol_atol_vals);
     }
 }

@@ -39,14 +39,18 @@ See the crate-level documentation for [`pairwise_nostd_internal`].
 mod accumulator;
 mod apply;
 mod error;
+mod func;
 mod parallel_serial;
 mod reducers;
 mod wrapped_reducer;
+
+// todo: cleanup the types that we are exposing!
 
 // pull in symbols that visible outside of the package
 pub use accumulator::{Accumulator, AccumulatorBuilder};
 pub use apply::apply_accum;
 pub use error::Error;
+pub use func::{RuntimeSpec, process_unstructured};
 pub use pairwise_nostd_internal::{
     Comp0Histogram,
     Comp0Mean,
