@@ -1,7 +1,7 @@
 //! Implements the "serial" backend for running thread teams
 use crate::Error;
 use pairwise_nostd_internal::{
-    BinnedDatum, MemberID, Reducer, ReductionSpec, StandardTeamParam, StatePackViewMut, Team,
+    BinnedDatum, Reducer, ReductionSpec, StandardTeamParam, StatePackViewMut, Team,
     fill_single_team_binned_statepack,
 };
 use std::num::NonZeroU32;
@@ -41,7 +41,7 @@ impl Team for SerialTeam {
         binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         reducer: &impl Reducer,
         bin_index: usize,
-        get_member_contrib: &impl Fn(&mut StatePackViewMut, MemberID),
+        get_member_contrib: &impl Fn(&mut StatePackViewMut, usize),
     ) {
         let n_members = 1;
         let accum_state_size = reducer.accum_state_size();
@@ -63,7 +63,7 @@ impl Team for SerialTeam {
         // (obviously this is a no-op for a serial implementation)
 
         // step 1: each team member calls the get_member_contrib closure
-        get_member_contrib(&mut tmp_statepack, MemberID(0_usize));
+        get_member_contrib(&mut tmp_statepack, 0_usize);
 
         // step 2: perform a local reduction among all the team members
         if n_members == 1 {
@@ -87,7 +87,7 @@ impl Team for SerialTeam {
         &mut self,
         binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         reducer: &impl Reducer,
-        get_datum_bin_pair: &impl Fn(&mut [BinnedDatum], MemberID),
+        get_datum_bin_pair: &impl Fn(&mut [BinnedDatum], usize),
     ) {
         // step 0: apply a barrier
         // (obviously this is a no-op for a serial implementation)
@@ -96,7 +96,7 @@ impl Team for SerialTeam {
         let mut collect_pad = [BinnedDatum::zeroed()];
 
         // step 1: each team member calls the get_datum_bin_pair closure
-        get_datum_bin_pair(&mut collect_pad, MemberID(0_usize));
+        get_datum_bin_pair(&mut collect_pad, 0_usize);
 
         // step 2: gather the datum-bin pairs into the memory of a single
         //         team member

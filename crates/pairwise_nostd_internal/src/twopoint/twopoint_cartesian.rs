@@ -1,6 +1,6 @@
 use crate::bins::BinEdges;
 use crate::misc::segment_idx_bounds;
-use crate::parallel::{MemberID, ReductionSpec, StandardTeamParam, Team};
+use crate::parallel::{ReductionSpec, StandardTeamParam, Team};
 use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
 use crate::twopoint::{
@@ -170,13 +170,13 @@ fn perform_reduce<const SUBTRACT: bool, T: Team>(
             // (things need to be a little different to support SIMD)
             panic!("can't handle this case! (yet)");
         }
-        let f = |tmp_accum_states: &mut StatePackViewMut, member_id: MemberID| {
+        let f = |tmp_accum_states: &mut StatePackViewMut, member_id: usize| {
             // prepare the tmp_accum_state where the member adds contributions
             debug_assert_eq!(tmp_accum_states.n_states(), 1); // sanity check!
             let mut tmp_accum_state = tmp_accum_states.get_state_mut(0);
 
             // determine the i indices that the current member considers
-            let adjusted_i_start = i_start + (member_id.0 as isize);
+            let adjusted_i_start = i_start + (member_id as isize);
             let i_step = team_info.n_members_per_team;
 
             // the current loop structure is a little inefficient. Currently

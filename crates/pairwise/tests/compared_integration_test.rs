@@ -1,8 +1,7 @@
 use ndarray::{Array2, ArrayView2, Axis};
 use pairwise::{
-    CartesianBlock, CellWidth, Comp0Mean, ComponentSumMean, IrregularBinEdges, PairOperation,
-    PointProps, StatePackViewMut, View3DSpec, apply_accum, apply_cartesian, dot_product,
-    get_output,
+    CartesianBlock, CellWidth, ComponentSumMean, IrregularBinEdges, PairOperation,
+    StatePackViewMut, UnstructuredPoints, View3DSpec, apply_accum, apply_cartesian, get_output,
 };
 use pairwise_nostd_internal::BinEdges;
 use std::collections::HashMap;
@@ -21,14 +20,14 @@ mod common;
 // to consider adding that to the main API -- there are some clear use-cases)
 
 // this is to be used to compare operations with CartesianBlock and
-// PointProps
+// UnstructuredPoints
 pub struct TestScenario {
     // for use with Cartesian_Grid
     cartesian_values_zyx: [Vec<f64>; 3],
     cartesian_weights: Vec<f64>,
     idx_props: View3DSpec,
     cell_widths: [f64; 3],
-    // for use with PointProps
+    // for use with UnstructuredPoints
     position_list: Array2<f64>,
     value_list: Array2<f64>,
     weight_list: Vec<f64>,
@@ -96,7 +95,7 @@ impl TestScenario {
              cartesian_weights,
              idx_props,
              cell_widths,
-             // for use with PointProps
+             // for use with UnstructuredPoints
              position_list,
              value_list,
              weight_list,
@@ -164,15 +163,15 @@ impl TestScenario {
             cartesian_weights,
             idx_props,
             cell_widths: [1.0, 1.0, 1.0],
-            // for use with PointProps
+            // for use with UnstructuredPoints
             position_list: positions.mapv(f64::from),
             value_list: values.to_owned(),
             weight_list,
         }
     }
 
-    pub fn point_props<'a>(&'a self) -> PointProps<'a> {
-        PointProps::new(
+    pub fn point_props<'a>(&'a self) -> UnstructuredPoints<'a> {
+        UnstructuredPoints::new(
             self.position_list.view(),
             self.value_list.view(),
             Some(&self.weight_list),
@@ -198,28 +197,6 @@ impl TestScenario {
         CellWidth::new(self.cell_widths).unwrap()
     }
 }
-
-/// exists for testing purposes!
-struct DistBinEdges {
-    bin_edges: Vec<f64>,
-    bin_edges_sqr: Vec<f64>,
-}
-
-impl DistBinEdges {
-    fn new(vals: &[f64]) -> Self {
-        DistBinEdges {
-            bin_edges: vals.to_vec(),
-            bin_edges_sqr: vals.iter().map(|x| x.powi(2)).collect(),
-        }
-    }
-
-    fn bin_edge_sqr(&'_ self) -> IrregularBinEdges<'_> {
-        IrregularBinEdges::new(&self.bin_edges_sqr).unwrap()
-    }
-}
-
-// compute the "astronomer's first-order structure function"
-fn astro_sf1(data_a: &TestScenario, data_b: Option<&TestScenario>) {}
 
 #[test]
 fn test_apply_accum_auto_corr() {
@@ -254,24 +231,19 @@ fn test_apply_accum_auto_corr() {
         let mut binned_statepack =
             StatePackViewMut::from_array_view(binned_statepack_buf.view_mut());
 
-        let output = if use_points {
-            // HACK: apply_accum hasn't been adapted to use ComponentSumMean, quite yet
-            let reducer_override = Comp0Mean::new();
-
+        let rslt = if use_points {
             let points = scenario.point_props();
-            let rslt = apply_accum(
+            apply_accum(
                 &mut binned_statepack,
-                &reducer_override,
+                &reducer,
                 &points,
                 None,
                 &squared_distance_bin_edges,
-                &dot_product,
-            );
-            assert!(rslt.is_ok(), "point_props case failed!");
-            get_output(&reducer_override, &binned_statepack)
+                PairOperation::ElementwiseMultiply,
+            )
         } else {
             let block = scenario.cartesian_block();
-            let rslt = apply_cartesian(
+            apply_cartesian(
                 &mut binned_statepack,
                 &reducer,
                 &block,
@@ -279,11 +251,10 @@ fn test_apply_accum_auto_corr() {
                 &scenario.cell_width(),
                 &squared_distance_bin_edges,
                 PairOperation::ElementwiseMultiply,
-            );
-            assert!(rslt.is_ok());
-
-            get_output(&reducer, &binned_statepack)
+            )
         };
+        assert!(rslt.is_ok());
+        let output = get_output(&reducer, &binned_statepack);
 
         println!("{:#?}", output);
 

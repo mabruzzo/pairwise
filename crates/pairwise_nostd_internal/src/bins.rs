@@ -23,22 +23,40 @@ pub struct RegularBinEdges {
 impl RegularBinEdges {
     /// Note that we initialize with num_bins rather than bin_size
     pub fn new(min: f64, max: f64, n_bins: usize) -> Result<Self, &'static str> {
+        let diff = max - min;
+        let bin_size = diff / (n_bins as f64);
         if n_bins == 0 {
             Err("Number of bins must be greater than zero")
         } else if max <= min {
             Err("Maximum value must be greater than minimum value")
-        } else if !min.is_finite() || !max.is_finite() {
+        } else if !diff.is_finite() {
+            // also catches pathological case: (max - min) > f64::MAX
             Err("Min and max values must be finite")
+        } else if bin_size == 0.0 {
+            // (diff / n_bins) < f64::MIN
+            Err("received pathological values")
         } else {
             Ok(Self {
                 min,
                 max,
-                bin_size: (max - min) / n_bins as f64,
+                bin_size,
                 n_bins,
             })
         }
     }
 }
+
+// we can't derive `Eq` for RegularBinEdges because f64 doesn't implement the
+// trait (since `NaN`!=`NaN`). Because we confirmed in the constructor that
+// both min and max are finite, we can manually implement the trait
+impl PartialEq for RegularBinEdges {
+    fn eq(&self, other: &Self) -> bool {
+        // we can skip over bin_size since it is derived from the other parameters
+        (self.min == other.min) && (self.max == other.max) && (self.n_bins == other.n_bins)
+    }
+}
+
+impl Eq for RegularBinEdges {}
 
 impl BinEdges for RegularBinEdges {
     fn bin_index(&self, value: f64) -> Option<usize> {
@@ -57,6 +75,25 @@ impl BinEdges for RegularBinEdges {
     }
 }
 
+pub fn validate_bin_edges(edges: &[f64]) -> Result<(), &'static str> {
+    if edges.len() < 2 {
+        Err("A minimum of two bin edges are required")
+    } else if edges.iter().any(|&x| !x.is_finite()) {
+        // Check that all bin_edges are finite
+        // It may be worth supporting -inf and +inf as first and last bin edges
+        Err("Bin edges must be finite")
+    } else if edges
+        .iter()
+        .zip(edges.iter().skip(1))
+        .any(|(&left, &right)| right <= left)
+    {
+        // Check if bin_edges are in strictly increasing order
+        Err("Bin edges must be in strictly increasing order")
+    } else {
+        Ok(())
+    }
+}
+
 #[derive(Clone)]
 pub struct IrregularBinEdges<'a> {
     bin_edges: &'a [f64],
@@ -64,24 +101,7 @@ pub struct IrregularBinEdges<'a> {
 
 impl<'a> IrregularBinEdges<'_> {
     pub fn new(bin_edges: &'a [f64]) -> Result<IrregularBinEdges<'a>, &'static str> {
-        if bin_edges.len() < 2 {
-            return Err("A minimum of two bin edges are required");
-        }
-
-        // Check that all bin_edges are finite
-        // It may be worth supporting -inf and +inf as first and last bin edges
-
-        if bin_edges.iter().any(|&x| !x.is_finite()) {
-            return Err("Bin edges must be finite");
-        }
-
-        // Check if bin_edges are in strictly increasing order
-        for i in 1..bin_edges.len() {
-            if bin_edges[i] <= bin_edges[i - 1] {
-                return Err("Bin edges must be in strictly increasing order");
-            }
-        }
-
+        validate_bin_edges(bin_edges)?;
         Ok(IrregularBinEdges { bin_edges })
     }
 }

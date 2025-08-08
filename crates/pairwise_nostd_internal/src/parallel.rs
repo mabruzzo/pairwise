@@ -6,8 +6,6 @@ use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
 use core::num::NonZeroU32;
 
-pub struct MemberID(pub usize);
-
 /// This struct holds standardized parameters that describe Team parallelism.
 /// Different backends will obviously require extra parameters.
 ///
@@ -104,8 +102,8 @@ pub trait Team {
     /// 1. Team members collectively call the `get_member_contrib` closure.
     ///    Each member records the contributions from the call in a distinct
     ///    `accum_state` (NOT binned_statepack, which is untouched).
-    ///    `accum_state` is passed into `get_member_contrib` within a
-    ///    [`StatePackViewMut`] type.
+    ///    The arguments of `get_member_contrib` are the `accum_state` (as
+    ///    [`StatePackViewMut`]) and the member id.
     /// 2. Combines the contributions from each member (in a "nested
     ///    reduction") so a single member holds the total contribution.
     /// 3. This member updates `accum_state` stored at `bin_index` in
@@ -115,13 +113,13 @@ pub trait Team {
         binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         reducer: &impl Reducer,
         bin_index: usize,
-        get_member_contrib: &impl Fn(&mut StatePackViewMut, MemberID),
+        get_member_contrib: &impl Fn(&mut StatePackViewMut, usize),
     );
 
     /// Ensures all team members are synchronized, then does 3 things:
-    /// 1. each team member calls the `get_datum_bin_pair` closure. Each member
-    ///    computes and records a [`BinnedDatum`] instance to memory provided by
-    ///    `&mut self`.
+    /// 1. each team member calls the `get_datum_bin_pair` closure, which takes
+    ///    a mutable reference to an `&mut [BinnedDatum]` (to which it writes),
+    ///    the member id.
     /// 2. gathers the recorded [`BinnedDatum`] instances into memory accessible
     ///    by one of the team members
     /// 3. that team member uses the batch of [`BinnedDatum`] instances to
@@ -130,7 +128,7 @@ pub trait Team {
         &mut self,
         binned_statepack: &mut Self::SharedDataHandle<StatePackViewMut>,
         reducer: &impl Reducer,
-        get_datum_bin_pair: &impl Fn(&mut [BinnedDatum], MemberID),
+        get_datum_bin_pair: &impl Fn(&mut [BinnedDatum], usize),
     );
 }
 
@@ -212,8 +210,8 @@ pub trait ReductionSpec {
     /// # Note
     /// we will eventually be able to remove this method. It is totally
     /// unnecessary in the vast majority of cases. It **only** exists to make
-    /// it easier to port over the [`crate::apply_accum`] function for
-    /// [`crate::PointProps`]
+    /// it easier to port over the `pairwise::apply_accum` function for
+    /// [`crate::UnstructuredPoints`]
     #[inline(always)]
     fn outer_team_loop_bounds(
         &self,

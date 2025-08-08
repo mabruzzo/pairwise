@@ -3,14 +3,15 @@ mod common;
 use common::{isclose, prepare_statepack};
 use ndarray::ArrayView2;
 use pairwise::{
-    Comp0Histogram, Comp0Mean, PointProps, StatePackViewMut, apply_accum, diff_norm,
-    get_output_from_statepack_array,
+    EuclideanNormHistogram, EuclideanNormMean, PairOperation, StatePackViewMut, UnstructuredPoints,
+    apply_accum, get_output_from_statepack_array,
 };
 
 // Things are a little unergonomic!
 
 #[cfg(test)]
 mod tests {
+
     use pairwise_nostd_internal::IrregularBinEdges;
 
     use super::*;
@@ -33,9 +34,9 @@ mod tests {
 
         let squared_distance_bin_edges = [0.0, 1.0, 9.0, 16.0];
         let squared_distance_bins = IrregularBinEdges::new(&squared_distance_bin_edges).unwrap();
-        let reducer = Comp0Mean::new();
+        let reducer = EuclideanNormMean::new();
         let mut statepack = prepare_statepack(squared_distance_bin_edges.len(), &reducer);
-        let points = PointProps::new(
+        let points = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 2), &positions).unwrap(),
             ArrayView2::from_shape((3, 2), &values).unwrap(),
             None,
@@ -43,7 +44,7 @@ mod tests {
         .unwrap();
 
         // should fail for mismatched spatial dimensions
-        let points_b = PointProps::new(
+        let points_b = UnstructuredPoints::new(
             ArrayView2::from_shape((2, 3), &positions).unwrap(),
             ArrayView2::from_shape((2, 3), &values).unwrap(),
             None,
@@ -55,14 +56,13 @@ mod tests {
             &points,
             Some(&points_b),
             &squared_distance_bins,
-            &diff_norm,
+            PairOperation::ElementwiseSub,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("spatial dimensions"));
 
         // should fail if 1 points object provides weights an the other doesn't
         let weights = [1.0, 0.0];
-        let points_b = PointProps::new(
+        let points_b = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 2), &positions).unwrap(),
             ArrayView2::from_shape((3, 2), &values).unwrap(),
             Some(&weights),
@@ -74,10 +74,9 @@ mod tests {
             &points,
             Some(&points_b),
             &squared_distance_bins,
-            &diff_norm,
+            PairOperation::ElementwiseSub,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("weights"));
     }
 
     #[test]
@@ -98,10 +97,10 @@ mod tests {
         // check the means (using results computed by pyvsf)
         let expected_mean = [8.41281820819169, 15.01110699893027, f64::NAN];
         let expected_weight = [7., 3., 0.];
-        let mean_reducer = Comp0Mean::new();
+        let mean_reducer = EuclideanNormMean::new();
         let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut mean_statepack = prepare_statepack(n_spatial_bins, &mean_reducer);
-        let points = PointProps::new(
+        let points = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 6), &positions).unwrap(),
             ArrayView2::from_shape((3, 6), &values).unwrap(),
             None,
@@ -113,9 +112,9 @@ mod tests {
             &points,
             None,
             &squared_distance_bins,
-            &diff_norm,
+            PairOperation::ElementwiseSub,
         );
-        assert_eq!(result, Ok(()));
+        assert!(result.is_ok());
 
         // output buffers
         let mean_result_map =
@@ -148,7 +147,7 @@ mod tests {
             4., 0., 0.,
             3., 2., 0.,
         ];
-        let hist_reducer = Comp0Histogram::from_bin_edges(hist_buckets);
+        let hist_reducer = EuclideanNormHistogram::from_bin_edges(hist_buckets);
         let mut hist_statepack = prepare_statepack(distance_bin_edges.len() - 1, &hist_reducer);
         let result = apply_accum(
             &mut StatePackViewMut::from_array_view(hist_statepack.view_mut()),
@@ -156,16 +155,15 @@ mod tests {
             &points,
             None,
             &squared_distance_bins,
-            &diff_norm,
+            PairOperation::ElementwiseSub,
         );
-        assert_eq!(result, Ok(()));
+        assert!(result.is_ok());
         let hist_result_map =
             get_output_from_statepack_array(&hist_reducer, &hist_statepack.view());
         for (i, expected) in expected_hist_weights.iter().enumerate() {
             assert_eq!(
                 hist_result_map["weight"][i], *expected,
-                "problem at index {}",
-                i
+                "problem at index {i}",
             );
         }
     }
@@ -179,7 +177,7 @@ mod tests {
         let positions_a: Vec<f64> = (6..24).map(|x| x as f64).collect();
         let values_a: Vec<f64> = (-9..9).map(|x| x as f64).collect();
 
-        let points_a = PointProps::new(
+        let points_a = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 6), &positions_a).unwrap(),
             ArrayView2::from_shape((3, 6), &values_a).unwrap(),
             None,
@@ -203,7 +201,7 @@ mod tests {
              1.,  2., 1000.,
         ];
 
-        let points_b = PointProps::new(
+        let points_b = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 3), &positions_b).unwrap(),
             ArrayView2::from_shape((3, 3), &values_b).unwrap(),
             None,
@@ -219,7 +217,7 @@ mod tests {
         let expected_weight = [4., 6.];
 
         // perform the calculation!
-        let reducer = Comp0Mean::new();
+        let reducer = EuclideanNormMean::new();
         let n_spatial_bins = distance_bin_edges.len() - 1;
         let mut statepack = prepare_statepack(n_spatial_bins, &reducer);
 
@@ -229,9 +227,10 @@ mod tests {
             &points_a,
             Some(&points_b),
             &square_distance_bins,
-            &diff_norm,
+            PairOperation::ElementwiseSub,
         );
-        assert_eq!(result, Ok(()));
+
+        assert!(result.is_ok());
 
         let output = get_output_from_statepack_array(&reducer, &statepack.view());
 

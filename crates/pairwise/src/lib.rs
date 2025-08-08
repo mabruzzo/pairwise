@@ -38,18 +38,16 @@ See the crate-level documentation for [`pairwise_nostd_internal`].
 // inform build-system of the crates in this package
 mod apply;
 mod error;
-mod misc;
 mod parallel_serial;
 mod reducers;
 
 // pull in symbols that visible outside of the package
-pub use apply::apply_cartesian;
+pub use apply::{apply_accum, apply_cartesian};
 pub use error::Error;
-pub use misc::diff_norm;
 pub use pairwise_nostd_internal::{
     CartesianBlock, CellWidth, Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean,
-    Executor, IrregularBinEdges, OutputDescr, PairOperation, PointProps, Reducer, RegularBinEdges,
-    StatePackViewMut, View3DSpec, apply_accum, dot_product,
+    Executor, IrregularBinEdges, OutputDescr, PairOperation, Reducer, RegularBinEdges,
+    StatePackViewMut, TwoPointUnstructured, UnstructuredPoints, View3DSpec,
 };
 pub use parallel_serial::SerialExecutor;
 pub use reducers::{

@@ -7,7 +7,7 @@
 #[derive(Clone, Copy)]
 pub enum PairOperation {
     /// For a pair of vector measurements, compute the element-wise
-    /// products. This is used to compute structure functions
+    /// products. This is used to compute correlation functions
     ElementwiseMultiply,
     /// For a pair of vector measurements, compute the element-wise
     /// differences. This is used to compute structure functions
