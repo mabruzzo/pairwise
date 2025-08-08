@@ -54,7 +54,9 @@ impl Idx3DOffset {
         &self.0
     }
 
-    /// computes the "displacement vector" in units of indices.
+    /// computes the "displacement vector" in units of indices for a pair
+    /// where one member comes from `block_a` and the other comes from
+    /// `block_b`.
     ///
     /// This method primarily exists for self-documenting purposes
     pub(crate) fn displacement_idx_units(
@@ -263,22 +265,6 @@ impl Iterator for Iter {
 /// 1. the number of "family members," `n_family_members`
 /// 2. logic to map every non-negative integer `i` that is less than
 ///    `n_family_members` to a distinct "family member"
-///
-/// With that in mind, let's think about how we might enumerate these family
-/// members. For 2 [`CartesianBlock`] instances, we are going to assert that
-/// you can construct a 3D array that holds the every unique [`Idx3DOffset`]
-/// instance that describes a unique measurement pair. Lets call this
-/// ``offset_arr3D``. If this isn't intuitive, its instructive to:
-/// - the measurements at the 8 corners of block_a.
-/// - For each of these corner measurements, consider all pairs of containing
-///   the corner measurement. It should be straight-forward to see that the
-///   set of [`Idx3DOffset`] instances for each pair can be organized into a
-///   3D array. The length along the ith axis comes from either the shape
-///   of block_a or block_b. We'll call each of these arrays of
-///   [`Idx3DOffset`] instances a `offset_subarr3D`.
-/// - You can imagine stitching each of these 8 `offset_subarr3D`s together
-///   into a single giant 3D array. (In the process you would you remove all
-///   duplicate instances of [`Idx3DOffset`] instances)
 ///
 /// If block_a and block_b have shapes `shape_a` and `shape_b`, then the ith
 /// component of `offset_arr3D`'s shape is `shape_a[i] + shape_b[i] - 1`.
