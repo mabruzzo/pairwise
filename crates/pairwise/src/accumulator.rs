@@ -442,11 +442,80 @@ mod tests {
     }
 
     #[test]
+    fn valid_hist() {
+        let rslt = AccumulatorBuilder::new()
+            .calc_kind("hist_cf")
+            .dist_bin_edges(&[0.0, 1.0])
+            .hist_bucket_edges(&[-5.0, 0.0, 5.0, 10.0])
+            .build();
+        assert!(rslt.is_ok());
+    }
+
+    #[test]
     fn builder_invalid_name() {
         let rslt = AccumulatorBuilder::new()
             .calc_kind("unknown-string")
             .dist_bin_edges(&[0.0, 1.0])
             .build();
         assert_is_err_contains(&rslt, "not a reducer name");
+    }
+
+    #[test]
+    fn builder_negative_dist_bin_edge() {
+        let rslt = AccumulatorBuilder::new()
+            .calc_kind("astro_sf1")
+            .dist_bin_edges(&[-1.0, 1.0])
+            .build();
+        assert_is_err_contains(&rslt, "contains negative value");
+    }
+
+    #[test]
+    fn builder_negative_dist2_bin_edge() {
+        let rslt = AccumulatorBuilder::new()
+            .calc_kind("astro_sf1")
+            .dist2_bin_edges(&[-1.0, 1.0])
+            .build();
+        assert_is_err_contains(&rslt, "contains negative value");
+    }
+
+    #[test]
+    fn builder_negative_regular_dist2_bin_edge() {
+        let rslt = AccumulatorBuilder::new()
+            .calc_kind("astro_sf1")
+            .regular_dist2_bin_edges(RegularBinEdges::new(-3.0, 3.0, 4).unwrap())
+            .build();
+        assert_is_err_contains(&rslt, "contains negative value");
+    }
+
+    #[test]
+    fn shouldnt_receive_bucket_edges() {
+        let rslt = AccumulatorBuilder::new()
+            .calc_kind("astro_sf1")
+            .dist2_bin_edges(&[0.0, 1.0])
+            .regular_hist_bucket_edges(RegularBinEdges::new(-3.0, 3.0, 4).unwrap())
+            .build();
+        assert_is_err_contains(&rslt, "shouldn't receive bucket edges");
+
+        let rslt = AccumulatorBuilder::new()
+            .calc_kind("2pcf")
+            .dist2_bin_edges(&[0.0, 1.0])
+            .hist_bucket_edges(&[-10.0, 10.0])
+            .build();
+        assert_is_err_contains(&rslt, "shouldn't receive bucket edges");
+    }
+
+    #[test]
+    fn didnt_receive_bucket_edges() {
+        let rslt = AccumulatorBuilder::new()
+            .calc_kind("hist_astro_sf1")
+            .dist2_bin_edges(&[0.0, 1.0])
+            .build();
+        assert_is_err_contains(&rslt, "didn't receive bucket edges");
+
+        let rslt = AccumulatorBuilder::new()
+            .calc_kind("hist_cf")
+            .dist2_bin_edges(&[0.0, 1.0])
+            .build();
+        assert_is_err_contains(&rslt, "didn't receive bucket edges");
     }
 }
