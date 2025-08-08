@@ -1,17 +1,51 @@
 //! This module defines machinery that primarily is used internally for
 //! calculating two-point statistics when using [`CartesianBlock`] instances.
 //!
+//! This machinery is used to help write code where we iterate over a sequence
+//! of [`Idx3DOffset`] instances. Each of these instances corresponds to a
+//! spatial displacement vector.
+//!
 //! We probably want to expose a narrow subset of this functionality to help
 //! with "tiling patterns" when people are using MPI and/or are considering
 //! periodic boundaries (in practice, we may expose this logic through a
 //! separate construct and just reuse some of the logic).
+//!
+//! # Optimization Note (Iterators)
+//!
+//! An earlier version of this module (you can find it in the commit history)
+//! introduced an iterator over the conceptual sequence of [`Idx3DOffset`]
+//! instances in addition to [`Idx3DOffsetSeq`] (which directly represents the
+//! sequence). We removed the iterator because both constructs were somewhat
+//! redundant and because [`Idx3DOffsetSeq`] is more general-purpose (i.e. it
+//! supports "random-access" indexing into the underlying sequence).
+//! Furthermore, I had concerns about how well the iterator will work on GPUs.
+//!
+//! With that said, I think that the iterator machinery may have the potential
+//! to be faster.
+//! - For context, each random-access requires an integer division. In
+//!   contrast, we may be able to implement the iterator in terms of a
+//!   branchless if-statement.
+//! - as I write this, I realize that the branch-associated with checking
+//!   whether to exit a loop could potentially be better optimized in the
+//!   random access case...
+//! - In practice, I'm skeptical that the above performance differences are
+//!   significant enough to warrant the extra complexity of the iterator
+//!   machinery (especially since we don't use this machinery within the
+//!   lowest level of tight loops).
+//!
+//! The more relevant optimization consideration has to do with the fact
+//! that the conceptual [`Idx3DOffset`] sequence holds instances that
+//! correspond to displacement vectors that we don't care about.
+//! - Currently, we enumerate every instance and explicitly check whether we
+//!   care. This involves some branching. But more importantly, it will make
+//!   parallelism more difficult (it's hard to distribute work)
+//! - It would be better it we could directly iterate over "just" the
+//!   instances we care about. There is probably a hybrid solution involving
+//!   iterators that would let us handle this case appropriately...
 
 use crate::misc::View3DSpec;
 use crate::twopoint::spatial::{CartesianBlock, CellWidth};
 use core::cmp;
-
-#[cfg(test)] // disable outside of testing, for now
-use std::iter::IntoIterator;
 
 /// Describes the offset between 3D indices.
 ///
@@ -168,62 +202,6 @@ fn update_to_next_offset(offset_zyx: &mut [isize; 3], bounds: &Bounds) {
         if offset_zyx[1] == bounds.stop_offsets_zyx[1] {
             offset_zyx[1] = bounds.start_offsets_zyx[1];
             offset_zyx[0] += 1;
-        }
-    }
-}
-
-/// iterates through a sequence [`Idx3DOffset`] instances
-///
-/// # Larger Significance
-/// In practice this is somewhat redundant with [`Idx3DOffsetSeq`]. At this
-/// time, most code prefers to use [`Idx3DOffsetSeq`], which provides "random
-/// access" to the sequence of [`Idx3DOffset`] instances. In more detail,
-/// * external code currently uses [`Idx3DOffsetSeq`] because
-///   1. conceptually, a sequence is somewhat simpler than an iterator.
-///   2. partitioning elements in a sequence (for the sake of parallelism) is
-///      a simpler than partitioning elements in an iterator.
-///   3. I have some concerns about how optimal GPU code generation would be
-///      when using iterators (this probably doesn't matter much if we aren't
-///      using the iterator in a very tight loop)
-///
-/// * this type exists for historical reasons (early prototypes used logic
-///   that resembled an iterator, not a sequence).
-///
-/// * we are holding onto this logic, for the moment, since using an iterator
-///   to visit a sequence of [`Idx3DOffset`] instances is probably faster (at
-///   least on CPUs) than passing a sequence of indices to [`Idx3DOffsetSeq`].
-///   At this time, it's unclear whether the performance difference is
-///   significant enough to merit the extra complexity.
-///
-/// # Implementation Detail
-/// At the moment, the iterator tracks the internal representation of
-/// [`Idx3DOffset`] instances. But, it may be conceptually simpler to create
-/// an iterator over 3D indices in a [`View3DSpec`] instance and map each
-/// index to a [`Idx3DOffset`] instance
-///
-/// # Optimization Opportunity
-/// As in [`Idx3DOffsetSeq`], this type currently ignores the spatial
-/// displacement vector associated with each [`Idx3DOffset`]. Accounting for
-/// instance. This is an opportunity for enhanced performance beacuase most real-world code only cares about a
-/// certain range of displacement magnitudes
-#[cfg(test)] // disable outside of testing, for now
-pub(crate) struct Iter {
-    bounds: Bounds,
-    /// the internal representation of the next [`Idx3DOffset`]
-    next_offset_zyx: [isize; 3],
-}
-
-#[cfg(test)] // disable outside of testing, for now
-impl Iterator for Iter {
-    type Item = Idx3DOffset;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.bounds.stop_offsets_zyx[0] == self.next_offset_zyx[0] {
-            None
-        } else {
-            let out = Some(Idx3DOffset(self.next_offset_zyx));
-            update_to_next_offset(&mut self.next_offset_zyx, &self.bounds);
-            out
         }
     }
 }
@@ -418,19 +396,6 @@ impl Idx3DOffsetSeq {
     }
 }
 
-#[cfg(test)] // disable outside of testing, for now
-impl IntoIterator for Idx3DOffsetSeq {
-    type Item = Idx3DOffset;
-    type IntoIter = Iter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        Iter {
-            bounds: self.bounds.clone(),
-            next_offset_zyx: self.get(0).0,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -584,33 +549,6 @@ mod tests {
         }
     }
 
-    fn check_iter(
-        idxoffset_itr: Iter,
-        reference_counts: &HashMap<Idx3DOffset, usize>,
-        descr: &str,
-    ) {
-        let mut seen = HashMap::<Idx3DOffset, usize>::new();
-        for (i, cur_offset) in idxoffset_itr.enumerate() {
-            assert!(
-                reference_counts.contains_key(&cur_offset),
-                "element {i} from the iterator provides {cur_offset:?}, which is invalid for {descr}"
-            );
-            let n_occurrences = 1; // todo: fixme
-            assert!(
-                seen.insert(cur_offset.clone(), n_occurrences).is_none(),
-                "idxoffset_seq.get({i}) provides {cur_offset:?} more than once for {descr}"
-            );
-        }
-
-        if seen.len() < reference_counts.len() {
-            let entry = reference_counts
-                .keys()
-                .find(|k| !seen.contains_key(*k))
-                .unwrap();
-            panic!("iterator is missing {entry:?} for {descr}")
-        }
-    }
-
     macro_rules! check2block {
         ($name:ident, $shape_a:expr, $shape_b:expr) => {
             #[test]
@@ -648,7 +586,6 @@ mod tests {
                     &dummy_block_a.get_block(),
                     &dummy_block_b.get_block(),
                 );
-                check_iter(idxoffset_seq.into_iter(), &reference_counts, &descr)
             }
         };
     }
@@ -675,7 +612,6 @@ mod tests {
                     &dummy_block.get_block(),
                     &dummy_block.get_block(),
                 );
-                check_iter(idxoffset_seq.into_iter(), &reference_counts, &descr)
             }
         };
     }
@@ -699,11 +635,6 @@ mod tests {
             0,
             "a standalone 1-element block contains no pairs"
         );
-        let mut iter = idxoffset_seq.into_iter();
-        assert!(
-            iter.next().is_none(),
-            "a standalone 1-element block contains no pairs"
-        )
     }
 
     check2block!(block_pair_same_shape, [2, 3, 4], [2, 3, 4]);
