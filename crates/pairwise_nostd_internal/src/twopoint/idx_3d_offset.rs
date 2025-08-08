@@ -128,6 +128,12 @@ impl Idx3DOffset {
 
 /// computes the triple for-loop bounds for enumerating all indices in
 /// `block_a` that are part of measurement pairs described by `index_offset`
+///
+/// This is needed to actually iterate over every pair of points that are
+/// described by `index_offset`. Basically, you'll write a triple for-loop
+/// using the bounds returned by the is function to iterate over every
+/// relevant index for `block_a` and you can "add" `index_offset` to get the
+/// index in `block_b` that is part of the pair.
 pub(crate) fn get_block_a_start_stop_indices(
     index_offset: &Idx3DOffset,
     block_a: &CartesianBlock,
