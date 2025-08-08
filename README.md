@@ -1,9 +1,13 @@
-# pairwise
+# pairstat-rs
 [![codecov](https://codecov.io/gh/mabruzzo/pairwise/graph/badge.svg?token=56Z7H1GNK8)](https://codecov.io/gh/mabruzzo/pairwise)
 
 An experimental rust package that provides low-level functionality for computing two-point statistics (e.g. correlation functions and structure functions).
 
-Ideally, the goal is to replace the C++ code within [pyvsf](https://github.com/mabruzzo/pyvsf) with this code.
+> [!NOTE]
+> We are in the process of renaming the crate from pairwise to pairstat in order to improve searchability (pairwise testing is a common term)
+
+Ideally, the goal is to replace the C++ code within [pyvsf](https://github.com/mabruzzo/pyvsf) with bindings to this crate (this will coincide an overhaul to the API).
+
 
 > [!NOTE]
 > The remainder of this document describes some assorted ideas. They probably need to be distributed within actual documentation before we make a formal release.
