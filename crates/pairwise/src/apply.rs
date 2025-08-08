@@ -1,7 +1,7 @@
 use crate::{Error, parallel_serial::SerialExecutor};
 use pairwise_nostd_internal::{
     BinEdges, CartesianBlock, CellWidth, PairOperation, Reducer, StatePackViewMut,
-    TwoPointCartesian, TwoPointUnstructured, UnstructuredPoints
+    TwoPointCartesian, TwoPointUnstructured, UnstructuredPoints,
 };
 use std::num::NonZeroU32;
 
