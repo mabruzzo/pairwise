@@ -355,6 +355,22 @@ impl Idx3DOffsetSeq {
 
     /// construct the sequence of all [`Idx3DOffset`] instances that describe
     /// every unique pair of measurements from 2 [`CartesianBlock`]s
+    ///
+    /// # Argument Order
+    /// We currently enforce a check on argument order to serve 2 purposes:
+    /// 1. (most importantly) to ensure that components of computed
+    ///    displacement vectors have consistent "sign"s (this becomes relevant
+    ///    for longitudinal structure functions where we need to take a dot
+    ///    product between the displacement unit vector and components of the
+    ///    vector-difference.
+    /// 2. to help us avoid double-counting when we break up regions of a
+    ///    large domain into "tiles" (this is the scenario that I describe
+    ///    in the README)
+    ///
+    /// I'm not opposed to dropping this, but I think that needs to come
+    /// "after" we merge #44, and properly document these concerns in the top
+    /// level docstrings of the functions that drive reductions using the
+    /// [`CartesianBlock`]
     pub fn new_cross(
         block_a: &CartesianBlock,
         block_b: &CartesianBlock,
