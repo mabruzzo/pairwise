@@ -382,6 +382,10 @@ impl Idx3DOffsetSeq {
         self.mapping_props.n_elements() - self.internal_arr_offset
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// get the ith [`Idx3DOffset`]
     ///
     /// # Note

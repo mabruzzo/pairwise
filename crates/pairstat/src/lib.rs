@@ -42,12 +42,12 @@ mod parallel_serial;
 mod reducers;
 
 // pull in symbols that visible outside of the package
-pub use apply::apply_accum;
+pub use apply::{apply_accum, apply_cartesian};
 pub use error::Error;
 pub use pairstat_nostd_internal::{
     CartesianBlock, CellWidth, Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean,
-    Executor, OutputDescr, PairOperation, Reducer, StatePackViewMut, TwoPointUnstructured,
-    UnstructuredPoints,
+    Executor, IrregularBinEdges, OutputDescr, PairOperation, Reducer, RegularBinEdges,
+    StatePackViewMut, TwoPointUnstructured, UnstructuredPoints, View3DSpec,
 };
 pub use parallel_serial::SerialExecutor;
 pub use reducers::{
