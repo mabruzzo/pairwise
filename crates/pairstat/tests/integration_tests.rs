@@ -2,7 +2,7 @@ mod common;
 
 use common::prepare_statepack;
 use ndarray::ArrayView2;
-use pairwise::{
+use pairstat::{
     ComponentSumMean, EuclideanNormHistogram, EuclideanNormMean, PairOperation, StatePackViewMut,
     UnstructuredPoints, apply_accum, get_output_from_statepack_array,
 };
@@ -12,7 +12,7 @@ use pairwise::{
 #[cfg(test)]
 mod tests {
 
-    use pairwise_nostd_internal::IrregularBinEdges;
+    use pairstat_nostd_internal::IrregularBinEdges;
 
     use super::*;
 

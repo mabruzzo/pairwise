@@ -82,7 +82,7 @@ impl<'a> UnstructuredPoints<'a> {
 /// and `points_b` are considered.
 ///
 /// For each pair of points:
-/// - The value contributed by the pair is determined by `pairwise_fn`
+/// - The value contributed by the pair is determined by `pairstat_fn`
 /// - The bin the value is contributed to is determined by the distance between
 ///   the points and the `squared_distance_bin_edges` argument
 pub struct TwoPointUnstructured<'a, R: Reducer, B: BinEdges> {
