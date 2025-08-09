@@ -27,12 +27,12 @@ jobs:
     - name: Build and Run
       env:
         RUSTFLAGS: -Cinstrument-coverage
-        LLVM_PROFILE_FILE: pairwise-%p-%m.profraw
+        LLVM_PROFILE_FILE: pairstat-%p-%m.profraw
       run: cargo test --verbose
     - name: Generate coverage
       run: |
         cargo install grcov
-        grcov $(find . -name "pairwise-*.profraw" -print) \
+        grcov $(find . -name "pairstat-*.profraw" -print) \
           --branch \
           --ignore-not-existing \
           --binary-path ./target/debug/ \

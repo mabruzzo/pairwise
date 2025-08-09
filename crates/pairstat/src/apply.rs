@@ -1,5 +1,5 @@
 use crate::{Error, TwoPointUnstructured, parallel_serial::SerialExecutor};
-use pairwise_nostd_internal::{
+use pairstat_nostd_internal::{
     BinEdges, PairOperation, Reducer, StatePackViewMut, UnstructuredPoints,
 };
 use std::num::NonZeroU32;

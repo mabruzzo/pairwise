@@ -1,6 +1,6 @@
 use ndarray::{NewAxis, s};
-use pairwise::{Comp0Histogram, Comp0Mean, Reducer, get_output_from_statepack_array};
-use pairwise_nostd_internal::{AccumStateView, AccumStateViewMut, Datum};
+use pairstat::{Comp0Histogram, Comp0Mean, Reducer, get_output_from_statepack_array};
+use pairstat_nostd_internal::{AccumStateView, AccumStateViewMut, Datum};
 use std::collections::HashMap;
 
 // this is inefficient, but it gets the job done for now
@@ -21,7 +21,7 @@ fn _get_output_single(
 mod tests {
 
     use super::*;
-    use pairwise_nostd_internal::RegularBinEdges;
+    use pairstat_nostd_internal::RegularBinEdges;
 
     #[test]
     fn mean_consume_once() {

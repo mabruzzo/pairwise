@@ -29,7 +29,7 @@ points that the value was computed from.
 
 # Developer Guide
 
-See the crate-level documentation for [`pairwise_nostd_internal`].
+See the crate-level documentation for [`pairstat_nostd_internal`].
 
 */
 
@@ -44,7 +44,7 @@ mod reducers;
 // pull in symbols that visible outside of the package
 pub use apply::apply_accum;
 pub use error::Error;
-pub use pairwise_nostd_internal::{
+pub use pairstat_nostd_internal::{
     CartesianBlock, CellWidth, Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean,
     Executor, OutputDescr, PairOperation, Reducer, StatePackViewMut, TwoPointUnstructured,
     UnstructuredPoints,

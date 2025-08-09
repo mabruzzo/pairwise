@@ -1,6 +1,6 @@
 //! Implements the "serial" backend for running thread teams
 use crate::Error;
-use pairwise_nostd_internal::{
+use pairstat_nostd_internal::{
     BinnedDatum, Reducer, ReductionSpec, StandardTeamParam, StatePackViewMut, Team,
     fill_single_team_binned_statepack,
 };
@@ -117,7 +117,7 @@ impl Team for SerialTeam {
 pub struct SerialExecutor;
 
 // I'm increasingly thinking that we don't want the Executor trait. If
-// nothing else, it shouldn't be declared in pairwise_nostd_internal
+// nothing else, it shouldn't be declared in pairstat_nostd_internal
 
 impl SerialExecutor {
     pub fn drive_reduce(
