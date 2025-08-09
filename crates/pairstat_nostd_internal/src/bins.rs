@@ -10,6 +10,8 @@ pub trait BinEdges {
     fn bin_index(&self, value: f64) -> Option<usize>;
 
     fn n_bins(&self) -> usize;
+
+    fn leftmost_edge(&self) -> f64;
 }
 
 /// Regular bins with uniform spacing
@@ -73,6 +75,10 @@ impl BinEdges for RegularBinEdges {
     fn n_bins(&self) -> usize {
         self.n_bins
     }
+
+    fn leftmost_edge(&self) -> f64 {
+        self.min
+    }
 }
 
 pub fn validate_bin_edges(edges: &[f64]) -> Result<(), &'static str> {
@@ -124,6 +130,10 @@ impl BinEdges for IrregularBinEdges<'_> {
 
     fn n_bins(&self) -> usize {
         self.bin_edges.len() - 1
+    }
+
+    fn leftmost_edge(&self) -> f64 {
+        self.bin_edges[0]
     }
 }
 

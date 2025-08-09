@@ -36,17 +36,36 @@ See the crate-level documentation for [`pairstat_nostd_internal`].
 #![deny(rustdoc::broken_intra_doc_links)]
 
 // inform build-system of the crates in this package
+mod accumulator;
 mod apply;
 mod error;
+mod func;
 mod parallel_serial;
 mod reducers;
+mod wrapped_reducer;
+
+// todo: cleanup the types that we are exposing!
 
 // pull in symbols that visible outside of the package
+pub use accumulator::{Accumulator, AccumulatorBuilder};
 pub use apply::apply_accum;
 pub use error::Error;
+pub use func::{RuntimeSpec, process_unstructured};
 pub use pairstat_nostd_internal::{
-    CartesianBlock, CellWidth, Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean,
-    Executor, OutputDescr, PairOperation, Reducer, StatePackViewMut, TwoPointUnstructured,
+    CartesianBlock,
+    CellWidth,
+    Comp0Histogram,
+    Comp0Mean,
+    ComponentSumHistogram,
+    ComponentSumMean,
+    Executor,
+    OutputDescr,
+    PairOperation,
+    Reducer,
+    // todo: consider renaming RegularBinEdges so that its called LinearBinEdges?
+    RegularBinEdges,
+    StatePackViewMut,
+    TwoPointUnstructured,
     UnstructuredPoints,
 };
 pub use parallel_serial::SerialExecutor;

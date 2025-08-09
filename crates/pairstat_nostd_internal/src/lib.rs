@@ -256,12 +256,12 @@ pub use parallel::{
     BinnedDatum, Executor, ReductionSpec, StandardTeamParam, Team,
     fill_single_team_binned_statepack,
 };
-pub use reduce_utils::reset_full_statepack;
+pub use reduce_utils::{merge_full_statepacks, reset_full_statepack};
 pub use reducer::{
     Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean, Datum, OutputDescr,
     Reducer, ScalarHistogram, ScalarMean, ScalarizeOp,
 };
-pub use state::{AccumStateView, AccumStateViewMut, StatePackViewMut};
+pub use state::{AccumStateView, AccumStateViewMut, StatePackView, StatePackViewMut};
 pub use twopoint::{
     common::PairOperation,
     spatial::{CartesianBlock, CellWidth},
