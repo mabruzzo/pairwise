@@ -20,7 +20,7 @@ mod common;
 
 // this is to be used to compare operations with CartesianBlock and
 // UnstructuredPoints
-pub struct TestScenario {
+pub struct TestDataWrapper {
     // for use with Cartesian_Grid
     cartesian_values_zyx: [Vec<f64>; 3],
     cartesian_weights: Vec<f64>,
@@ -32,7 +32,7 @@ pub struct TestScenario {
     weight_list: Vec<f64>,
 }
 
-impl TestScenario {
+impl TestDataWrapper {
     /*
      // in the future, I think we want to be able to pass in grid properties
      // rather than rely upon hardcoded examples
@@ -42,7 +42,7 @@ impl TestScenario {
      // later if we want to generate gaussian random fields from
      // power-spectra (the power-spectrum itself specifies the magnitude of
      // wavenumbers, and we will need to randomly generate phases)
-     pub fn setup(seed: u64, shape_zyx: [usize; 3]) -> TestScenario {
+     pub fn setup(seed: u64, shape_zyx: [usize; 3]) -> TestDataWrapper {
          let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
          let idx_props = View3DSpec::from_shape_contiguous(shape_zyx).unwrap();
          let cell_widths = [1.0, 1.0, 1.0];
@@ -88,7 +88,7 @@ impl TestScenario {
              }
          }
 
-         TestScenario {
+         TestDataWrapper {
              // for use with Cartesian_Grid
              cartesian_values_zyx,
              cartesian_weights,
@@ -107,7 +107,7 @@ impl TestScenario {
         positions: ArrayView2<i32>,
         values: ArrayView2<f64>,
         weights: Option<&[f64]>,
-    ) -> TestScenario {
+    ) -> TestDataWrapper {
         assert!(positions.shape() == values.shape());
         assert_eq!(positions.len_of(Axis(0)), 3);
         let n_points = positions.len_of(Axis(1));
@@ -156,7 +156,7 @@ impl TestScenario {
             cartesian_weights[cartesian_idx] = weight_list[i];
         }
 
-        TestScenario {
+        TestDataWrapper {
             // for use with Cartesian_Grid
             cartesian_values_zyx,
             cartesian_weights,
@@ -196,7 +196,7 @@ impl TestScenario {
         CellWidth::new(self.cell_widths).unwrap()
     }
 
-    pub fn has_equal_cell_width(&self, other: &TestScenario) -> bool {
+    pub fn has_equal_cell_width(&self, other: &TestDataWrapper) -> bool {
         self.cell_widths == other.cell_widths
     }
 }
@@ -205,8 +205,8 @@ impl TestScenario {
 /// how much code is duplicated (and how much we need to change when we make
 /// changes)
 fn exec_calc(
-    data: &TestScenario,
-    data_other: &Option<TestScenario>,
+    data: &TestDataWrapper,
+    data_other: &Option<TestDataWrapper>,
     accum_builder: &AccumulatorBuilder,
     unstructured: bool,
 ) -> Result<HashMap<&'static str, Vec<f64>>, Error> {
@@ -240,7 +240,7 @@ fn test_apply_accum_auto() {
     let positions: Vec<i32> = (6_i32..24_i32).collect();
     let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
 
-    let scenario = TestScenario::from_integer_position_points(
+    let data = TestDataWrapper::from_integer_position_points(
         ArrayView2::from_shape((3, 6), &positions).unwrap(),
         ArrayView2::from_shape((3, 6), &values).unwrap(),
         None,
@@ -262,7 +262,7 @@ fn test_apply_accum_auto() {
         .dist_bin_edges(&[2.0, 6., 10., 15.]);
 
     for use_unstructured in [true, false] {
-        let output = exec_calc(&scenario, &None, &accum_builder, use_unstructured).unwrap();
+        let output = exec_calc(&data, &None, &accum_builder, use_unstructured).unwrap();
         common::assert_consistent_results(&output, &expected, &rtol_atol_sets);
     }
 }
@@ -276,7 +276,7 @@ fn test_apply_accum_auto_hist() {
     let positions: Vec<i32> = (6_i32..24_i32).collect();
     let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
 
-    let scenario = TestScenario::from_integer_position_points(
+    let data = TestDataWrapper::from_integer_position_points(
         ArrayView2::from_shape((3, 6), &positions).unwrap(),
         ArrayView2::from_shape((3, 6), &values).unwrap(),
         None,
@@ -305,7 +305,7 @@ fn test_apply_accum_auto_hist() {
         .hist_bucket_edges(&[6.0, 10.0, 14.0]);
 
     for use_unstructured in [true, false] {
-        let output = exec_calc(&scenario, &None, &accum_builder, use_unstructured).unwrap();
+        let output = exec_calc(&data, &None, &accum_builder, use_unstructured).unwrap();
         common::assert_consistent_results(&output, &expected, &rtol_atol_sets);
     }
 }
@@ -319,7 +319,7 @@ fn test_apply_accum_cross() {
     let pos_a: Vec<i32> = (6_i32..24_i32).collect();
     let vals_a: Vec<f64> = (-9..9).map(|x| x as f64).collect();
 
-    let data_a = TestScenario::from_integer_position_points(
+    let data_a = TestDataWrapper::from_integer_position_points(
         ArrayView2::from_shape((3, 6), &pos_a).unwrap(),
         ArrayView2::from_shape((3, 6), &vals_a).unwrap(),
         None,
@@ -342,7 +342,7 @@ fn test_apply_accum_cross() {
          1.,  2., 1000.,
     ];
 
-    let data_b = Some(TestScenario::from_integer_position_points(
+    let data_b = Some(TestDataWrapper::from_integer_position_points(
         ArrayView2::from_shape((3, 3), &pos_other).unwrap(),
         ArrayView2::from_shape((3, 3), &vals_other).unwrap(),
         None,
@@ -379,7 +379,7 @@ fn test_apply_accum_auto_corr() {
     let positions: Vec<i32> = (6_i32..24_i32).collect();
     let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
 
-    let scenario = TestScenario::from_integer_position_points(
+    let data = TestDataWrapper::from_integer_position_points(
         ArrayView2::from_shape((3, 6), &positions).unwrap(),
         ArrayView2::from_shape((3, 6), &values).unwrap(),
         None,
@@ -401,7 +401,7 @@ fn test_apply_accum_auto_corr() {
         .dist_bin_edges(&[2., 6., 10., 15.]);
 
     for use_unstructured in [true, false] {
-        let output = exec_calc(&scenario, &None, &accum_builder, use_unstructured).unwrap();
+        let output = exec_calc(&data, &None, &accum_builder, use_unstructured).unwrap();
         common::assert_consistent_results(&output, &expected, &rtol_atol_sets);
     }
 }
@@ -411,8 +411,8 @@ fn test_apply_accum_auto_corr() {
 #[ignore] // TODO: WE NEED TO COME BACK TO THIS (I think there is a bug in setup)
 fn test_random_autocorr_scenario() {
     let seed = 10582441886303702641_u64;
-    // let scenario = TestScenario::setup(seed, [4, 3, 2]);
-    let scenario = TestScenario::setup(seed, [4, 1, 1]);
+    // let scenario = TestDataWrapper::setup(seed, [4, 3, 2]);
+    let scenario = TestDataWrapper::setup(seed, [4, 1, 1]);
 
     let distance_bin_edges: &[f64] = &[0.25, 0.75, 1.25, 1.75, 2.25, 2.75, 3.25];
     let squared_distance_bin_edges: Vec<f64> =
