@@ -1,12 +1,12 @@
 [package]
-name = "pairwise"
+name = "pairstat"
 version = "0.1.0"
 edition = "2024"
 authors = ["Matthew W. Abruzzo", "Adam J. Wheeler"]
 rust-version = "1.86"
 
 [dependencies]
-pairwise_nostd_internal = { path = "../pairwise_nostd_internal" }
+pairstat_nostd_internal = { path = "../pairstat_nostd_internal" }
 
 # ndarray brings in a lot more than we actually need. In the future, we may
 # want to simply implement the really small subset of functionality that we

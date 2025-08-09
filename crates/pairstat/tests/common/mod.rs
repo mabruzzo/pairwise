@@ -9,7 +9,7 @@
 // https://doc.rust-lang.org/book/ch11-03-test-organization.html#submodules-in-integration-tests
 
 use ndarray::Array2;
-use pairwise::{Reducer, StatePackViewMut};
+use pairstat::{Reducer, StatePackViewMut};
 use std::collections::HashMap;
 
 pub type BinnedStatMap = HashMap<&'static str, Vec<f64>>;

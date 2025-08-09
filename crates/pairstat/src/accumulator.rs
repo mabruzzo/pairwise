@@ -89,7 +89,7 @@ use crate::{
 };
 use std::collections::HashMap;
 
-use pairwise_nostd_internal::{RegularBinEdges, StatePackView, StatePackViewMut};
+use pairstat_nostd_internal::{RegularBinEdges, StatePackView, StatePackViewMut};
 
 // current design:
 // -> we have an `Accumulator`, which is composed of an `AccumulatorDescr` &

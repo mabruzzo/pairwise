@@ -1,6 +1,6 @@
 /*!
 This crate implements most of the underlying details of the
-`pairwise` crate.
+`pairstat` crate.
 
 # Developer Guide
 

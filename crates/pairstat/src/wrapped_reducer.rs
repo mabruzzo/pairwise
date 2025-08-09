@@ -10,7 +10,7 @@ use crate::{
     reducers::{EuclideanNormHistogram, EuclideanNormMean, get_output},
 };
 
-use pairwise_nostd_internal::{
+use pairstat_nostd_internal::{
     BinEdges, ComponentSumHistogram, ComponentSumMean, IrregularBinEdges, PairOperation, Reducer,
     RegularBinEdges, StatePackView, StatePackViewMut, UnstructuredPoints, merge_full_statepacks,
     reset_full_statepack, validate_bin_edges,
@@ -23,7 +23,7 @@ use std::{collections::HashMap, sync::LazyLock};
 /// # Note
 /// Ordinarily, [`f64`], and by extension `Vec<f64>` doesn't implement `Eq`
 /// since `NaN` != `NaN`. We can implement it here since
-/// [`pairwise_nostd_internal::validate_bin_edges`] ensures there aren't any
+/// [`pairstat_nostd_internal::validate_bin_edges`] ensures there aren't any
 /// `NaN` values
 #[derive(Clone)]
 pub(crate) struct ValidatedBinEdgeVec(Vec<f64>);
@@ -477,7 +477,7 @@ struct WrappedIrregularHist {
 /// In more detail, this is intended to reduce boilerplate code within
 /// [`WrappedIrregularHist`]. We could replace this with a function if we
 /// converted [`WrappedIrregularHist`] so that it is a generic type with
-/// respect to [`pairwise_nostd_internal::ScalarizeOp`]
+/// respect to [`pairstat_nostd_internal::ScalarizeOp`]
 macro_rules! reconstruct_hist_reducer_and_forward{
     ($pair_op:expr, $config:expr; $func:ident(reducer_ref, $($args:expr),*)) => {
         {

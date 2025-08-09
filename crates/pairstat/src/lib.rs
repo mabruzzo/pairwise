@@ -29,7 +29,7 @@ points that the value was computed from.
 
 # Developer Guide
 
-See the crate-level documentation for [`pairwise_nostd_internal`].
+See the crate-level documentation for [`pairstat_nostd_internal`].
 
 */
 
@@ -51,7 +51,7 @@ pub use accumulator::{Accumulator, AccumulatorBuilder};
 pub use apply::apply_accum;
 pub use error::Error;
 pub use func::{RuntimeSpec, process_unstructured};
-pub use pairwise_nostd_internal::{
+pub use pairstat_nostd_internal::{
     CartesianBlock,
     CellWidth,
     Comp0Histogram,

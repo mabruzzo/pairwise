@@ -2,7 +2,7 @@ mod common;
 
 use common::assert_consistent_results;
 use ndarray::ArrayView2;
-use pairwise::{AccumulatorBuilder, RuntimeSpec, UnstructuredPoints, process_unstructured};
+use pairstat::{AccumulatorBuilder, RuntimeSpec, UnstructuredPoints, process_unstructured};
 use std::collections::HashMap;
 
 // todo: we can get rid of the test module in integration tests

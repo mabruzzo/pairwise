@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut2, Axis};
 
-use pairwise_nostd_internal::{
+use pairstat_nostd_internal::{
     AccumStateView, Datum, OutputDescr, Reducer, ScalarHistogram, ScalarMean, ScalarizeOp,
     StatePackView,
 };
@@ -50,7 +50,7 @@ pub fn get_output(
 // a design perspective.
 //
 // There are 2 obvious solutions:
-// 1. create an object, in the pairwise crate (rather than in the no_std
+// 1. create an object, in the pairstat crate (rather than in the no_std
 //     crate), that actually owns the StatePack data, and pass that in as a
 //     reference. If we do that, then `StatePackViewMut` would typically
 //     view the data inside of the type.

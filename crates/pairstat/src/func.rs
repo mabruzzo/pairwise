@@ -13,7 +13,7 @@
 //! It may be useful to enumerate the inputs into the calculation
 //!
 //! 1. primary spatial info (e.g. `CartesianBlock`,
-//!    [`pairwise_nostd_internal::UnstructuredPoints`])
+//!    [`pairstat_nostd_internal::UnstructuredPoints`])
 //! 2. optional secondary spatial measurements (for cross or inter-tile ops)
 //! 3. distance edge bins
 //! 4. reducer config: the specific reducer-config, PairwiseOperation
@@ -23,7 +23,7 @@
 //! 6. reducer state
 //! 7. maybe someday: extra options tied to spatial representation. Examples
 //!    might include:
-//!    - for [`pairwise_nostd_internal::UnstructuredPoints`]: we might want to
+//!    - for [`pairstat_nostd_internal::UnstructuredPoints`]: we might want to
 //!      use a distance metric other than Euclidean (e.g. for images)
 //!    - for `CartesianBlock`: we might want to support consideration of a
 //!      subset of displacement vectors, rather than always forcing an
@@ -70,7 +70,7 @@
 //!     bin edges. But, if this ever becomes a problem, we can consider using
 //!     `Arc` (since the type is immutable).
 
-use pairwise_nostd_internal::UnstructuredPoints;
+use pairstat_nostd_internal::UnstructuredPoints;
 
 use crate::{Accumulator, Error, wrapped_reducer::SpatialInfo};
 

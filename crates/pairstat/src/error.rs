@@ -1,7 +1,7 @@
 // I don't really know what I'm doing with error handling quite yet here.
 //
 // But, I think its time to start doing "something" so we can start digging
-// our way out of the "hole" that we created in the `pairwise_nostd_internal`
+// our way out of the "hole" that we created in the `pairstat_nostd_internal`
 // by returning `&'static str` everywhere...
 //
 // It seems like we basically have 2 options:
@@ -48,17 +48,17 @@ enum ErrorKind {
     /// An error that occurs when an integer lies outside of the acceptable
     /// range of values
     IntegerRanger(IntegerRangeError),
-    /// An error that occurs within `pairwise_nostd_internal`
+    /// An error that occurs within `pairstat_nostd_internal`
     ///
     /// The idea is to wrap the stringly errors that, at the time of writing,
-    /// are pervasive within `pairwise_nostd_internal`. Over time, these will
+    /// are pervasive within `pairstat_nostd_internal`. Over time, these will
     /// all get migrated over to InternalError
     #[allow(dead_code)] // not used yet
     InternalLegacyAdHoc(InternalLegacyAdHocError),
-    // /// An error that occurs within `pairwise_nostd_internal`
+    // /// An error that occurs within `pairstat_nostd_internal`
     // ///
     // /// The idea is to wrap the error type introduced within
-    // /// `pairwise_nostd_internal`, whenever that actually gets introduced...
+    // /// `pairstat_nostd_internal`, whenever that actually gets introduced...
     // InternalError(InternalError)
     /// An error that occurs when an unknown reducer name is specified
     ReducerName(ReducerNameError),
@@ -306,7 +306,7 @@ impl core::fmt::Display for IntegerRangeError {
 }
 
 /// A temporary type (that will eventually be eliminated) that wraps the
-/// string errors from `pairwise_nostd_internal`. Over time, we will get rid
+/// string errors from `pairstat_nostd_internal`. Over time, we will get rid
 /// of these
 #[derive(Clone)]
 struct InternalLegacyAdHocError(&'static str);
