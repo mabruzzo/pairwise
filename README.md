@@ -1,5 +1,5 @@
 # pairstat-rs
-[![codecov](https://codecov.io/gh/mabruzzo/pairstat/graph/badge.svg?token=56Z7H1GNK8)](https://codecov.io/gh/mabruzzo/pairstat)
+[![codecov](https://codecov.io/gh/mabruzzo/pairstat-rs/graph/badge.svg?token=56Z7H1GNK8)](https://codecov.io/gh/mabruzzo/pairstat-rs)
 
 An experimental rust package that provides low-level functionality for computing two-point statistics (e.g. correlation functions and structure functions).
 
