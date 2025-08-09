@@ -48,8 +48,6 @@ mod wrapped_reducer;
 
 // pull in symbols that visible outside of the package
 pub use accumulator::{Accumulator, AccumulatorBuilder};
-// todo: do we have to actually export these?
-pub use apply::{apply_accum, apply_cartesian};
 pub use error::Error;
 pub use func::{RuntimeSpec, process_cartesian, process_unstructured};
 pub use pairstat_nostd_internal::{
