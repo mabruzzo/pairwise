@@ -1,9 +1,9 @@
 use ndarray::{Array2, ArrayView2, Axis};
-use pairwise::{
+use pairstat::{
     CartesianBlock, CellWidth, ComponentSumMean, IrregularBinEdges, PairOperation,
     StatePackViewMut, UnstructuredPoints, View3DSpec, apply_accum, apply_cartesian, get_output,
 };
-use pairwise_nostd_internal::BinEdges;
+use pairstat_nostd_internal::BinEdges;
 use std::collections::HashMap;
 
 // use ndarray::indices

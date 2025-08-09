@@ -1,5 +1,5 @@
 use crate::{Error, parallel_serial::SerialExecutor};
-use pairwise_nostd_internal::{
+use pairstat_nostd_internal::{
     BinEdges, CartesianBlock, CellWidth, PairOperation, Reducer, StatePackViewMut,
     TwoPointCartesian, TwoPointUnstructured, UnstructuredPoints,
 };

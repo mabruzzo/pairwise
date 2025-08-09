@@ -1,4 +1,4 @@
-/// Specifies the kind of pairwise operation to do in a two-point operation.
+/// Specifies the kind of pairstat operation to do in a two-point operation.
 ///
 /// # Note
 /// We're going to try to get away with making this an enum. But, it may be

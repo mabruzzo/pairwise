@@ -1,6 +1,6 @@
-use pairwise::{Comp0Mean, Reducer, SerialExecutor, StatePackViewMut, get_output};
+use pairstat::{Comp0Mean, Reducer, SerialExecutor, StatePackViewMut, get_output};
 
-use pairwise_nostd_internal::{
+use pairstat_nostd_internal::{
     BinnedDatum,
     reduce_sample::{
         chunked::{
