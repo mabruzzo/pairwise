@@ -48,26 +48,29 @@ mod wrapped_reducer;
 
 // pull in symbols that visible outside of the package
 pub use accumulator::{Accumulator, AccumulatorBuilder};
-pub use apply::apply_accum;
+// todo: do we have to actually export these?
+pub use apply::{apply_accum, apply_cartesian};
 pub use error::Error;
-pub use func::{RuntimeSpec, process_unstructured};
+pub use func::{RuntimeSpec, process_cartesian, process_unstructured};
 pub use pairstat_nostd_internal::{
     CartesianBlock,
     CellWidth,
-    Comp0Histogram,
-    Comp0Mean,
-    ComponentSumHistogram,
-    ComponentSumMean,
-    Executor,
-    OutputDescr,
-    PairOperation,
-    Reducer,
-    // todo: consider renaming RegularBinEdges so that its called LinearBinEdges?
-    RegularBinEdges,
-    StatePackViewMut,
-    TwoPointUnstructured,
+    Comp0Histogram,        // <- can we stop exporting?
+    Comp0Mean,             // <- can we stop exporting?
+    ComponentSumHistogram, // <- can we stop exporting?
+    ComponentSumMean,      // <- can we stop exporting?
+    Executor,              // <- can we stop exporting?
+    OutputDescr,           // <- can we stop exporting?
+    PairOperation,         // <- can we stop exporting?
+    Reducer,               // <- can we stop exporting?
+    RegularBinEdges,       // <- should we call this LinearBinEdges?
+    StatePackViewMut,      // <- can we stop exporting?
+    TwoPointUnstructured,  // <- can we stop exporting?
     UnstructuredPoints,
+    View3DSpec, // <- should we actually export this? Or should we hide it
 };
+
+// can we stop exporting everything that follows?
 pub use parallel_serial::SerialExecutor;
 pub use reducers::{
     EuclideanNormHistogram, EuclideanNormMean, get_output, get_output_from_statepack_array,

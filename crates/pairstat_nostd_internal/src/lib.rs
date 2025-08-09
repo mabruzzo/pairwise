@@ -252,11 +252,14 @@ mod twopoint;
 pub mod reduce_sample;
 
 pub use bins::*;
+pub use misc::View3DSpec;
 pub use parallel::{
     BinnedDatum, Executor, ReductionSpec, StandardTeamParam, Team,
     fill_single_team_binned_statepack,
 };
 pub use reduce_utils::{merge_full_statepacks, reset_full_statepack};
+// TODO: before 1.0, consider whether we really want to expose all of the
+//       following constructs... (especially Datum)
 pub use reducer::{
     Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean, Datum, OutputDescr,
     Reducer, ScalarHistogram, ScalarMean, ScalarizeOp,
@@ -265,5 +268,6 @@ pub use state::{AccumStateView, AccumStateViewMut, StatePackView, StatePackViewM
 pub use twopoint::{
     common::PairOperation,
     spatial::{CartesianBlock, CellWidth},
+    twopoint_cartesian::TwoPointCartesian,
     unstructured::{TwoPointUnstructured, UnstructuredPoints},
 };

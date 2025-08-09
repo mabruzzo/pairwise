@@ -70,7 +70,7 @@
 //!     bin edges. But, if this ever becomes a problem, we can consider using
 //!     `Arc` (since the type is immutable).
 
-use pairstat_nostd_internal::UnstructuredPoints;
+use pairstat_nostd_internal::{CartesianBlock, CellWidth, UnstructuredPoints};
 
 use crate::{Accumulator, Error, wrapped_reducer::SpatialInfo};
 
@@ -81,6 +81,21 @@ use crate::{Accumulator, Error, wrapped_reducer::SpatialInfo};
 /// - the backend to use (e.g. GPUs or Threads or Serial)
 /// - which GPU to use if there are multiple GPUs
 pub struct RuntimeSpec;
+
+/// Update `accum` with contributions from the specified measurements
+pub fn process_cartesian<'a>(
+    accum: &mut Accumulator,
+    block_a: CartesianBlock<'a>,
+    block_b: Option<CartesianBlock<'a>>,
+    cell_width: CellWidth,
+    _: &RuntimeSpec,
+) -> Result<(), Error> {
+    accum.exec_reduction(SpatialInfo::Cartesian {
+        block_a,
+        block_b,
+        cell_width,
+    })
+}
 
 /// Update `accum` with contributions from the specified measurements
 pub fn process_unstructured<'a>(

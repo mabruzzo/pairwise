@@ -6,14 +6,14 @@
 
 use crate::{
     Error,
-    apply::apply_accum,
+    apply::{apply_accum, apply_cartesian},
     reducers::{EuclideanNormHistogram, EuclideanNormMean, get_output},
 };
 
 use pairstat_nostd_internal::{
-    BinEdges, ComponentSumHistogram, ComponentSumMean, IrregularBinEdges, PairOperation, Reducer,
-    RegularBinEdges, StatePackView, StatePackViewMut, UnstructuredPoints, merge_full_statepacks,
-    reset_full_statepack, validate_bin_edges,
+    BinEdges, CartesianBlock, CellWidth, ComponentSumHistogram, ComponentSumMean,
+    IrregularBinEdges, PairOperation, Reducer, RegularBinEdges, StatePackView, StatePackViewMut,
+    UnstructuredPoints, merge_full_statepacks, reset_full_statepack, validate_bin_edges,
 };
 use std::{collections::HashMap, sync::LazyLock};
 
@@ -129,11 +129,11 @@ pub(crate) enum SpatialInfo<'a> {
         points_a: UnstructuredPoints<'a>,
         points_b: Option<UnstructuredPoints<'a>>,
     },
-    //Cartesian{ // <- (to be uncommented)
-    //    block_a: CartesianBlock<'a>,
-    //    block_b: Option<CartesianBlock<'a>>,
-    //    cell_width: CellWidth
-    //}
+    Cartesian {
+        block_a: CartesianBlock<'a>,
+        block_b: Option<CartesianBlock<'a>>,
+        cell_width: CellWidth,
+    },
 }
 
 /// Wraps a function pointer that constructs, a boxed [`WrappedReducer`] trait
@@ -571,27 +571,49 @@ fn exec_reduction_helper<R: Clone + Reducer>(
     squared_distance_bin_edges: &BinEdgeSpec,
     pair_op: PairOperation,
 ) -> Result<(), Error> {
-    match spatial_info {
-        SpatialInfo::Unstructured {
-            ref points_a,
-            ref points_b,
-        } => match squared_distance_bin_edges {
-            BinEdgeSpec::Vec(v) => apply_accum(
+    // this can't be a closure if it accepts generic parameters
+    fn inner<R: Clone + Reducer, B: BinEdges + Clone>(
+        reducer: &R,
+        binned_statepack: &mut StatePackViewMut,
+        spatial_info: &SpatialInfo,
+        squared_distance_bin_edges: &B,
+        pair_op: PairOperation,
+    ) -> Result<(), Error> {
+        match spatial_info {
+            SpatialInfo::Unstructured { points_a, points_b } => apply_accum(
                 binned_statepack,
                 reducer,
                 points_a,
                 points_b.as_ref(),
-                &v.as_irregular_edge_view(),
+                squared_distance_bin_edges,
                 pair_op,
             ),
-            BinEdgeSpec::Regular(edges) => apply_accum(
+            SpatialInfo::Cartesian {
+                block_a,
+                block_b,
+                cell_width,
+            } => apply_cartesian(
                 binned_statepack,
                 reducer,
-                points_a,
-                points_b.as_ref(),
-                edges,
+                block_a,
+                block_b.as_ref(),
+                cell_width,
+                squared_distance_bin_edges,
                 pair_op,
             ),
-        },
+        }
+    }
+
+    match squared_distance_bin_edges {
+        BinEdgeSpec::Vec(v) => inner(
+            reducer,
+            binned_statepack,
+            &spatial_info,
+            &v.as_irregular_edge_view(),
+            pair_op,
+        ),
+        BinEdgeSpec::Regular(edges) => {
+            inner(reducer, binned_statepack, &spatial_info, edges, pair_op)
+        }
     }
 }

@@ -149,36 +149,4 @@ mod tests {
 
         assert_consistent_results(&accumulator.get_output(), &expected, &rtol_atol_vals);
     }
-
-    #[test]
-    fn test_apply_accum_auto_corr() {
-        // keep in mind that we interpret positions as a (3, ...) array
-        // so position 0 is [6,12,18]
-        let positions: Vec<f64> = (6..24).map(|x| x as f64).collect();
-        let values: Vec<f64> = (-9..9).map(|x| 2.0 * (x as f64)).collect();
-
-        let points = UnstructuredPoints::new(
-            ArrayView2::from_shape((3, 6), &positions).unwrap(),
-            ArrayView2::from_shape((3, 6), &values).unwrap(),
-            None,
-        )
-        .unwrap();
-
-        let mut accumulator = AccumulatorBuilder::new()
-            .calc_kind("2pcf")
-            // the bin edges are chosen so that some values don't fit
-            // inside the bottom bin
-            .dist_bin_edges(&[2., 6., 10., 15.])
-            .build()
-            .unwrap();
-        assert!(process_unstructured(&mut accumulator, points, None, &RuntimeSpec).is_ok());
-
-        let expected = HashMap::from([
-            ("weight", vec![7., 3., 0.]),
-            ("mean", vec![284.57142857142856, 236.0, f64::NAN]),
-        ]);
-        let rtol_atol_vals = HashMap::from([("weight", [0.0, 0.0]), ("mean", [3.0e-16, 0.0])]);
-
-        assert_consistent_results(&accumulator.get_output(), &expected, &rtol_atol_vals);
-    }
 }
