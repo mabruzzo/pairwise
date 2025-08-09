@@ -1,7 +1,6 @@
 // this file is intended for illustrative purposes
 // see module-level documentation for chunked.rs for more detail
 
-use crate::MemberID;
 use crate::misc::segment_idx_bounds;
 use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, Team};
 use crate::reduce_sample::chunked::{QuadraticPolynomial, SampleDataStreamView};
@@ -272,8 +271,8 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
             team.collect_pairs_then_apply(
                 binned_statepack,
                 self.get_reducer(),
-                &|collect_pad: &mut [BinnedDatum], member_id: MemberID| {
-                    assert_eq!(member_id.0, 0); // sanity check
+                &|collect_pad: &mut [BinnedDatum], member_id: usize| {
+                    assert_eq!(member_id, 0); // sanity check
                     assert_eq!(collect_pad.len(), team_param.n_members_per_team); // sanity check!
                     // we would need to do a lot of work to get this to
                     // auto-vectorize
@@ -305,9 +304,9 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
             team.collect_pairs_then_apply(
                 binned_statepack,
                 self.get_reducer(),
-                &|collect_pad: &mut [BinnedDatum], member_id: MemberID| {
+                &|collect_pad: &mut [BinnedDatum], member_id: usize| {
                     assert_eq!(collect_pad.len(), 1); // sanity check!
-                    let i = i_offset + member_id.0;
+                    let i = i_offset + member_id;
                     collect_pad[0] = if i >= stream_len {
                         BinnedDatum::zeroed()
                     } else {

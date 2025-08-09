@@ -1,9 +1,11 @@
-# pairwise
-[![codecov](https://codecov.io/gh/mabruzzo/pairwise/graph/badge.svg?token=56Z7H1GNK8)](https://codecov.io/gh/mabruzzo/pairwise)
+# pairstat-rs
+[![codecov](https://codecov.io/gh/mabruzzo/pairstat-rs/graph/badge.svg?token=56Z7H1GNK8)](https://codecov.io/gh/mabruzzo/pairstat-rs)
 
 An experimental rust package that provides low-level functionality for computing two-point statistics (e.g. correlation functions and structure functions).
 
-Ideally, the goal is to replace the C++ code within [pyvsf](https://github.com/mabruzzo/pyvsf) with this code.
+
+Ideally, the goal is to replace the C++ code within [pyvsf](https://github.com/mabruzzo/pyvsf) with bindings to this crate (this will coincide an overhaul to the API).
+
 
 > [!NOTE]
 > The remainder of this document describes some assorted ideas. They probably need to be distributed within actual documentation before we make a formal release.
@@ -16,7 +18,7 @@ After cloning the repository, navigate to the root of the repository and invoke
 $ cargo doc
 ```
 
-You can find the generated documentation within **target/doc**. You can manually open the docs for the ``pairwise`` crate, **OR**, you can invoke ``cargo doc --open``.
+You can find the generated documentation within **target/doc**. You can manually open the docs for the ``pairstat`` crate, **OR**, you can invoke ``cargo doc --open``.
 
 
 # Design Considerations
@@ -126,9 +128,9 @@ If we added this functionality, here are some important considerations:
   - Using rust would let us expose the functions to languages other than python much more easily (e.g. if you wanted to embed the function to perform online analysis inside of a simulation). In practice, I have doubts about how relevant this actually is.
 - if this function were implemented in rust, I think it's very important that we do it in such a way that the function (and any dependency-packages it requires) are an optional feature. To elaborate:
   - we would probably want to use MPI for distributed communications (due to its ubiquity). However, such a choice would prevent us from providing this function in a pre-compiled binary because different MPI implementations are **NOT** ABI-compatible.
-  - in particular, we want to make sure that any python package that depends on the pairwise package can be distributed as a precompiled binary.
+  - in particular, we want to make sure that any python package that depends on the pairstat package can be distributed as a precompiled binary.
 
 
 [^generalize3D]: The number of cross-tile correlations increase in 3D. If the max correlation-length does not exceed `min(tile_width, tile_height, tile_length)`, then a given tile may be involved with up to 26 cross-tile correlations.
 
-[^distributed_parallelism]: Honestly, even if we did support this sort of distributed parallelism as part of the pairwise crate, it would probably be handled somewhat separately from the core functions that do the heavy-lifting of computing two-point statistics (in order to avoid introducing unnecessary additional complexity -- thread-teams are already complex enough).
+[^distributed_parallelism]: Honestly, even if we did support this sort of distributed parallelism as part of the pairstat crate, it would probably be handled somewhat separately from the core functions that do the heavy-lifting of computing two-point statistics (in order to avoid introducing unnecessary additional complexity -- thread-teams are already complex enough).

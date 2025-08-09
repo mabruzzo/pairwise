@@ -1,6 +1,6 @@
 /*!
 This crate implements most of the underlying details of the
-`pairwise` crate.
+`pairstat` crate.
 
 # Developer Guide
 
@@ -236,28 +236,34 @@ these categories _"Nested"_ and _"Batched"_.
 
 */
 
-#![no_std]
+#![cfg_attr(not(test), no_std)] // (we allow std for testing)
 #![deny(rustdoc::broken_intra_doc_links)]
 
-mod apply_points;
 mod bins;
 mod misc;
 mod parallel;
 mod reduce_utils;
 mod reducer;
 mod state;
+mod twopoint;
 
 // I'm not really sure we want to publicly expose reduce_sample, but for now,
 // we expose it to support testing...
 pub mod reduce_sample;
 
-pub use apply_points::{PointProps, apply_accum};
 pub use bins::*;
-pub use misc::{dot_product, squared_diff_norm};
 pub use parallel::{
-    BinnedDatum, Executor, MemberID, ReductionSpec, StandardTeamParam, Team,
+    BinnedDatum, Executor, ReductionSpec, StandardTeamParam, Team,
     fill_single_team_binned_statepack,
 };
 pub use reduce_utils::reset_full_statepack;
-pub use reducer::{Comp0Histogram, Comp0Mean, Datum, OutputDescr, Reducer};
+pub use reducer::{
+    Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean, Datum, OutputDescr,
+    Reducer, ScalarHistogram, ScalarMean, ScalarizeOp,
+};
 pub use state::{AccumStateView, AccumStateViewMut, StatePackView, StatePackViewMut};
+pub use twopoint::{
+    common::PairOperation,
+    spatial::{CartesianBlock, CellWidth},
+    unstructured::{TwoPointUnstructured, UnstructuredPoints},
+};

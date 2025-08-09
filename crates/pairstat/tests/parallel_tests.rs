@@ -1,6 +1,6 @@
-use pairwise::{Comp0Mean, Reducer, SerialExecutor, StatePackViewMut, get_output};
+use pairstat::{Comp0Mean, Reducer, SerialExecutor, StatePackViewMut, get_output};
 
-use pairwise_nostd_internal::{
+use pairstat_nostd_internal::{
     BinnedDatum,
     reduce_sample::{
         chunked::{
@@ -362,7 +362,7 @@ mod tests {
 
         // now, let's iterate over all of the implementations
         for (key, func) in &registry {
-            println!("{}", key);
+            println!("{key}");
             for version in [StreamKind::Chunked, StreamKind::Unordered] {
                 match func(&stream.as_view(), version, &mut statepack) {
                     Ok(calculated_map) => {
@@ -374,12 +374,9 @@ mod tests {
                         );
                     }
                     Err(WrapperError::Unimplemented) => {
-                        eprintln!("(\"{}\", {:?}): isn't implemented", key, version)
+                        eprintln!("(\"{key}\", {version:?}): isn't implemented")
                     }
-                    _ => panic!(
-                        "(\"{}\", {:?}): something went wrong implemented",
-                        key, version
-                    ),
+                    _ => panic!("(\"{key}\", {version:?}): something went wrong implemented",),
                 }
             }
         }
