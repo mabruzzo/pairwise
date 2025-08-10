@@ -1,3 +1,10 @@
 [workspace]
 resolver = "3"
 members = ["crates/pairstat", "crates/pairstat_nostd_internal"]
+
+[workspace.package]
+authors = ["Matthew W. Abruzzo <matthewabruzzo@gmail.com>", "Adam J. Wheeler"]
+# there is a chance we might want to target an older rust version (like 1.66)
+edition = "2024"
+rust-version = "1.86"
+repository = "https://github.com/mabruzzo/pairstat-rs"

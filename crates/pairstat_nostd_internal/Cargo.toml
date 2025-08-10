@@ -1,9 +1,12 @@
 [package]
 name = "pairstat_nostd_internal"
+description = "Implements internal logic for the pairstat crate"
 version = "0.1.0"
-edition = "2024"
-authors = ["Matthew W. Abruzzo", "Adam J. Wheeler"]
-rust-version = "1.86"
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
 
 [dependencies]
 # we disable default-features since this crate is no-std
