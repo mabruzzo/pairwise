@@ -71,6 +71,7 @@ fn check_shape(shape_zyx: &[usize; 3]) -> Result<(), &'static str> {
 /// common shape and data layout.
 #[allow(dead_code)] // this is a temporary stopgap solution
 #[derive(Clone)]
+#[cfg_attr(feature = "fmt", derive(Debug))]
 pub struct View3DSpec {
     // Developer Notes
     // ---------------

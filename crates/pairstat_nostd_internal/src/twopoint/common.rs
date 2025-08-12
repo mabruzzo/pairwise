@@ -5,6 +5,7 @@
 /// necessary to convert this to a trait (each variant would become a
 /// unit-like struct)
 #[derive(Clone, Copy)]
+#[cfg_attr(feature = "fmt", derive(Debug))]
 pub enum PairOperation {
     /// For a pair of vector measurements, compute the element-wise
     /// products. This is used to compute correlation functions

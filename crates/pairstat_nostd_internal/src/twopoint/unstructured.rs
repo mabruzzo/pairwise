@@ -18,6 +18,7 @@ use ndarray::ArrayView2;
 ///   where `D` is the number of spatial dimensions and `n_points` is the
 ///   number of points.
 #[derive(Clone)]
+#[cfg_attr(feature = "fmt", derive(Debug))]
 pub struct UnstructuredPoints<'a> {
     positions: ArrayView2<'a, f64>,
     // TODO allow values to have a different dimensionality than positions
