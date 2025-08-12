@@ -153,7 +153,6 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
     // we could actually eliminate this method if we really want to
     fn inner_team_loop_bounds(
         &self,
-        _outer_index: usize,
         team_id: usize,
         team_info: &StandardTeamParam,
     ) -> (usize, usize) {
@@ -165,7 +164,6 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
     fn add_contributions<T: Team>(
         &self,
         binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
-        _outer_index: usize,
         inner_index: usize,
         team: &mut T,
     ) {

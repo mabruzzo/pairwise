@@ -200,27 +200,6 @@ pub trait ReductionSpec {
     // `inner_team_loop_bounds` with a function that returns a single iterator
     // (See the `inner_team_loop_bounds` docstring for more details)
 
-    /// Provides the bounds of the outer loop that all members of team share in
-    /// a given call to the [`fill_single_team_binned_statepack`] function
-    ///
-    /// For more details about how this is used, see the docstring of
-    /// [`Self::inner_team_loop_bounds`] or the implementation of
-    /// [`fill_single_team_binned_statepack`]
-    ///
-    /// # Note
-    /// we will eventually be able to remove this method. It is totally
-    /// unnecessary in the vast majority of cases. It **only** exists to make
-    /// it easier to port over the `pairstat::apply_accum` function for
-    /// [`crate::UnstructuredPoints`]
-    #[inline(always)]
-    fn outer_team_loop_bounds(
-        &self,
-        _team_id: usize,
-        _team_info: &StandardTeamParam,
-    ) -> (usize, usize) {
-        (0, 1)
-    }
-
     /// Provides the bounds of the inner loop that all members of a team share
     /// in a given call to the [`fill_single_team_binned_statepack`] function
     ///
@@ -229,13 +208,8 @@ pub trait ReductionSpec {
     /// nested outer and inner loop. But, we may want to stick with the outer
     /// and inner loops until we have a minimum viable GPU implementation. This
     /// is mostly to avoid any codegen surprises.
-    ///
-    /// # Other Thoughts
-    /// When the [`Self::outer_team_loop_bounds`] function is removed, we
-    /// should rename this function (maybe `team_loop_bounds`?)
     fn inner_team_loop_bounds(
         &self,
-        outer_index: usize,
         team_id: usize,
         team_info: &StandardTeamParam,
     ) -> (usize, usize);
@@ -286,7 +260,6 @@ pub trait ReductionSpec {
     fn add_contributions<T: Team>(
         &self,
         binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
-        outer_index: usize,
         inner_index: usize,
         team: &mut T,
     );
@@ -329,13 +302,9 @@ pub fn fill_single_team_binned_statepack<T>(
         reset_full_statepack(reducer, statepack);
     });
 
-    let (outer_start, outer_stop) = reduce_spec.outer_team_loop_bounds(team_id, &team_param);
-    for outer_idx in outer_start..outer_stop {
-        let (inner_start, inner_stop) =
-            reduce_spec.inner_team_loop_bounds(outer_idx, team_id, &team_param);
-        for inner_idx in inner_start..inner_stop {
-            reduce_spec.add_contributions(binned_statepack, outer_idx, inner_idx, team);
-        }
+    let (inner_start, inner_stop) = reduce_spec.inner_team_loop_bounds(team_id, &team_param);
+    for inner_idx in inner_start..inner_stop {
+        reduce_spec.add_contributions(binned_statepack, inner_idx, team);
     }
 }
 

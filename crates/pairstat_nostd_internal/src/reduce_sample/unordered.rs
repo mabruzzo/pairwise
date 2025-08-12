@@ -240,7 +240,6 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
 
     fn inner_team_loop_bounds(
         &self,
-        _outer_index: usize,
         team_id: usize,
         team_info: &StandardTeamParam,
     ) -> (usize, usize) {
@@ -256,7 +255,6 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
     fn add_contributions<T: Team>(
         &self,
         binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
-        _outer_index: usize,
         inner_index: usize,
         team: &mut T,
     ) {
