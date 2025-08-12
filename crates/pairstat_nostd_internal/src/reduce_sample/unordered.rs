@@ -238,11 +238,7 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
         self.n_bins
     }
 
-    fn inner_team_loop_bounds(
-        &self,
-        team_id: usize,
-        team_info: &StandardTeamParam,
-    ) -> (usize, usize) {
+    fn team_loop_bounds(&self, team_id: usize, team_info: &StandardTeamParam) -> (usize, usize) {
         let stream_idx_bounds = segment_idx_bounds(self.stream.len(), team_id, team_info.n_teams);
         let n_stream_indices = stream_idx_bounds.1 - stream_idx_bounds.0;
         let batch_size = team_info.n_members_per_team;
@@ -255,13 +251,13 @@ impl<'a> ReductionSpec for MeanUnorderedReduction<'a> {
     fn add_contributions<T: Team>(
         &self,
         binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
-        inner_index: usize,
+        team_loop_index: usize,
         team: &mut T,
     ) {
         let team_id = team.team_id();
         let team_param = team.standard_team_info();
         let stream_idx_bounds = segment_idx_bounds(self.stream.len(), team_id, team_param.n_teams);
-        let i_offset = stream_idx_bounds.0 + team_param.n_members_per_team * inner_index;
+        let i_offset = stream_idx_bounds.0 + team_param.n_members_per_team * team_loop_index;
 
         let stream_len = self.stream.len();
 

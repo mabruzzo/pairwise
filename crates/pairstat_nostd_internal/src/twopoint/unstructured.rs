@@ -151,11 +151,7 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
     }
 
     // we could actually eliminate this method if we really want to
-    fn inner_team_loop_bounds(
-        &self,
-        team_id: usize,
-        team_info: &StandardTeamParam,
-    ) -> (usize, usize) {
+    fn team_loop_bounds(&self, team_id: usize, team_info: &StandardTeamParam) -> (usize, usize) {
         segment_idx_bounds(self.points_a.n_points, team_id, team_info.n_teams)
     }
 
@@ -164,14 +160,14 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
     fn add_contributions<T: Team>(
         &self,
         binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
-        inner_index: usize,
+        team_loop_idx: usize,
         team: &mut T,
     ) {
         // the current way we divide up the work is terribly uneven when
         // `self.is_auto` is true. See the partitioning strategy implemented
         // in libvsf, within the pairstat python package for a better approach
 
-        let i_a = inner_index;
+        let i_a = team_loop_idx;
         let (i_b_start, i_b_stop) = if self.is_auto {
             (i_a + 1, self.points_a.n_points)
         } else {

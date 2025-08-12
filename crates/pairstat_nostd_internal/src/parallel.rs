@@ -152,11 +152,10 @@ pub trait Team {
 ///    _units of work_ to be distriubted across the available teams. A unit of
 ///    work consists of generating and processing a unique subset of pairs,
 ///
-/// # `outer_team_loop_bounds` and `inner_team_loop_bounds`
+/// # `team_loop_bounds`
 /// The trait exposes information about the units of work that a given team is
-/// responsible for completing with the [`Self::outer_team_loop_bounds`] and
-/// [`Self::inner_team_loop_bounds`]. The following snippet illustrates how
-/// they are intended to be used.
+/// responsible for completing with the [`Self::team_loop_bounds`] method.
+/// The following snippet illustrates how they are intended to be used.
 ///
 /// In the context of this snippet, `team_param` holds a [`StandardTeamParam`]
 /// instance. You should imagine that all of the members of the team with the
@@ -164,22 +163,17 @@ pub trait Team {
 /// the function calls produce exactly the same result for each member).
 ///
 /// ```ignore
-/// let (outer_start, outer_stop) = reduce_spec.outer_team_loop_bounds(team_id, &team_param);
-/// for outer_idx in outer_start..outer_stop {
-///     let (inner_start, inner_stop) =
-///         reduce_spec.inner_team_loop_bounds(outer_idx, team_id, &team_param);
-///     for inner_idx in inner_start..innser_stop {
-///
-///         // do work
-///     }
+/// let (start, stop) = reduce_spec.team_loop_bounds(team_id, &team_param);
+/// for team_loop_idx in start..stop {
+///     // do work
 /// }
 /// ```
 ///
-/// In the above snippet, each `(outer_idx, inner_idx)` pair corresponds to a
-/// _unit of work_. (**DON'T FORGET:** the members of a given team work together to
-/// complete a single unit of work at a time). The trait also provides methods
-/// to actually complete the work associated with this pair.
-/// those methods shortly.
+/// In the above snippet, each `team_loop_idx` corresponds to a _unit of work_.
+/// (**DON'T FORGET:** the members of a given team work together to complete
+/// a single unit of work at a time). The [`Self::add_contributions`] method
+/// actually encodes the logic to complete the work associated with a given
+/// value of `team_loop_idx`.
 ///
 /// The number of teams and the number of members per team are commonly encoded
 /// within instances of [`StandardTeamParam`].
@@ -196,23 +190,19 @@ pub trait ReductionSpec {
     /// The number of bins in this reduction.
     fn n_bins(&self) -> usize;
 
-    // I would really like us to replace `outer_team_loop_bounds` and
-    // `inner_team_loop_bounds` with a function that returns a single iterator
-    // (See the `inner_team_loop_bounds` docstring for more details)
-
-    /// Provides the bounds of the inner loop that all members of a team share
-    /// in a given call to the [`fill_single_team_binned_statepack`] function
+    /// Provides the bounds of the synchronized team-loop within the
+    /// [`fill_single_team_binned_statepack`] function
     ///
-    /// # Preference for iterators
-    /// move to using iterators rather than this
-    /// nested outer and inner loop. But, we may want to stick with the outer
-    /// and inner loops until we have a minimum viable GPU implementation. This
-    /// is mostly to avoid any codegen surprises.
-    fn inner_team_loop_bounds(
-        &self,
-        team_id: usize,
-        team_info: &StandardTeamParam,
-    ) -> (usize, usize);
+    /// During each iteration of the synchronized team-loop, the team
+    /// collectively calls [`Self::add_contributions`]
+    ///
+    /// # How useful is it?
+    /// Given the fact that we pass `Team` into [`Self::add_contributions`]
+    /// and we have no plans to implement any kind of work-stealing, this
+    /// method only provides limited utility. You could in fact move the
+    /// synchronized team-loop inside of [`Self::add_contributions`] and
+    /// remove this method entirely.
+    fn team_loop_bounds(&self, team_id: usize, team_info: &StandardTeamParam) -> (usize, usize);
 
     /// The associated constant indicates whether this is a "Nested Reduction"
     /// or "Batched Reduction." These concepts are defined in
@@ -240,7 +230,7 @@ pub trait ReductionSpec {
 
     /// Intended to be called collectively by the members of a team can
     /// collaboratively update the `binned_statepack` with the contributions
-    /// associated with the `(outer_index, inner_index)` pair.
+    /// associated with `team_loop_index`.
     ///
     /// See [`Self::NESTED_REDUCE`] for limitations on the implementation.
     ///
@@ -260,7 +250,7 @@ pub trait ReductionSpec {
     fn add_contributions<T: Team>(
         &self,
         binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
-        inner_index: usize,
+        team_loop_index: usize,
         team: &mut T,
     );
 }
@@ -302,9 +292,9 @@ pub fn fill_single_team_binned_statepack<T>(
         reset_full_statepack(reducer, statepack);
     });
 
-    let (inner_start, inner_stop) = reduce_spec.inner_team_loop_bounds(team_id, &team_param);
-    for inner_idx in inner_start..inner_stop {
-        reduce_spec.add_contributions(binned_statepack, inner_idx, team);
+    let (start, stop) = reduce_spec.team_loop_bounds(team_id, &team_param);
+    for team_loop_idx in start..stop {
+        reduce_spec.add_contributions(binned_statepack, team_loop_idx, team);
     }
 }
 
