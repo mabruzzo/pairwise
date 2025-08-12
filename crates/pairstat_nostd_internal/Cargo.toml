@@ -9,6 +9,26 @@ rust-version.workspace = true
 repository.workspace = true
 
 
+# in addition to regular usage, we are planning to experiment with this crate
+# in using GPUs. In that scenario, we would need to use it in:
+# 1. a CUDA GPU crate that compiles to PTX
+# 2. a CPU crate that launches the CUDA kernels
+#
+# For that reason, we want to put some features behind feature-flags so we
+# can disable them in certain contexts. For example, the Rust-CUDA docs advise
+# against deriving Debug traits to avoid unnecessarily increasing the size of
+# the GPU crates
+# https://rust-gpu.github.io/Rust-CUDA/guide/tips.html?highlight=elimin#gpu-kernels
+#
+# We are going to start out defining more fine-grained features, and if necessary,
+# we'll them down later...
+[features]
+default = ["fmt"]
+
+# when enabled we define some formatting traits (enabled by default)
+fmt=[]
+
+
 [dependencies]
 # we disable default-features since this crate is no-std
 ndarray = { version = "0.16", default-features = false }

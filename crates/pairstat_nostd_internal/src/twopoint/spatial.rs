@@ -7,6 +7,7 @@ use crate::misc::View3DSpec;
 // it might make more sense to provide this in a separate format that reduces
 // round-off error (e.g, global_domain_width and global_domain_shape)
 #[derive(Clone, Copy)]
+#[cfg_attr(feature = "fmt", derive(Debug))]
 pub struct CellWidth {
     pub(crate) widths_zyx: [f64; 3],
 }
@@ -22,6 +23,7 @@ impl CellWidth {
 }
 
 #[derive(Clone)]
+#[cfg_attr(feature = "fmt", derive(Debug))]
 pub struct CartesianBlock<'a> {
     pub(crate) value_components_zyx: [&'a [f64]; 3],
     pub(crate) weights: &'a [f64],
