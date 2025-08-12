@@ -1,6 +1,6 @@
 # pairstat-rs
 [![codecov](https://codecov.io/gh/mabruzzo/pairstat-rs/graph/badge.svg?token=56Z7H1GNK8)](https://codecov.io/gh/mabruzzo/pairstat-rs)
-[![ci](https://github.com/mabruzzo/pairstat-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/mabruzzo/pairstat-rs/actions/workflows/ci.yml/badge.svg)
+[![ci](https://github.com/mabruzzo/pairstat-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/mabruzzo/pairstat-rs/actions/workflows/rust.yml/badge.svg)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
 
 An experimental rust package that provides low-level functionality for computing two-point statistics (e.g. correlation functions and structure functions).
