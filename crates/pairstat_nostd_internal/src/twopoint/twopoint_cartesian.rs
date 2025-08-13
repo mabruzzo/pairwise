@@ -68,12 +68,7 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointCartesian<'a, R, B> 
     }
 
     // todo: I think we can entirely eliminate inner_team_loop_bounds and outer_team_loop_bounds
-    fn inner_team_loop_bounds(
-        &self,
-        _outer_index: usize,
-        team_id: usize,
-        _team_info: &StandardTeamParam,
-    ) -> (usize, usize) {
+    fn team_loop_bounds(&self, team_id: usize, _team_info: &StandardTeamParam) -> (usize, usize) {
         (team_id, team_id + 1)
     }
 
@@ -82,11 +77,10 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointCartesian<'a, R, B> 
     fn add_contributions<T: Team>(
         &self,
         binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
-        _outer_index: usize,
-        inner_index: usize,
+        team_loop_index: usize,
         team: &mut T,
     ) {
-        debug_assert_eq!(inner_index, team.team_id());
+        debug_assert_eq!(team_loop_index, team.team_id());
 
         match &self.pair_op {
             PairOperation::ElementwiseMultiply => {
