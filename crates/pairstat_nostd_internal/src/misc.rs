@@ -92,7 +92,6 @@ pub struct View3DSpec {
     strides_zyx: [isize; 3],
 }
 
-#[allow(dead_code)] // <- this is a temporary stopgap solution
 impl View3DSpec {
     /// Create a contiguous-in-memory View3DSpec from shape_zyx alone
     pub fn from_shape_contiguous(shape_zyx: [usize; 3]) -> Result<View3DSpec, &'static str> {
