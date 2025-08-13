@@ -264,7 +264,7 @@ pub use reducer::{
     Comp0Histogram, Comp0Mean, ComponentSumHistogram, ComponentSumMean, Datum, OutputDescr,
     Reducer, ScalarHistogram, ScalarMean, ScalarizeOp,
 };
-pub use state::{AccumStateView, AccumStateViewMut, StatePackViewMut};
+pub use state::{AccumStateView, AccumStateViewMut, StatePackView, StatePackViewMut};
 pub use twopoint::{
     common::PairOperation,
     spatial::{CartesianBlock, CellWidth},

@@ -4,7 +4,7 @@
 // useful utilities
 
 use crate::reducer::Reducer;
-use crate::state::{AccumStateViewMut, StatePackViewMut};
+use crate::state::{AccumStateViewMut, StatePackView, StatePackViewMut};
 use ndarray::s;
 
 // not sure if this should actually be part of the public API, but it's useful
@@ -23,7 +23,7 @@ pub fn reset_full_statepack(reducer: &impl Reducer, statepack: &mut StatePackVie
 pub fn merge_full_statepacks(
     reducer: &impl Reducer,
     statepack: &mut StatePackViewMut,
-    other: &StatePackViewMut,
+    other: &StatePackView,
 ) {
     let n_bins = statepack.n_states();
     assert_eq!(n_bins, other.n_states());
@@ -49,7 +49,7 @@ pub fn serial_consolidate_scratch_statepacks(
     // to serial_merge_accum_states
     for i in 1..scratch_statepacks.len() {
         let [main, other] = scratch_statepacks.get_disjoint_mut([0, i]).unwrap();
-        merge_full_statepacks(reducer, main, other);
+        merge_full_statepacks(reducer, main, &other.as_view());
     }
 }
 
