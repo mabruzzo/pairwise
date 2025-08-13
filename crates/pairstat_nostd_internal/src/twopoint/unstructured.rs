@@ -1,5 +1,5 @@
 use crate::bins::BinEdges;
-use crate::misc::squared_diff_norm;
+use crate::misc::{segment_idx_bounds, squared_diff_norm};
 use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, Team};
 use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
@@ -18,6 +18,7 @@ use ndarray::ArrayView2;
 ///   where `D` is the number of spatial dimensions and `n_points` is the
 ///   number of points.
 #[derive(Clone)]
+#[cfg_attr(feature = "fmt", derive(Debug))]
 pub struct UnstructuredPoints<'a> {
     positions: ArrayView2<'a, f64>,
     // TODO allow values to have a different dimensionality than positions
@@ -150,34 +151,9 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
         self.squared_distance_bin_edges.n_bins()
     }
 
-    #[inline(always)]
-    fn outer_team_loop_bounds(
-        &self,
-        _team_id: usize,
-        team_info: &StandardTeamParam,
-    ) -> (usize, usize) {
-        // require serial implementation TODO
-        assert_eq!(team_info.n_members_per_team, 1);
-        assert_eq!(team_info.n_teams, 1);
-
-        (0, self.points_a.n_points)
-    }
-
-    fn inner_team_loop_bounds(
-        &self,
-        outer_index: usize,
-        _team_id: usize,
-        team_info: &StandardTeamParam,
-    ) -> (usize, usize) {
-        // require serial implementation TODO
-        assert_eq!(team_info.n_members_per_team, 1);
-        assert_eq!(team_info.n_teams, 1);
-
-        if self.is_auto {
-            (outer_index + 1, self.points_a.n_points)
-        } else {
-            (0, self.points_b.n_points)
-        }
+    // we could actually eliminate this method if we really want to
+    fn team_loop_bounds(&self, team_id: usize, team_info: &StandardTeamParam) -> (usize, usize) {
+        segment_idx_bounds(self.points_a.n_points, team_id, team_info.n_teams)
     }
 
     const NESTED_REDUCE: bool = false;
@@ -185,17 +161,28 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
     fn add_contributions<T: Team>(
         &self,
         binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
-        outer_index: usize,
-        inner_index: usize,
+        team_loop_idx: usize,
         team: &mut T,
     ) {
+        // the current way we divide up the work is terribly uneven when
+        // `self.is_auto` is true. See the partitioning strategy implemented
+        // in libvsf, within the pairstat python package for a better approach
+
+        let i_a = team_loop_idx;
+        let (i_b_start, i_b_stop) = if self.is_auto {
+            (i_a + 1, self.points_a.n_points)
+        } else {
+            (0, self.points_b.n_points)
+        };
+
         match &self.pair_op {
             PairOperation::ElementwiseMultiply => {
                 apply_accum_helper::<T, false>(
                     binned_statepack,
                     &self.reducer,
-                    outer_index,
-                    inner_index,
+                    i_a,
+                    i_b_start,
+                    i_b_stop,
                     &self.points_a,
                     &self.points_b,
                     &self.squared_distance_bin_edges,
@@ -206,8 +193,9 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
                 apply_accum_helper::<T, true>(
                     binned_statepack,
                     &self.reducer,
-                    outer_index,
-                    inner_index,
+                    i_a,
+                    i_b_start,
+                    i_b_stop,
                     &self.points_a,
                     &self.points_b,
                     &self.squared_distance_bin_edges,
@@ -218,62 +206,81 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
     }
 }
 
+/// Updates `binned_statepack` with contributions from pairs of values.
+///
+/// In each pair, one value comes from `points_a` and the other comes from
+/// `points_b`.
+///
+/// ## Current Implementation
+/// Under the current implementation, this considers the index-pairs:
+/// - `(i_a, i_b_start)`
+/// - `(i_a, i_b_start+1)`
+/// - `(i_a, ...)`
+/// - `(i_a, i_b_stop-2)`
+/// - `(i_a, i_b_stop-1)`
 #[allow(clippy::too_many_arguments)]
 fn apply_accum_helper<T: Team, const SUBTRACT: bool>(
     binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
     reducer: &impl Reducer,
-    outer_index: usize,
-    inner_index: usize,
+    i_a: usize,
+    i_b_start: usize,
+    i_b_stop: usize,
     points_a: &UnstructuredPoints,
     points_b: &UnstructuredPoints,
     squared_distance_bin_edges: &impl BinEdges,
     team: &mut T,
 ) {
-    team.collect_pairs_then_apply(
-        binned_statepack,
-        reducer,
-        &|collect_pad: &mut [BinnedDatum], member_id: usize| {
-            assert!(!T::IS_VECTOR_PROCESSOR);
+    let step = team.standard_team_info().n_members_per_team;
+    // TODO confirm that step_by doesn't trip up the GPU (maybe compare to while-loop)
+    for nominal_i_b in (i_b_start..i_b_stop).step_by(step) {
+        team.collect_pairs_then_apply(
+            binned_statepack,
+            reducer,
+            &|collect_pad: &mut [BinnedDatum], member_id: usize| {
+                assert!(!T::IS_VECTOR_PROCESSOR);
+                let i_b = nominal_i_b + member_id;
 
-            let i_a = outer_index;
-            // this will change when we have more that 1 member per team
-            let i_b = inner_index + member_id;
-
-            let distance_squared = squared_diff_norm(
-                points_a.positions,
-                points_b.positions,
-                i_a,
-                i_b,
-                points_a.n_spatial_dims,
-            );
-
-            collect_pad[0] = if let Some(distance_bin_idx) =
-                squared_distance_bin_edges.bin_index(distance_squared)
-            {
-                let datum = Datum {
-                    value: if SUBTRACT {
-                        [
-                            points_b.values[[0, i_b]] - points_a.values[[0, i_a]],
-                            points_b.values[[1, i_b]] - points_a.values[[1, i_a]],
-                            points_b.values[[2, i_b]] - points_a.values[[2, i_a]],
-                        ]
-                    } else {
-                        [
-                            points_b.values[[0, i_b]] * points_a.values[[0, i_a]],
-                            points_b.values[[1, i_b]] * points_a.values[[1, i_a]],
-                            points_b.values[[2, i_b]] * points_a.values[[2, i_a]],
-                        ]
-                    },
-                    weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
+                // calculate the bin-index associated with i_b (if any)
+                // - I'm pretty confident we can write a branch-free version
+                let maybe_bin_index = if i_b >= i_b_stop {
+                    None // can only come up if multiple members per team
+                } else {
+                    let distance_squared = squared_diff_norm(
+                        points_a.positions,
+                        points_b.positions,
+                        i_a,
+                        i_b,
+                        points_a.n_spatial_dims,
+                    );
+                    squared_distance_bin_edges.bin_index(distance_squared)
                 };
 
-                BinnedDatum {
-                    bin_index: distance_bin_idx,
-                    datum,
+                // now we write a value into collect_pad
+                collect_pad[0] = if let Some(bin_index) = maybe_bin_index {
+                    let datum = Datum {
+                        value: if SUBTRACT {
+                            [
+                                points_b.values[[0, i_b]] - points_a.values[[0, i_a]],
+                                points_b.values[[1, i_b]] - points_a.values[[1, i_a]],
+                                points_b.values[[2, i_b]] - points_a.values[[2, i_a]],
+                            ]
+                        } else {
+                            [
+                                points_b.values[[0, i_b]] * points_a.values[[0, i_a]],
+                                points_b.values[[1, i_b]] * points_a.values[[1, i_a]],
+                                points_b.values[[2, i_b]] * points_a.values[[2, i_a]],
+                            ]
+                        },
+                        weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
+                    };
+
+                    BinnedDatum { bin_index, datum }
+                } else {
+                    // the fact BinnedDatum::Datum::weight has a value of 0
+                    // means that this has no impact on the output result
+                    BinnedDatum::zeroed()
                 }
-            } else {
-                BinnedDatum::zeroed()
-            }
-        },
-    );
+            },
+        );
+    }
 }
