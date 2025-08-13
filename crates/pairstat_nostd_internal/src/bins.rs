@@ -16,6 +16,7 @@ pub trait BinEdges {
 
 /// Regular bins with uniform spacing
 #[derive(Clone)]
+#[cfg_attr(feature = "fmt", derive(Debug))]
 pub struct RegularBinEdges {
     min: f64,
     max: f64,
@@ -101,6 +102,7 @@ pub fn validate_bin_edges(edges: &[f64]) -> Result<(), &'static str> {
 }
 
 #[derive(Clone)]
+#[cfg_attr(feature = "fmt", derive(Debug))]
 pub struct IrregularBinEdges<'a> {
     bin_edges: &'a [f64],
 }

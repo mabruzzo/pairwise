@@ -6,7 +6,7 @@ structure functions).
 <div class="warning">
 
 This crate is still in early development. The initial goal is to serve as a
-backend for the [pyvsf python package](https://pyvsf.readthedocs.io/en/latest/).
+backend for the [pairstat python package](https://pypi.org/project/pairstat/).
 
 </div>
 
