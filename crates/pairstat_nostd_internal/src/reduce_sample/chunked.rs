@@ -383,12 +383,7 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
         self.n_bins
     }
 
-    fn inner_team_loop_bounds(
-        &self,
-        _outer_index: usize,
-        team_id: usize,
-        team_info: &StandardTeamParam,
-    ) -> (usize, usize) {
+    fn team_loop_bounds(&self, team_id: usize, team_info: &StandardTeamParam) -> (usize, usize) {
         segment_idx_bounds(self.stream_chunk_lens.len(), team_id, team_info.n_teams)
     }
 
@@ -397,13 +392,12 @@ impl<'a> ReductionSpec for MeanChunkedReduction<'a> {
     fn add_contributions<T: Team>(
         &self,
         binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
-        _outer_index: usize,
-        inner_index: usize,
+        team_loop_idx: usize,
         team: &mut T,
     ) {
         // figure out the first index of the stream that corresponds to the
         // current chunk, the associated bin_index, and the chunk_len
-        let chunk_index = inner_index;
+        let chunk_index = team_loop_idx;
         let i_global = self.stream.first_index_of_chunk(chunk_index).unwrap();
         let bin_index = self.stream.bin_indices[i_global];
         if bin_index >= self.n_bins {
