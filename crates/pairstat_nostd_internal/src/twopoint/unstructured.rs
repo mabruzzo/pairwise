@@ -1,10 +1,17 @@
 use crate::bins::BinEdges;
-use crate::misc::{segment_idx_bounds, squared_diff_norm};
+use crate::misc::{View2DUnsignedSpec, segment_idx_bounds};
 use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, Team};
 use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
 use crate::twopoint::common::PairOperation;
-use ndarray::ArrayView2;
+
+/// calculate the squared euclidean norm for two (mathematical) vectors
+fn squared_diff_norm(v1_i: f64, v1_j: f64, v1_k: f64, v2_i: f64, v2_j: f64, v2_k: f64) -> f64 {
+    let delta_v_i = v2_i - v1_i;
+    let delta_v_j = v2_j - v1_j;
+    let delta_v_k = v2_k - v1_k;
+    delta_v_i * delta_v_i + (delta_v_j * delta_v_j + delta_v_k * delta_v_k)
+}
 
 /// Collection of point properties.
 ///
@@ -20,54 +27,64 @@ use ndarray::ArrayView2;
 #[derive(Clone)]
 #[cfg_attr(feature = "fmt", derive(Debug))]
 pub struct UnstructuredPoints<'a> {
-    positions: ArrayView2<'a, f64>,
-    // TODO allow values to have a different dimensionality than positions
-    values: ArrayView2<'a, f64>,
-    weights: Option<&'a [f64]>,
-    n_points: usize,
-    n_spatial_dims: usize,
+    positions: &'a [f64],
+    values: &'a [f64],
+    weights: &'a [f64],
+    /// specifies layout of positions and values
+    ///
+    /// be aware that `[n_points, n_spatial_dims] = self.idx_2d_spec.clone()`
+    idx_2d_spec: View2DUnsignedSpec,
 }
 
 impl<'a> UnstructuredPoints<'a> {
     /// create a new instance
     pub fn new(
-        positions: ArrayView2<'a, f64>,
-        values: ArrayView2<'a, f64>,
-        weights: Option<&'a [f64]>,
+        positions: &'a [f64],
+        values: &'a [f64],
+        weights: &'a [f64],
+        n_points: usize,
+        spatial_dim_stride: Option<usize>,
     ) -> Result<UnstructuredPoints<'a>, &'static str> {
-        let n_spatial_dims = positions.shape()[0];
-        let n_points = positions.shape()[1];
-        // TODO: should we place a requirement on the number of spatial_dims?
-        if positions.is_empty() {
-            Err("positions must hold at least n_spatial_dims")
-        } else if positions.strides()[1] != 1 {
-            Err("positions must be contiguous along the fast axis")
-        } else if values.shape()[0] != n_spatial_dims {
-            // TODO: in the future, we will allow values to be 1D (i.e. a scalar)
-            Err("values must currently have the same number of spatial \
-                dimensions as positions")
-        } else if values.shape()[1] != n_points {
-            Err("values must have the same number of points as positions")
-        } else if weights.is_some_and(|w| w.len() != n_points) {
-            Err("weights must have the same number of points as positions")
+        let spatial_dim_stride = spatial_dim_stride.unwrap_or(n_points);
+
+        if n_points == 0 {
+            return Err("n_points must be positive");
+        } else if n_points > spatial_dim_stride {
+            return Err("n_points exceeds spatial_dim_stride");
+        } else if values.len() != positions.len() {
+            return Err("values and positions have different lengths");
+        }
+
+        let n_spatial_dims = positions.len() / spatial_dim_stride;
+
+        if positions.len() % spatial_dim_stride != 0 {
+            Err("positions.len() isn't divisible by spatial_dim_stride")
+        } else if n_spatial_dims != 3 {
+            // we can probably relax this in the future
+            Err("for now, we require 3 spatial dimensions")
+        } else if weights.len() != n_points {
+            Err("weights.len() must be n_points")
         } else {
             Ok(Self {
                 positions,
                 values,
                 weights,
-                n_points,
-                n_spatial_dims,
+                idx_2d_spec: View2DUnsignedSpec::from_shape_strides(
+                    [n_spatial_dims, n_points],
+                    [spatial_dim_stride, 1],
+                )?,
             })
         }
     }
 
-    /// If no weights are provided, returns 1.0, i.e., weights are just counts.
-    pub fn get_weight(&self, idx: usize) -> f64 {
-        if let Some(weights) = self.weights {
-            weights[idx]
-        } else {
-            1.0
-        }
+    #[inline]
+    fn n_spatial_dims(&self) -> usize {
+        self.idx_2d_spec.shape()[0]
+    }
+
+    #[inline]
+    fn n_points(&self) -> usize {
+        self.idx_2d_spec.shape()[1]
     }
 }
 
@@ -107,14 +124,9 @@ impl<'a, R: Reducer, B: BinEdges> TwoPointUnstructured<'a, R, B> {
         //  if points_b is not None, make sure a and b have the same number of
         // spatial dimensions
         if let Some(points_b) = points_b {
-            if points_a.n_spatial_dims != points_b.n_spatial_dims {
+            if points_a.n_spatial_dims() != points_b.n_spatial_dims() {
                 return Err(
                     "points_a and points_b must have the same number of spatial dimensions",
-                );
-            } else if points_a.weights.is_some() != points_b.weights.is_some() {
-                return Err(
-                    "points_a and points_b must both provide weights or neither \
-                    should provide weights",
                 );
             }
 
@@ -153,7 +165,7 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
 
     // we could actually eliminate this method if we really want to
     fn team_loop_bounds(&self, team_id: usize, team_info: &StandardTeamParam) -> (usize, usize) {
-        segment_idx_bounds(self.points_a.n_points, team_id, team_info.n_teams)
+        segment_idx_bounds(self.points_a.n_points(), team_id, team_info.n_teams)
     }
 
     const NESTED_REDUCE: bool = false;
@@ -170,9 +182,9 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
 
         let i_a = team_loop_idx;
         let (i_b_start, i_b_stop) = if self.is_auto {
-            (i_a + 1, self.points_a.n_points)
+            (i_a + 1, self.points_a.n_points())
         } else {
-            (0, self.points_b.n_points)
+            (0, self.points_b.n_points())
         };
 
         match &self.pair_op {
@@ -222,35 +234,45 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
 fn apply_accum_helper<T: Team, const SUBTRACT: bool>(
     binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
     reducer: &impl Reducer,
-    i_a: usize,
-    i_b_start: usize,
-    i_b_stop: usize,
+    idx_a: usize,
+    idx_b_start: usize,
+    idx_b_stop: usize,
     points_a: &UnstructuredPoints,
     points_b: &UnstructuredPoints,
     squared_distance_bin_edges: &impl BinEdges,
     team: &mut T,
 ) {
     let step = team.standard_team_info().n_members_per_team;
+
+    debug_assert_eq!(points_a.n_spatial_dims(), 3);
+    let idx_a0 = points_a.idx_2d_spec.map_idx2d_to_1d(0, idx_a);
+    let idx_a1 = points_a.idx_2d_spec.map_idx2d_to_1d(1, idx_a);
+    let idx_a2 = points_a.idx_2d_spec.map_idx2d_to_1d(2, idx_a);
+
     // TODO confirm that step_by doesn't trip up the GPU (maybe compare to while-loop)
-    for nominal_i_b in (i_b_start..i_b_stop).step_by(step) {
+    for nominal_idx_b in (idx_b_start..idx_b_stop).step_by(step) {
         team.collect_pairs_then_apply(
             binned_statepack,
             reducer,
             &|collect_pad: &mut [BinnedDatum], member_id: usize| {
                 assert!(!T::IS_VECTOR_PROCESSOR);
-                let i_b = nominal_i_b + member_id;
+                let idx_b = nominal_idx_b + member_id;
+                let idx_b0 = points_b.idx_2d_spec.map_idx2d_to_1d(0, idx_b);
+                let idx_b1 = points_b.idx_2d_spec.map_idx2d_to_1d(1, idx_b);
+                let idx_b2 = points_b.idx_2d_spec.map_idx2d_to_1d(2, idx_b);
 
                 // calculate the bin-index associated with i_b (if any)
                 // - I'm pretty confident we can write a branch-free version
-                let maybe_bin_index = if i_b >= i_b_stop {
+                let maybe_bin_index = if idx_b >= idx_b_stop {
                     None // can only come up if multiple members per team
                 } else {
                     let distance_squared = squared_diff_norm(
-                        points_a.positions,
-                        points_b.positions,
-                        i_a,
-                        i_b,
-                        points_a.n_spatial_dims,
+                        points_a.positions[idx_a0],
+                        points_a.positions[idx_a1],
+                        points_a.positions[idx_a2],
+                        points_b.positions[idx_b0],
+                        points_b.positions[idx_b1],
+                        points_b.positions[idx_b2],
                     );
                     squared_distance_bin_edges.bin_index(distance_squared)
                 };
@@ -260,18 +282,18 @@ fn apply_accum_helper<T: Team, const SUBTRACT: bool>(
                     let datum = Datum {
                         value: if SUBTRACT {
                             [
-                                points_b.values[[0, i_b]] - points_a.values[[0, i_a]],
-                                points_b.values[[1, i_b]] - points_a.values[[1, i_a]],
-                                points_b.values[[2, i_b]] - points_a.values[[2, i_a]],
+                                points_b.values[idx_b0] - points_a.values[idx_a0],
+                                points_b.values[idx_b1] - points_a.values[idx_a1],
+                                points_b.values[idx_b2] - points_a.values[idx_a2],
                             ]
                         } else {
                             [
-                                points_b.values[[0, i_b]] * points_a.values[[0, i_a]],
-                                points_b.values[[1, i_b]] * points_a.values[[1, i_a]],
-                                points_b.values[[2, i_b]] * points_a.values[[2, i_a]],
+                                points_b.values[idx_b0] * points_a.values[idx_a0],
+                                points_b.values[idx_b1] * points_a.values[idx_a1],
+                                points_b.values[idx_b2] * points_a.values[idx_a2],
                             ]
                         },
-                        weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
+                        weight: points_a.weights[idx_a] * points_b.weights[idx_b],
                     };
 
                     BinnedDatum { bin_index, datum }
@@ -282,5 +304,94 @@ fn apply_accum_helper<T: Team, const SUBTRACT: bool>(
                 }
             },
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use core::fmt::Display;
+
+    use super::*;
+
+    fn assert_is_err_contains<T, E: Display>(rslt: &Result<T, E>, text: &str) {
+        let Err(e) = rslt else {
+            panic!("result is not an error");
+        };
+        let err_string = e.to_string();
+        if !err_string.contains(text) {
+            panic!(
+                "error doesn't expand to message containing \"{text}\". The \
+                message reads:\n> {err_string}",
+            );
+        }
+    }
+
+    // a sample array to illustrate what a strided array might look like
+    #[rustfmt::skip]
+    const SAMPLE_STRIDED_ARR: [f64; 18] = [
+        //               elem-0,   elem-1,   elem-2,   elem-3,   elem-4,   padding,
+        /* axis 0: */       0.0,      1.0,      2.0,      3.0,      4.0,  f64::NAN,
+        /* axis 1: */       0.0,      1.0,      2.0,      3.0,      4.0,  f64::NAN,
+        /* axis 2: */       0.0,      1.0,      2.0,      3.0,      4.0,  f64::NAN,
+    ];
+
+    #[test]
+    fn simple_points_success() {
+        let pos = [1.0; 18];
+        let vel = [0.0; 18];
+        let weights = [1.0; 6];
+        let _ = UnstructuredPoints::new(&pos, &vel, &weights, 6, None).unwrap();
+    }
+
+    #[test]
+    fn strided_points_success() {
+        let pos = &SAMPLE_STRIDED_ARR;
+        let vel = &SAMPLE_STRIDED_ARR;
+        let weights = [1.0; 5];
+        let _ = UnstructuredPoints::new(pos, vel, &weights, 5, Some(6)).unwrap();
+    }
+
+    #[test]
+    fn no_points() {
+        let rslt = UnstructuredPoints::new(&[], &[], &[], 0, None);
+        assert_is_err_contains(&rslt, "be positive");
+    }
+
+    #[test]
+    fn pos_vel_mismatch() {
+        let pos = [1.0; 18];
+        let vel = [0.0; 15];
+        let weights = [1.0; 6];
+        let rslt = UnstructuredPoints::new(&pos, &vel, &weights, 6, None);
+        assert_is_err_contains(&rslt, "different lengths");
+    }
+
+    #[test]
+    fn weights_mismatch() {
+        let pos = [1.0; 18];
+        let vel = [0.0; 18];
+        let weights = [1.0; 5];
+        let rslt = UnstructuredPoints::new(&pos, &vel, &weights, 6, None);
+        assert_is_err_contains(&rslt, "must be n_points");
+    }
+
+    #[test]
+    fn not_evenly_divisible() {
+        let pos = [1.0; 19];
+        let vel = [0.0; 19];
+        let weights = [1.0; 6];
+        let rslt = UnstructuredPoints::new(&pos, &vel, &weights, 6, None);
+        assert_is_err_contains(&rslt, "divisible");
+    }
+
+    #[test]
+    fn npoints_stride_mismatch() {
+        let pos = &SAMPLE_STRIDED_ARR;
+        let vel = &SAMPLE_STRIDED_ARR;
+        let weights = [1.0; 6];
+        // in this case, we reverse n_points and spatial_dim_stride
+        let rslt = UnstructuredPoints::new(pos, vel, &weights, 6, Some(5));
+        assert_is_err_contains(&rslt, "exceeds spatial_dim_stride");
     }
 }
