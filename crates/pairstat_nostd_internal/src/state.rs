@@ -223,10 +223,46 @@ impl<'a> StatePackView<'a> {
 
 /// Represents a collection of accumulator States
 ///
+/// This type is often used to store a binned statepack.
+///
+/// # Data Representation
+/// This type stores accumulator states in an interleaved manner. In other
+/// words, the data associated with an [`StatePackView`] instance
+/// returned by [`Self::get_state`] cannot be contiguous unless the
+/// [`Self::n_states`] method returns `1`.[^single_elem]
+///
+/// ## Benefits
+/// This choice has some theoretical benefits:
+/// - when updating a binned statepack with values from another binned
+///   statepack, this representation would facillitate SIMD optimizations
+///   on a CPU. (It could also facillitate memory-colasence if the operation
+///   were parallelized on GPUs)
+/// - If you implemented [`crate::Team::calccontribs_combine_apply``] for a
+///   team where each member corresponds to a vector lane, you would
+///   theoretically want to hold the temporary accum_states in an interleaved
+///   manner (as is done by this type)
+///
+/// ## Disadvantages
+/// You **need** to implement [`AccumStateView`] and [`AccumStateViewMut`] in
+/// terms of pointers if you want to access 2 [`AccumStateViewMut`] instances
+/// (or a [`AccumStateViewMut`] instance and a [`AccumStateView`]) instance
+/// from `self` at the same time. It is **IMPOSSIBLE** to do that if
+/// [`AccumStateView`] and [`AccumStateViewMut`] are implemented in terms of
+/// slices.
+///
+/// To be clear, if the types were implemented in terms of slices, the
+/// fundamental issue is the slices would refer to overlapping regions of
+/// memory (as I understand it, that will trigger undefined behavior)
+///
 /// # Note
 /// There is some benefit to defining this even though it wraps ArrayViewMut2
 /// since it helps contain all references to the ndarray package to a single
 /// file.
+///
+/// [^single_elem]: Technically, a [`StatePackView`] instance returned by
+///     [`Self::get_state`] could be considered contiguous if
+///     [`Self::state_size`] returns `1`. But that's only because a 1-element
+///     array is always contiguous.
 pub struct StatePackViewMut<'a> {
     // when we refactor this to stop wrapping ArrayViewMut2, I *think*, we
     // probably want to wrap a pointer rather than a slice.
@@ -291,4 +327,73 @@ impl<'a> StatePackViewMut<'a> {
     // we probably want to add something like get_pair_disjoint_mut, which would
     // would be inspired by the slice type's more general get_disjoint_mut
     // method
+}
+
+// keep in mind: we have explicitly reversed the axes order compared to [`StatePackViewMut`]
+pub struct CollatedStatePackViewMut<'a> {
+    data: &'a mut [f64],
+    n_states: usize,
+    state_size: usize,
+}
+
+impl<'a> CollatedStatePackViewMut<'a> {
+    pub fn from_slice(
+        n_states: usize,
+        state_size: usize,
+        data: &'a mut [f64],
+    ) -> Result<Self, &'static str> {
+        if (n_states * state_size) != data.len() {
+            Err("slice has wrong length")
+        } else if (n_states == 0) || (state_size == 0) {
+            Err("can't represent an empty statepack")
+        } else {
+            Ok(Self {
+                data,
+                n_states,
+                state_size,
+            })
+        }
+    }
+
+    pub fn state_size(&self) -> usize {
+        self.state_size
+    }
+
+    pub fn n_states(&self) -> usize {
+        self.n_states
+    }
+
+    #[inline]
+    pub fn get_state(&self, i: usize) -> AccumStateView {
+        assert!(i < self.n_states);
+        let start = i * self.state_size;
+        let stop = start + self.state_size;
+        AccumStateView::from_contiguous_slice(&self.data[start..stop])
+    }
+
+    #[inline]
+    pub fn get_state_mut(&mut self, i: usize) -> AccumStateViewMut {
+        assert!(i < self.n_states);
+        let start = i * self.state_size;
+        let stop = start + self.state_size;
+        AccumStateViewMut::from_contiguous_slice(&mut self.data[start..stop])
+    }
+
+    fn disjoint_state_mut_pair(&mut self, i: usize, j: usize) -> [AccumStateViewMut; 2] {
+        assert!(i < self.n_states);
+        assert!(j < self.n_states);
+        let i_start = i * self.state_size;
+        let i_stop = i_start + self.state_size;
+        let j_start = j * self.state_size;
+        let j_stop = j_start + self.state_size;
+
+        let [slc_left, slc_right] = self
+            .data
+            .get_disjoint_mut([i_start..i_stop, j_start..j_stop])
+            .unwrap();
+        [
+            AccumStateViewMut::from_contiguous_slice(slc_left),
+            AccumStateViewMut::from_contiguous_slice(slc_right),
+        ]
+    }
 }
