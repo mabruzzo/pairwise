@@ -1,23 +1,3 @@
-use ndarray::ArrayView2;
-
-/// calculate the squared norm of the difference between two (mathematical) vectors
-/// which are part of rust vecs that encodes a list of vectors with dimension on
-/// the "slow axis"
-pub(crate) fn squared_diff_norm(
-    v1: ArrayView2<f64>,
-    v2: ArrayView2<f64>,
-    i1: usize,
-    i2: usize,
-    n_spatial_dims: usize,
-) -> f64 {
-    let mut sum = 0.0;
-    for k in 0..n_spatial_dims {
-        let diff = v1[[k, i1]] - v2[[k, i2]];
-        sum += diff * diff; // NOTE: .powi can't be used in no_std crates
-    }
-    sum
-}
-
 /// computes the bounds of an index-segment
 ///
 /// The premise is that we can break up `n_indices` up into `n_segments`
@@ -47,12 +27,74 @@ pub fn segment_idx_bounds(n_indices: usize, seg_index: usize, n_segments: usize)
     (start, stop)
 }
 
-/// Check if a 3D array shape (for a View3DSpec) is valid
-fn check_shape(shape_zyx: &[usize; 3]) -> Result<(), &'static str> {
-    if shape_zyx.contains(&0) {
-        Err("shape_zyx must not hold 0")
+/// Check if view shape is valid
+///
+/// Used while constructing [`View2DUnsignedSpec`] or [`View3DSpec`]
+fn check_shape(shape: &[usize]) -> Result<(), &'static str> {
+    match shape.contains(&0) {
+        true => Err("shape must not hold 0"),
+        false => Ok(()),
+    }
+}
+
+/// Check if view shape and strides are valid
+///
+/// Used while constructing [`View2DUnsignedSpec`] or [`View3DSpec`]
+fn check_shape_and_strides(shape: &[usize], strides: &[usize]) -> Result<(), &'static str> {
+    check_shape(shape)?;
+    let ndims = shape.len();
+    debug_assert!((ndims == 2) || (ndims == 3), "this shouldn't come up");
+
+    if strides[ndims - 1] != 1 {
+        Err("stride must be 1 along the trailing axis")
+    } else if strides[0] < (strides[1] * shape[1]) {
+        Err("strides[0] must not be exceeded by total length of ax 1")
+    } else if (ndims == 3) && (strides[1] < (strides[2] * shape[2])) {
+        Err("strides[1] must not be exceeded by total length of ax 2")
     } else {
         Ok(())
+    }
+}
+
+/// View2DUnsignedSpec specifies how a "2D" array is laid out in memory
+///
+/// The array _must_ be contiguous along the fast axis, which is axis 1. For
+/// concreteness, an array with shape `[a, b]`, has `a` elements along axis
+/// 0 and `b` elements along axis 1.
+///
+/// # Note
+/// In comparison to [`View3DSpec`], this uses unsigned arithmetic
+#[derive(Clone)]
+#[cfg_attr(feature = "fmt", derive(Debug))]
+pub struct View2DUnsignedSpec {
+    shape: [usize; 2],
+    strides: [usize; 2],
+}
+
+impl View2DUnsignedSpec {
+    /// Create a contiguous-in-memory instance from shape alone
+    pub fn from_shape_contiguous(shape: [usize; 2]) -> Result<Self, &'static str> {
+        check_shape(&shape)?;
+        let strides = [shape[1], 1];
+        Ok(Self { shape, strides })
+    }
+
+    /// Create instance from shape and strides
+    pub fn from_shape_strides(
+        shape: [usize; 2],
+        strides: [usize; 2],
+    ) -> Result<Self, &'static str> {
+        check_shape_and_strides(&shape, &strides)?;
+        Ok(Self { shape, strides })
+    }
+
+    pub fn shape(&self) -> &[usize; 2] {
+        &self.shape
+    }
+
+    /// map a 2D index to 1D
+    pub fn map_idx2d_to_1d(&self, iy: usize, ix: usize) -> usize {
+        iy * self.strides[0] + ix
     }
 }
 
@@ -69,7 +111,6 @@ fn check_shape(shape_zyx: &[usize; 3]) -> Result<(), &'static str> {
 /// (e.g. ndarray::ArrayView3), when working with multiple separate slices
 /// that are all interpreted as multidimensional arrays that all share a
 /// common shape and data layout.
-#[allow(dead_code)] // this is a temporary stopgap solution
 #[derive(Clone)]
 #[cfg_attr(feature = "fmt", derive(Debug))]
 pub struct View3DSpec {
@@ -115,30 +156,19 @@ impl View3DSpec {
         shape_zyx: [usize; 3],
         strides_zyx: [usize; 3],
     ) -> Result<View3DSpec, &'static str> {
-        check_shape(&shape_zyx)?;
-
-        if strides_zyx[2] != 1 {
-            Err("the blocks must be contiguous along the fast axis")
-        } else if strides_zyx[1] < shape_zyx[2] * strides_zyx[2] {
-            Err("the length of the contiguous axis can't exceed strides_zyx[1]")
-        } else if strides_zyx[0] < shape_zyx[1] * strides_zyx[1] {
-            Err("the length of axis 1 can't exceed strides_zyx[0]")
-        } else if strides_zyx[0] < strides_zyx[1] {
-            Err("strides_zyx[1] must not exceed strides_zyx[0]")
-        } else {
-            Ok(Self {
-                shape_zyx: [
-                    shape_zyx[0] as isize,
-                    shape_zyx[1] as isize,
-                    shape_zyx[2] as isize,
-                ],
-                strides_zyx: [
-                    strides_zyx[0] as isize,
-                    strides_zyx[1] as isize,
-                    strides_zyx[2] as isize,
-                ],
-            })
-        }
+        check_shape_and_strides(&shape_zyx, &strides_zyx)?;
+        Ok(Self {
+            shape_zyx: [
+                shape_zyx[0] as isize,
+                shape_zyx[1] as isize,
+                shape_zyx[2] as isize,
+            ],
+            strides_zyx: [
+                strides_zyx[0] as isize,
+                strides_zyx[1] as isize,
+                strides_zyx[2] as isize,
+            ],
+        })
     }
 
     /// the number of elements a slice must have to be described by `&self`

@@ -1,10 +1,18 @@
 use crate::bins::BinEdges;
-use crate::misc::{segment_idx_bounds, squared_diff_norm};
+use crate::misc::{View2DUnsignedSpec, segment_idx_bounds};
 use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, Team};
 use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
 use crate::twopoint::common::PairOperation;
 use ndarray::ArrayView2;
+
+/// calculate the squared euclidean norm for two (mathematical) vectors
+fn squared_diff_norm(v1_i: f64, v1_j: f64, v1_k: f64, v2_i: f64, v2_j: f64, v2_k: f64) -> f64 {
+    let delta_v_i = v2_i - v1_i;
+    let delta_v_j = v2_j - v1_j;
+    let delta_v_k = v2_k - v1_k;
+    delta_v_i * delta_v_i + (delta_v_j * delta_v_j + delta_v_k * delta_v_k)
+}
 
 /// Collection of point properties.
 ///
@@ -20,34 +28,67 @@ use ndarray::ArrayView2;
 #[derive(Clone)]
 #[cfg_attr(feature = "fmt", derive(Debug))]
 pub struct UnstructuredPoints<'a> {
-    positions: ArrayView2<'a, f64>,
-    values: ArrayView2<'a, f64>,
+    positions: &'a [f64],
+    values: &'a [f64],
     weights: &'a [f64],
     n_points: usize,
     n_spatial_dims: usize,
+    idx_2d_spec: View2DUnsignedSpec,
 }
 
 impl<'a> UnstructuredPoints<'a> {
-    /// create a new instance
-    pub fn new(
-        positions: ArrayView2<'a, f64>,
-        values: ArrayView2<'a, f64>,
+    // todo: delete me! This is a temporary stop gap to make the transition
+    //       easier
+    pub fn from_contiguous(
+        positions: &'a ArrayView2<'a, f64>,
+        values: &'a ArrayView2<'a, f64>,
         weights: &'a [f64],
     ) -> Result<UnstructuredPoints<'a>, &'static str> {
         let n_spatial_dims = positions.shape()[0];
         let n_points = positions.shape()[1];
-        // TODO: should we place a requirement on the number of spatial_dims?
-        if positions.is_empty() {
-            Err("positions must hold at least n_spatial_dims")
-        } else if positions.strides()[1] != 1 {
-            Err("positions must be contiguous along the fast axis")
-        } else if values.shape()[0] != n_spatial_dims {
-            Err("values must currently have the same number of spatial \
-                dimensions as positions")
-        } else if values.shape()[1] != n_points {
-            Err("values must have the same number of points as positions")
+
+        if n_spatial_dims != values.shape()[0] {
+            Err("n_spatial_dims is inconsistent")
+        } else if n_points != values.shape()[1] {
+            Err("n_points is inconsistent")
+        } else {
+            let Some(pos): Option<&'a [f64]> = positions.as_slice() else {
+                return Err("positions must be contiguous & in standard order");
+            };
+            let Some(vals): Option<&'a [f64]> = values.as_slice() else {
+                return Err("values must be contiguous & in standard order");
+            };
+            Self::new(pos, vals, weights, n_points, None)
+        }
+    }
+
+    /// create a new instance
+    pub fn new(
+        positions: &'a [f64],
+        values: &'a [f64],
+        weights: &'a [f64],
+        n_points: usize,
+        spatial_dim_stride: Option<usize>,
+    ) -> Result<UnstructuredPoints<'a>, &'static str> {
+        let spatial_dim_stride = spatial_dim_stride.unwrap_or(n_points);
+
+        if n_points == 0 {
+            return Err("n_points must be positive");
+        } else if n_points > spatial_dim_stride {
+            return Err("n_points exceeds spatial_dim_stride");
+        } else if values.len() != positions.len() {
+            return Err("values and positions have different lengths");
+        }
+
+        let n_spatial_dims = positions.len() / spatial_dim_stride;
+
+        if positions.len() % spatial_dim_stride != 0 {
+            Err("positions.len() isn't divisible by spatial_dim_stride")
+        } else if n_spatial_dims != 3 {
+            // we can probably relax this in the future
+            Err("for now, we require 3 spatial dimensions")
         } else if weights.len() != n_points {
-            Err("weights must have the same number of points as positions")
+            Err("weights.len() must be n_points")
         } else {
             Ok(Self {
                 positions,
@@ -55,6 +96,10 @@ impl<'a> UnstructuredPoints<'a> {
                 weights,
                 n_points,
                 n_spatial_dims,
+                idx_2d_spec: View2DUnsignedSpec::from_shape_strides(
+                    [n_spatial_dims, n_points],
+                    [spatial_dim_stride, 1],
+                )?,
             })
         }
     }
@@ -206,35 +251,45 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
 fn apply_accum_helper<T: Team, const SUBTRACT: bool>(
     binned_statepack: &mut T::SharedDataHandle<StatePackViewMut>,
     reducer: &impl Reducer,
-    i_a: usize,
-    i_b_start: usize,
-    i_b_stop: usize,
+    idx_a: usize,
+    idx_b_start: usize,
+    idx_b_stop: usize,
     points_a: &UnstructuredPoints,
     points_b: &UnstructuredPoints,
     squared_distance_bin_edges: &impl BinEdges,
     team: &mut T,
 ) {
     let step = team.standard_team_info().n_members_per_team;
+
+    debug_assert_eq!(points_a.n_spatial_dims, 3);
+    let idx_a0 = points_a.idx_2d_spec.map_idx2d_to_1d(0, idx_a);
+    let idx_a1 = points_a.idx_2d_spec.map_idx2d_to_1d(1, idx_a);
+    let idx_a2 = points_a.idx_2d_spec.map_idx2d_to_1d(2, idx_a);
+
     // TODO confirm that step_by doesn't trip up the GPU (maybe compare to while-loop)
-    for nominal_i_b in (i_b_start..i_b_stop).step_by(step) {
+    for nominal_idx_b in (idx_b_start..idx_b_stop).step_by(step) {
         team.collect_pairs_then_apply(
             binned_statepack,
             reducer,
             &|collect_pad: &mut [BinnedDatum], member_id: usize| {
                 assert!(!T::IS_VECTOR_PROCESSOR);
-                let i_b = nominal_i_b + member_id;
+                let idx_b = nominal_idx_b + member_id;
+                let idx_b0 = points_b.idx_2d_spec.map_idx2d_to_1d(0, idx_b);
+                let idx_b1 = points_b.idx_2d_spec.map_idx2d_to_1d(1, idx_b);
+                let idx_b2 = points_b.idx_2d_spec.map_idx2d_to_1d(2, idx_b);
 
                 // calculate the bin-index associated with i_b (if any)
                 // - I'm pretty confident we can write a branch-free version
-                let maybe_bin_index = if i_b >= i_b_stop {
+                let maybe_bin_index = if idx_b >= idx_b_stop {
                     None // can only come up if multiple members per team
                 } else {
                     let distance_squared = squared_diff_norm(
-                        points_a.positions,
-                        points_b.positions,
-                        i_a,
-                        i_b,
-                        points_a.n_spatial_dims,
+                        points_a.positions[idx_a0],
+                        points_a.positions[idx_a1],
+                        points_a.positions[idx_a2],
+                        points_b.positions[idx_b0],
+                        points_b.positions[idx_b1],
+                        points_b.positions[idx_b2],
                     );
                     squared_distance_bin_edges.bin_index(distance_squared)
                 };
@@ -244,18 +299,18 @@ fn apply_accum_helper<T: Team, const SUBTRACT: bool>(
                     let datum = Datum {
                         value: if SUBTRACT {
                             [
-                                points_b.values[[0, i_b]] - points_a.values[[0, i_a]],
-                                points_b.values[[1, i_b]] - points_a.values[[1, i_a]],
-                                points_b.values[[2, i_b]] - points_a.values[[2, i_a]],
+                                points_b.values[idx_b0] - points_a.values[idx_a0],
+                                points_b.values[idx_b1] - points_a.values[idx_a1],
+                                points_b.values[idx_b2] - points_a.values[idx_a2],
                             ]
                         } else {
                             [
-                                points_b.values[[0, i_b]] * points_a.values[[0, i_a]],
-                                points_b.values[[1, i_b]] * points_a.values[[1, i_a]],
-                                points_b.values[[2, i_b]] * points_a.values[[2, i_a]],
+                                points_b.values[idx_b0] * points_a.values[idx_a0],
+                                points_b.values[idx_b1] * points_a.values[idx_a1],
+                                points_b.values[idx_b2] * points_a.values[idx_a2],
                             ]
                         },
-                        weight: points_a.weights[i_a] * points_b.weights[i_b],
+                        weight: points_a.weights[idx_a] * points_b.weights[idx_b],
                     };
 
                     BinnedDatum { bin_index, datum }

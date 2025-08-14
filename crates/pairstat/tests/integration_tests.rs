@@ -101,9 +101,11 @@ impl TestDataWrapper {
 
     pub fn point_props<'a>(&'a self) -> UnstructuredPoints<'a> {
         UnstructuredPoints::new(
-            self.position_list.view(),
-            self.value_list.view(),
+            self.position_list.as_slice().unwrap(),
+            self.value_list.as_slice().unwrap(),
             &self.weight_list,
+            self.position_list.shape()[1],
+            None,
         )
         .unwrap()
     }

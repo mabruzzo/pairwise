@@ -109,6 +109,9 @@ pub fn process_unstructured<'a>(
 
 #[cfg(test)]
 mod tests {
+
+    // at this time, it isn't possible to having mismatching spatial dim
+    /*
     use super::*;
     use crate::AccumulatorBuilder;
     use ndarray::ArrayView2;
@@ -143,4 +146,5 @@ mod tests {
                 .is_err()
         );
     }
+    */
 }
