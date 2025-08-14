@@ -31,8 +31,9 @@ pub struct UnstructuredPoints<'a> {
     positions: &'a [f64],
     values: &'a [f64],
     weights: &'a [f64],
-    n_points: usize,
-    n_spatial_dims: usize,
+    /// specifies layout of positions and values
+    ///
+    /// be aware that `[n_points, n_spatial_dims] = self.idx_2d_spec.clone()`
     idx_2d_spec: View2DUnsignedSpec,
 }
 
@@ -94,14 +95,22 @@ impl<'a> UnstructuredPoints<'a> {
                 positions,
                 values,
                 weights,
-                n_points,
-                n_spatial_dims,
                 idx_2d_spec: View2DUnsignedSpec::from_shape_strides(
                     [n_spatial_dims, n_points],
                     [spatial_dim_stride, 1],
                 )?,
             })
         }
+    }
+
+    #[inline]
+    fn n_spatial_dims(&self) -> usize {
+        self.idx_2d_spec.shape()[0]
+    }
+
+    #[inline]
+    fn n_points(&self) -> usize {
+        self.idx_2d_spec.shape()[1]
     }
 }
 
@@ -141,7 +150,7 @@ impl<'a, R: Reducer, B: BinEdges> TwoPointUnstructured<'a, R, B> {
         //  if points_b is not None, make sure a and b have the same number of
         // spatial dimensions
         if let Some(points_b) = points_b {
-            if points_a.n_spatial_dims != points_b.n_spatial_dims {
+            if points_a.n_spatial_dims() != points_b.n_spatial_dims() {
                 return Err(
                     "points_a and points_b must have the same number of spatial dimensions",
                 );
@@ -182,7 +191,7 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
 
     // we could actually eliminate this method if we really want to
     fn team_loop_bounds(&self, team_id: usize, team_info: &StandardTeamParam) -> (usize, usize) {
-        segment_idx_bounds(self.points_a.n_points, team_id, team_info.n_teams)
+        segment_idx_bounds(self.points_a.n_points(), team_id, team_info.n_teams)
     }
 
     const NESTED_REDUCE: bool = false;
@@ -199,9 +208,9 @@ impl<'a, R: Reducer, B: BinEdges> ReductionSpec for TwoPointUnstructured<'a, R, 
 
         let i_a = team_loop_idx;
         let (i_b_start, i_b_stop) = if self.is_auto {
-            (i_a + 1, self.points_a.n_points)
+            (i_a + 1, self.points_a.n_points())
         } else {
-            (0, self.points_b.n_points)
+            (0, self.points_b.n_points())
         };
 
         match &self.pair_op {
@@ -261,7 +270,7 @@ fn apply_accum_helper<T: Team, const SUBTRACT: bool>(
 ) {
     let step = team.standard_team_info().n_members_per_team;
 
-    debug_assert_eq!(points_a.n_spatial_dims, 3);
+    debug_assert_eq!(points_a.n_spatial_dims(), 3);
     let idx_a0 = points_a.idx_2d_spec.map_idx2d_to_1d(0, idx_a);
     let idx_a1 = points_a.idx_2d_spec.map_idx2d_to_1d(1, idx_a);
     let idx_a2 = points_a.idx_2d_spec.map_idx2d_to_1d(2, idx_a);

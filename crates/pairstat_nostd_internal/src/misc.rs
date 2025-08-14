@@ -73,6 +73,7 @@ pub struct View2DUnsignedSpec {
 
 impl View2DUnsignedSpec {
     /// Create a contiguous-in-memory instance from shape alone
+    #[allow(dead_code)] // <- maybe we should be deleting this method?
     pub fn from_shape_contiguous(shape: [usize; 2]) -> Result<Self, &'static str> {
         check_shape(&shape)?;
         let strides = [shape[1], 1];
@@ -88,6 +89,7 @@ impl View2DUnsignedSpec {
         Ok(Self { shape, strides })
     }
 
+    #[inline]
     pub fn shape(&self) -> &[usize; 2] {
         &self.shape
     }
