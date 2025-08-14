@@ -4,7 +4,6 @@ use crate::parallel::{BinnedDatum, ReductionSpec, StandardTeamParam, Team};
 use crate::reducer::{Datum, Reducer};
 use crate::state::StatePackViewMut;
 use crate::twopoint::common::PairOperation;
-use ndarray::ArrayView2;
 
 /// calculate the squared euclidean norm for two (mathematical) vectors
 fn squared_diff_norm(v1_i: f64, v1_j: f64, v1_k: f64, v2_i: f64, v2_j: f64, v2_k: f64) -> f64 {
@@ -38,31 +37,6 @@ pub struct UnstructuredPoints<'a> {
 }
 
 impl<'a> UnstructuredPoints<'a> {
-    // todo: delete me! This is a temporary stop gap to make the transition
-    //       easier
-    pub fn from_contiguous(
-        positions: &'a ArrayView2<'a, f64>,
-        values: &'a ArrayView2<'a, f64>,
-        weights: &'a [f64],
-    ) -> Result<UnstructuredPoints<'a>, &'static str> {
-        let n_spatial_dims = positions.shape()[0];
-        let n_points = positions.shape()[1];
-
-        if n_spatial_dims != values.shape()[0] {
-            Err("n_spatial_dims is inconsistent")
-        } else if n_points != values.shape()[1] {
-            Err("n_points is inconsistent")
-        } else {
-            let Some(pos): Option<&'a [f64]> = positions.as_slice() else {
-                return Err("positions must be contiguous & in standard order");
-            };
-            let Some(vals): Option<&'a [f64]> = values.as_slice() else {
-                return Err("values must be contiguous & in standard order");
-            };
-            Self::new(pos, vals, weights, n_points, None)
-        }
-    }
-
     /// create a new instance
     pub fn new(
         positions: &'a [f64],
