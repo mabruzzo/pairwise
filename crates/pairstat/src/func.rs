@@ -127,7 +127,7 @@ mod tests {
         let points_a = UnstructuredPoints::new(
             ArrayView2::from_shape((3, 2), &positions).unwrap(),
             ArrayView2::from_shape((3, 2), &values).unwrap(),
-            None,
+            &[1.0; 2],
         )
         .unwrap();
 
@@ -135,20 +135,7 @@ mod tests {
         let points_b = UnstructuredPoints::new(
             ArrayView2::from_shape((2, 3), &positions).unwrap(),
             ArrayView2::from_shape((2, 3), &values).unwrap(),
-            None,
-        )
-        .unwrap();
-        assert!(
-            process_unstructured(&mut accum, points_a.clone(), Some(points_b), &RuntimeSpec)
-                .is_err()
-        );
-
-        // should fail if 1 points object provides weights an the other doesn't
-        let weights = [1.0, 0.0];
-        let points_b = UnstructuredPoints::new(
-            ArrayView2::from_shape((3, 2), &positions).unwrap(),
-            ArrayView2::from_shape((3, 2), &values).unwrap(),
-            Some(&weights),
+            &[1.0; 3],
         )
         .unwrap();
         assert!(

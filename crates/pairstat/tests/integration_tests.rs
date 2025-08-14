@@ -103,7 +103,7 @@ impl TestDataWrapper {
         UnstructuredPoints::new(
             self.position_list.view(),
             self.value_list.view(),
-            Some(&self.weight_list),
+            &self.weight_list,
         )
         .unwrap()
     }

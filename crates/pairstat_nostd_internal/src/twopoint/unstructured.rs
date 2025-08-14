@@ -21,9 +21,8 @@ use ndarray::ArrayView2;
 #[cfg_attr(feature = "fmt", derive(Debug))]
 pub struct UnstructuredPoints<'a> {
     positions: ArrayView2<'a, f64>,
-    // TODO allow values to have a different dimensionality than positions
     values: ArrayView2<'a, f64>,
-    weights: Option<&'a [f64]>,
+    weights: &'a [f64],
     n_points: usize,
     n_spatial_dims: usize,
 }
@@ -33,7 +32,7 @@ impl<'a> UnstructuredPoints<'a> {
     pub fn new(
         positions: ArrayView2<'a, f64>,
         values: ArrayView2<'a, f64>,
-        weights: Option<&'a [f64]>,
+        weights: &'a [f64],
     ) -> Result<UnstructuredPoints<'a>, &'static str> {
         let n_spatial_dims = positions.shape()[0];
         let n_points = positions.shape()[1];
@@ -43,12 +42,11 @@ impl<'a> UnstructuredPoints<'a> {
         } else if positions.strides()[1] != 1 {
             Err("positions must be contiguous along the fast axis")
         } else if values.shape()[0] != n_spatial_dims {
-            // TODO: in the future, we will allow values to be 1D (i.e. a scalar)
             Err("values must currently have the same number of spatial \
                 dimensions as positions")
         } else if values.shape()[1] != n_points {
             Err("values must have the same number of points as positions")
-        } else if weights.is_some_and(|w| w.len() != n_points) {
+        } else if weights.len() != n_points {
             Err("weights must have the same number of points as positions")
         } else {
             Ok(Self {
@@ -58,15 +56,6 @@ impl<'a> UnstructuredPoints<'a> {
                 n_points,
                 n_spatial_dims,
             })
-        }
-    }
-
-    /// If no weights are provided, returns 1.0, i.e., weights are just counts.
-    pub fn get_weight(&self, idx: usize) -> f64 {
-        if let Some(weights) = self.weights {
-            weights[idx]
-        } else {
-            1.0
         }
     }
 }
@@ -110,11 +99,6 @@ impl<'a, R: Reducer, B: BinEdges> TwoPointUnstructured<'a, R, B> {
             if points_a.n_spatial_dims != points_b.n_spatial_dims {
                 return Err(
                     "points_a and points_b must have the same number of spatial dimensions",
-                );
-            } else if points_a.weights.is_some() != points_b.weights.is_some() {
-                return Err(
-                    "points_a and points_b must both provide weights or neither \
-                    should provide weights",
                 );
             }
 
@@ -271,7 +255,7 @@ fn apply_accum_helper<T: Team, const SUBTRACT: bool>(
                                 points_b.values[[2, i_b]] * points_a.values[[2, i_a]],
                             ]
                         },
-                        weight: points_a.get_weight(i_a) * points_b.get_weight(i_b),
+                        weight: points_a.weights[i_a] * points_b.weights[i_b],
                     };
 
                     BinnedDatum { bin_index, datum }
