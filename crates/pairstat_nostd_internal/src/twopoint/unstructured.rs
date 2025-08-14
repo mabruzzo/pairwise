@@ -306,3 +306,92 @@ fn apply_accum_helper<T: Team, const SUBTRACT: bool>(
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use core::fmt::Display;
+
+    use super::*;
+
+    fn assert_is_err_contains<T, E: Display>(rslt: &Result<T, E>, text: &str) {
+        let Err(e) = rslt else {
+            panic!("result is not an error");
+        };
+        let err_string = e.to_string();
+        if !err_string.contains(text) {
+            panic!(
+                "error doesn't expand to message containing \"{text}\". The \
+                message reads:\n> {err_string}",
+            );
+        }
+    }
+
+    // a sample array to illustrate what a strided array might look like
+    #[rustfmt::skip]
+    const SAMPLE_STRIDED_ARR: [f64; 18] = [
+        //               elem-0,   elem-1,   elem-2,   elem-3,   elem-4,   padding,
+        /* axis 0: */       0.0,      1.0,      2.0,      3.0,      4.0,  f64::NAN,
+        /* axis 1: */       0.0,      1.0,      2.0,      3.0,      4.0,  f64::NAN,
+        /* axis 2: */       0.0,      1.0,      2.0,      3.0,      4.0,  f64::NAN,
+    ];
+
+    #[test]
+    fn simple_points_success() {
+        let pos = [1.0; 18];
+        let vel = [0.0; 18];
+        let weights = [1.0; 6];
+        let _ = UnstructuredPoints::new(&pos, &vel, &weights, 6, None).unwrap();
+    }
+
+    #[test]
+    fn strided_points_success() {
+        let pos = &SAMPLE_STRIDED_ARR;
+        let vel = &SAMPLE_STRIDED_ARR;
+        let weights = [1.0; 5];
+        let _ = UnstructuredPoints::new(pos, vel, &weights, 5, Some(6)).unwrap();
+    }
+
+    #[test]
+    fn no_points() {
+        let rslt = UnstructuredPoints::new(&[], &[], &[], 0, None);
+        assert_is_err_contains(&rslt, "be positive");
+    }
+
+    #[test]
+    fn pos_vel_mismatch() {
+        let pos = [1.0; 18];
+        let vel = [0.0; 15];
+        let weights = [1.0; 6];
+        let rslt = UnstructuredPoints::new(&pos, &vel, &weights, 6, None);
+        assert_is_err_contains(&rslt, "different lengths");
+    }
+
+    #[test]
+    fn weights_mismatch() {
+        let pos = [1.0; 18];
+        let vel = [0.0; 18];
+        let weights = [1.0; 5];
+        let rslt = UnstructuredPoints::new(&pos, &vel, &weights, 6, None);
+        assert_is_err_contains(&rslt, "must be n_points");
+    }
+
+    #[test]
+    fn not_evenly_divisible() {
+        let pos = [1.0; 19];
+        let vel = [0.0; 19];
+        let weights = [1.0; 6];
+        let rslt = UnstructuredPoints::new(&pos, &vel, &weights, 6, None);
+        assert_is_err_contains(&rslt, "divisible");
+    }
+
+    #[test]
+    fn npoints_stride_mismatch() {
+        let pos = &SAMPLE_STRIDED_ARR;
+        let vel = &SAMPLE_STRIDED_ARR;
+        let weights = [1.0; 6];
+        // in this case, we reverse n_points and spatial_dim_stride
+        let rslt = UnstructuredPoints::new(pos, vel, &weights, 6, Some(5));
+        assert_is_err_contains(&rslt, "exceeds spatial_dim_stride");
+    }
+}
