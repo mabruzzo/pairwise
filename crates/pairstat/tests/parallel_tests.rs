@@ -162,7 +162,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                     StreamKind::Chunked => reducer_mean_chunked(stream, f, &reducer, statepack),
                     StreamKind::Unordered => reducer_mean_unordered(stream, f, &reducer, statepack),
                 }
-                let out = get_output(&reducer, statepack);
+                let out = get_output(&reducer, &statepack.as_view());
                 Ok(out)
             },
         ),
@@ -209,7 +209,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                         );
                     }
                 }
-                let out = get_output(&reducer, binned_statepack);
+                let out = get_output(&reducer, &binned_statepack.as_view());
                 Ok(out)
             },
         ),
@@ -271,7 +271,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                         );
                     }
                 }
-                let out = get_output(&reducer, binned_statepack);
+                let out = get_output(&reducer, &binned_statepack.as_view());
                 Ok(out)
             },
         ),
@@ -313,7 +313,7 @@ fn build_registry(f: QuadraticPolynomial) -> HashMap<String, BoxedFunc> {
                     }
                 };
                 if result.is_ok() {
-                    let out = get_output(&reducer, binned_statepack);
+                    let out = get_output(&reducer, &binned_statepack.as_view());
                     Ok(out)
                 } else {
                     Err(WrapperError::Failure)

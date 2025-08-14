@@ -364,7 +364,7 @@ impl Idx3DOffsetSeq {
                 && (block_b.start_idx_global_offset[1] < block_a.start_idx_global_offset[1]))
             || ((block_b.start_idx_global_offset[0] == block_a.start_idx_global_offset[0])
                 && (block_b.start_idx_global_offset[1] == block_a.start_idx_global_offset[1])
-                && (block_b.start_idx_global_offset[2] <= block_a.start_idx_global_offset[2]));
+                && (block_b.start_idx_global_offset[2] < block_a.start_idx_global_offset[2]));
         if is_bad {
             Err("reverse the argument order OR try to use new_auto_iter")
         } else {

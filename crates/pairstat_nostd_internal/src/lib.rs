@@ -257,7 +257,7 @@ pub use parallel::{
     BinnedDatum, Executor, ReductionSpec, StandardTeamParam, Team,
     fill_single_team_binned_statepack,
 };
-pub use reduce_utils::reset_full_statepack;
+pub use reduce_utils::{merge_full_statepacks, reset_full_statepack};
 // TODO: before 1.0, consider whether we really want to expose all of the
 //       following constructs... (especially Datum)
 pub use reducer::{

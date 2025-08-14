@@ -4,7 +4,7 @@ use ndarray::{ArrayView1, ArrayView2, ArrayViewMut2, Axis};
 
 use pairstat_nostd_internal::{
     AccumStateView, Datum, OutputDescr, Reducer, ScalarHistogram, ScalarMean, ScalarizeOp,
-    StatePackViewMut,
+    StatePackView,
 };
 
 /// to be used when computing the "astronomer's first order structure function"
@@ -35,19 +35,9 @@ pub type EuclideanNormMean = ScalarMean<EuclideanNorm>;
 ///       Before the 1.0 release, we should either move this to a private
 ///       testing_helpers crate OR we should explicitly decide to make this
 ///       part of the public API.
-/// compute the output quantities from an accumulator's state properties and
-/// return the result in a HashMap.
-///
-/// # Notes
-/// This is primarily used for testing.
-///
-/// TODO: I'm not sure I really want this to be a part of the standard API.
-///       Before the 1.0 release, we should either move this to a private
-///       testing_helpers crate OR we should explicitly decide to make this
-///       part of the public API.
 pub fn get_output(
     reducer: &impl Reducer,
-    statepack: &StatePackViewMut,
+    statepack: &StatePackView,
 ) -> HashMap<&'static str, Vec<f64>> {
     get_output_from_statepack_array(reducer, &statepack.as_array_view())
 }
