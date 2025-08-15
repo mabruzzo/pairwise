@@ -90,6 +90,11 @@ impl View2DUnsignedSpec {
     }
 
     #[inline]
+    pub fn strides(&self) -> &[usize; 2] {
+        &self.strides
+    }
+
+    #[inline]
     pub fn shape(&self) -> &[usize; 2] {
         &self.shape
     }

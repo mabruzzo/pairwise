@@ -59,9 +59,12 @@
 //!       `StatePackList`: you wouldn having mutable & immutable slices that
 //!       include overlapping memory regions (this isn't allowed in safe or
 //!       unsafe Rust)
-
-use core::ops::{Index, IndexMut};
-use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1, ArrayViewMut2, Axis};
+use crate::misc::View2DUnsignedSpec;
+use core::{
+    num::NonZeroUsize,
+    ops::{Index, IndexMut},
+};
+use ndarray::{ArrayView2, ArrayViewMut2, Axis};
 
 pub struct AccumStateView<'a> {
     // when we refactor this to stop wrapping ArrayView1, we really *need* to
@@ -77,29 +80,26 @@ pub struct AccumStateView<'a> {
     //
     // We probably need to use `core::marker::PhantomData` to probably track
     // lifetimes (see https://doc.rust-lang.org/nomicon/phantom-data.html)
-    data: ArrayView1<'a, f64>,
+    len: NonZeroUsize,
+    stride: usize,
+    data: &'a [f64],
 }
 
 impl<'a> AccumStateView<'a> {
-    // todo: remove this method before a release!
-    pub fn from_array_view(array_view: ArrayView1<'a, f64>) -> Self {
-        Self { data: array_view }
-    }
-
-    pub fn from_contiguous_slice(state: &'a [f64]) -> Self {
-        Self {
-            data: ArrayView1::from_shape([state.len()], state).unwrap(),
-        }
+    /// Private constructor used by other types in this module
+    fn internal_new(len: NonZeroUsize, stride: usize, data: &'a [f64]) -> Self {
+        debug_assert!(((len.get() - 1) * stride) < data.len());
+        Self { len, stride, data }
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.data.len()
+        self.len.get()
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
+        false
     }
 }
 
@@ -108,7 +108,7 @@ impl<'a> Index<usize> for AccumStateView<'a> {
 
     #[inline(always)]
     fn index(&self, index: usize) -> &Self::Output {
-        self.data.index(index)
+        self.data.index(index * self.stride)
     }
 }
 
@@ -126,24 +126,32 @@ pub struct AccumStateViewMut<'a> {
     //
     // We probably need to use `core::marker::PhantomData` to probably track
     // lifetimes (see https://doc.rust-lang.org/nomicon/phantom-data.html)
-    data: ArrayViewMut1<'a, f64>,
+    len: NonZeroUsize,
+    stride: usize,
+    data: &'a mut [f64],
 }
 
 impl<'a> AccumStateViewMut<'a> {
-    // todo: remove this method before a release!
-    pub fn from_array_view(array_view: ArrayViewMut1<'a, f64>) -> Self {
-        Self { data: array_view }
+    /// Private constructor used by other types in this module
+    fn internal_new(len: NonZeroUsize, stride: usize, data: &'a mut [f64]) -> Self {
+        debug_assert!(((len.get() - 1) * stride) < data.len());
+        Self { len, stride, data }
     }
 
-    pub fn from_contiguous_slice(state: &'a mut [f64]) -> Self {
-        Self {
-            data: ArrayViewMut1::from_shape([state.len()], state).unwrap(),
-        }
+    // consider returning an option rather than panicing
+    pub fn from_contiguous_slice(data: &'a mut [f64]) -> Self {
+        let Some(len) = NonZeroUsize::new(data.len()) else {
+            panic!("can't construct an empty AccumStateViewMut");
+        };
+        let stride = 1;
+        Self { len, stride, data }
     }
 
     pub fn as_view<'b>(&'b self) -> AccumStateView<'b> {
         AccumStateView {
-            data: self.data.view(),
+            len: self.len,
+            stride: self.stride,
+            data: self.data,
         }
     }
 
@@ -155,12 +163,12 @@ impl<'a> AccumStateViewMut<'a> {
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.data.len()
+        self.len.get()
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
+        false
     }
 }
 
@@ -169,14 +177,14 @@ impl<'a> Index<usize> for AccumStateViewMut<'a> {
 
     #[inline(always)]
     fn index(&self, index: usize) -> &Self::Output {
-        self.data.index(index)
+        self.data.index(index * self.stride)
     }
 }
 
 impl<'a> IndexMut<usize> for AccumStateViewMut<'a> {
     #[inline(always)]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        self.data.index_mut(index)
+        self.data.index_mut(index * self.stride)
     }
 }
 
@@ -188,12 +196,16 @@ impl<'a> IndexMut<usize> for AccumStateViewMut<'a> {
 pub struct StatePackView<'a> {
     // see StatePackViewMut<'a> for refactoring notes
     data: ArrayView2<'a, f64>,
+    idx_spec: View2DUnsignedSpec,
 }
 
 impl<'a> StatePackView<'a> {
     pub fn from_slice(n_state: usize, state_size: usize, xs: &'a [f64]) -> Self {
+        assert!(n_state > 0);
+        assert!(state_size > 0);
         Self {
             data: ArrayView2::from_shape([state_size, n_state], xs).unwrap(),
+            idx_spec: View2DUnsignedSpec::from_shape_contiguous([state_size, n_state]).unwrap(),
         }
     }
 
@@ -204,15 +216,20 @@ impl<'a> StatePackView<'a> {
 
     #[inline]
     pub fn get_state(&self, i: usize) -> AccumStateView {
-        AccumStateView::from_array_view(self.data.index_axis(Axis(1), i))
+        let start = self.idx_spec.map_idx2d_to_1d(0, i);
+        let len = unsafe { NonZeroUsize::new_unchecked(self.state_size()) };
+        let data = self.data.as_slice().expect("should never panic!");
+        AccumStateView::internal_new(len, self.idx_spec.strides()[0], &data[start..])
     }
 
+    #[inline]
     pub fn state_size(&self) -> usize {
-        self.data.len_of(Axis(0))
+        self.idx_spec.shape()[0]
     }
 
+    #[inline]
     pub fn n_states(&self) -> usize {
-        self.data.len_of(Axis(1))
+        self.idx_spec.shape()[1]
     }
 }
 
@@ -267,17 +284,16 @@ pub struct StatePackViewMut<'a> {
     // scenario, but we should review
     // https://doc.rust-lang.org/nomicon/phantom-data.html
     data: ArrayViewMut2<'a, f64>,
+    idx_spec: View2DUnsignedSpec,
 }
 
 impl<'a> StatePackViewMut<'a> {
-    // todo: remove this method before our release
-    pub fn from_array_view(array_view: ArrayViewMut2<'a, f64>) -> Self {
-        Self { data: array_view }
-    }
-
     pub fn from_slice(n_state: usize, state_size: usize, xs: &'a mut [f64]) -> Self {
+        assert!(n_state > 0);
+        assert!(state_size > 0);
         Self {
             data: ArrayViewMut2::from_shape([state_size, n_state], xs).unwrap(),
+            idx_spec: View2DUnsignedSpec::from_shape_contiguous([state_size, n_state]).unwrap(),
         }
     }
 
@@ -294,17 +310,24 @@ impl<'a> StatePackViewMut<'a> {
     pub fn as_view<'b>(&'b self) -> StatePackView<'b> {
         StatePackView {
             data: self.data.view(),
+            idx_spec: self.idx_spec.clone(),
         }
     }
 
     #[inline]
     pub fn get_state(&self, i: usize) -> AccumStateView {
-        AccumStateView::from_array_view(self.data.index_axis(Axis(1), i))
+        let start = self.idx_spec.map_idx2d_to_1d(0, i);
+        let len = unsafe { NonZeroUsize::new_unchecked(self.state_size()) };
+        let data = self.data.as_slice().expect("should never panic!");
+        AccumStateView::internal_new(len, self.idx_spec.strides()[0], &data[start..])
     }
 
     #[inline]
     pub fn get_state_mut(&mut self, i: usize) -> AccumStateViewMut {
-        AccumStateViewMut::from_array_view(self.data.index_axis_mut(Axis(1), i))
+        let start = self.idx_spec.map_idx2d_to_1d(0, i);
+        let len = unsafe { NonZeroUsize::new_unchecked(self.state_size()) };
+        let data = self.data.as_slice_mut().expect("should never panic!");
+        AccumStateViewMut::internal_new(len, self.idx_spec.strides()[0], &mut data[start..])
     }
 
     pub fn state_size(&self) -> usize {
@@ -318,10 +341,6 @@ impl<'a> StatePackViewMut<'a> {
     pub fn total_size(&self) -> usize {
         self.state_size() * self.n_states()
     }
-
-    // we probably want to add something like get_pair_disjoint_mut, which would
-    // would be inspired by the slice type's more general get_disjoint_mut
-    // method
 }
 
 /*
