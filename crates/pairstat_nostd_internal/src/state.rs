@@ -324,6 +324,7 @@ impl<'a> StatePackViewMut<'a> {
     // method
 }
 
+/*
 // keep in mind: we have explicitly reversed the axes order compared to [`StatePackViewMut`]
 pub struct CollatedStatePackViewMut<'a> {
     data: &'a mut [f64],
@@ -392,3 +393,4 @@ impl<'a> CollatedStatePackViewMut<'a> {
         ]
     }
 }
+*/
