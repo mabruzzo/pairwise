@@ -1,4 +1,7 @@
-use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{
+    AxisScale, BatchSize, BenchmarkId, Criterion, PlotConfiguration, Throughput, criterion_group,
+    criterion_main,
+};
 
 use pairstat::{
     Accumulator, AccumulatorBuilder, RuntimeSpec, process_cartesian, process_unstructured,
@@ -12,7 +15,10 @@ fn help_setup_criterion_benchmark(
     prefix: &str,
     kind: &str,
     input_array: &[usize],
+    single_tile: bool,
 ) {
+    let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
+
     let setup_fn = || -> Accumulator {
         AccumulatorBuilder::new()
             .calc_kind(kind)
@@ -26,23 +32,38 @@ fn help_setup_criterion_benchmark(
     name.push_str(kind);
 
     let mut group = c.benchmark_group(name);
+    group.plot_config(plot_config);
+
     for i in input_array.iter().cloned() {
         let n_elements = (i as u64).pow(3);
-        let test_data = TestDataWrapper::from_random([i, i, i], [5.0, 5., 5.0], 2525365464_u64);
+        let shape = [i, i, i];
+        let dims = [5.0, 5.0, 5.0];
+        let data = TestDataWrapper::from_random(shape, dims, 2525365464_u64);
 
-        group.throughput(Throughput::Elements(n_elements));
+        let (n_pairs, data_other) = if single_tile {
+            let n_pairs = n_elements * (n_elements - 1);
+            (n_pairs, None)
+        } else {
+            let n_pairs = n_elements * n_elements;
+            let data_other = Some(TestDataWrapper::from_random(shape, dims, 57345783_u64));
+            (n_pairs, data_other)
+        };
+
+        let data_pair = (data, data_other.as_ref());
+
+        group.throughput(Throughput::Elements(n_pairs));
         group.bench_with_input(
             BenchmarkId::new("Cartesian", i),
-            &test_data,
-            |b, test_data: &TestDataWrapper| {
+            &data_pair,
+            |b, data_pair: &(TestDataWrapper, Option<&TestDataWrapper>)| {
                 b.iter_batched_ref(
                     setup_fn,
                     |accum: &mut Accumulator| {
                         process_cartesian(
                             accum,
-                            test_data.cartesian_block(),
-                            None,
-                            test_data.cell_width(),
+                            data_pair.0.cartesian_block(),
+                            data_pair.1.map(|t: &TestDataWrapper| t.cartesian_block()),
+                            data_pair.0.cell_width(),
                             &RuntimeSpec,
                         )
                     },
@@ -54,12 +75,17 @@ fn help_setup_criterion_benchmark(
         // add UnstructuredPoints
         group.bench_with_input(
             BenchmarkId::new("Unstructured", i),
-            &test_data,
-            |b, test_data: &TestDataWrapper| {
+            &data_pair,
+            |b, data_pair: &(TestDataWrapper, Option<&TestDataWrapper>)| {
                 b.iter_batched_ref(
                     setup_fn,
                     |accum: &mut Accumulator| {
-                        process_unstructured(accum, test_data.point_props(), None, &RuntimeSpec)
+                        process_unstructured(
+                            accum,
+                            data_pair.0.point_props(),
+                            data_pair.1.map(|t: &TestDataWrapper| t.point_props()),
+                            &RuntimeSpec,
+                        )
                     },
                     BatchSize::LargeInput, // we may be able to use BatchSize::SmallInput
                 )
@@ -71,8 +97,11 @@ fn help_setup_criterion_benchmark(
 
 fn parameterized_benchmark(c: &mut Criterion) {
     let params = &[4, 5, 6, 7, 8];
-    help_setup_criterion_benchmark(c, "parameterized", "astro_sf1", params);
-    help_setup_criterion_benchmark(c, "parameterized", "2pcf", params);
+    help_setup_criterion_benchmark(c, "1tile", "astro_sf1", params, true);
+    help_setup_criterion_benchmark(c, "1tile", "2pcf", params, true);
+    let params = &[4, 5, 6];
+    help_setup_criterion_benchmark(c, "2tile", "astro_sf1", params, false);
+    help_setup_criterion_benchmark(c, "2tile", "2pcf", params, false);
 }
 
 criterion_group!(benches, parameterized_benchmark);
