@@ -92,11 +92,6 @@ impl<'a> AccumStateView<'a> {
         }
     }
 
-    // todo: remove this method before a release!
-    pub fn as_array_view(&self) -> ArrayView1<f64> {
-        self.data.view()
-    }
-
     #[inline]
     pub fn len(&self) -> usize {
         self.data.len()
