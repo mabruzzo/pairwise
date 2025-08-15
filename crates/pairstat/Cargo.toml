@@ -20,3 +20,10 @@ ndarray = { version = "0.16", default-features = false }
 ndarray = { version = "0.16", default-features = true }
 rand.version = "0.9.1"
 rand_xoshiro = { version = "0.7.0" }
+pairstat_test = { path = "../pairstat_test" }
+criterion = "0.7"
+
+
+[[bench]]
+name = "my_benchmark"
+harness = false

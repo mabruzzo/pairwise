@@ -1,6 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["crates/pairstat", "crates/pairstat_nostd_internal"]
+members = [
+    "crates/pairstat",
+    "crates/pairstat_nostd_internal",
+    "crates/pairstat_test",
+]
 
 [workspace.package]
 authors = ["Matthew W. Abruzzo <matthewabruzzo@gmail.com>", "Adam J. Wheeler"]
