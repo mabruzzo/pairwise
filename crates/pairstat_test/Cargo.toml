@@ -1,0 +1,14 @@
+[package]
+name = "pairstat_test"
+version = "0.1.0"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+pairstat_nostd_internal = { path = "../pairstat_nostd_internal" }
+ndarray = { version = "0.16", default-features = true }
+rand.version = "0.9.1"
+rand_xoshiro = { version = "0.7.0" }

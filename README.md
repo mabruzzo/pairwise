@@ -8,9 +8,6 @@ An experimental rust package that provides low-level functionality for computing
 Ideally, the goal is to replace the C++ code within [pairstat](https://github.com/mabruzzo/pairstat) python package with bindings to this crate (this will coincide an overhaul to the API).
 
 
-> [!NOTE]
-> The remainder of this document describes some assorted ideas. They probably need to be distributed within actual documentation before we make a formal release.
-
 # Generating Documentation Locally
 
 After cloning the repository, navigate to the root of the repository and invoke
@@ -20,6 +17,19 @@ $ cargo doc
 ```
 
 You can find the generated documentation within **target/doc**. You can manually open the docs for the ``pairstat`` crate, **OR**, you can invoke ``cargo doc --open``.
+
+# Running the Benchmarks
+
+You can run the benchmarks by navigating to the root of the repository and invoking
+
+```
+$ cargo benchmark
+```
+
+You can find the generated benchmark results within **target/criterion**.
+
+> [!NOTE]
+> The remainder of this document describes some assorted ideas. They probably need to be distributed within actual documentation before we make a formal release.
 
 
 # Design Considerations
