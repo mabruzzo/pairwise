@@ -103,6 +103,23 @@ impl View2DUnsignedSpec {
     pub fn map_idx2d_to_1d(&self, iy: usize, ix: usize) -> usize {
         iy * self.strides[0] + ix
     }
+
+    /// the number of elements a slice must have to be described by `&self`
+    ///
+    /// This method is primarily intended for error checks.
+    ///
+    /// In more detail, the number of elements that a given instance,
+    /// `idx_spec`, supports accessing with 2D indices is given by
+    /// `idx_spec.shape().iter().product()`. If `idx_spec` describes a fully
+    /// contiguous 2D array, that value is also returned by this method. While
+    /// this type _does_ require the fast axis (i.e. axis-1) to be contiguous,
+    /// it provides flexibility for the other axes. When `idx_spec` doesn't
+    /// describe a fully contiguous array, the value that this method returns
+    /// will exceed `idx_spec.shape().iter().product()`.
+    pub fn required_length(&self) -> usize {
+        let max_idx_1d = self.map_idx2d_to_1d(self.shape[0] - 1, self.shape[1] - 1);
+        max_idx_1d + 1
+    }
 }
 
 /// View3DSpec specifies how a "3D" array is laid out in memory.
