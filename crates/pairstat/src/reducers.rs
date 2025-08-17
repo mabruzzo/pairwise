@@ -38,7 +38,12 @@ pub fn get_output(
     reducer: &impl Reducer,
     statepack: &StatePackView,
 ) -> HashMap<&'static str, Vec<f64>> {
-    get_output_from_statepack_array(reducer, &statepack.as_array_view())
+    let tmp = ArrayView2::from_shape(
+        [statepack.state_size(), statepack.n_states()],
+        statepack.as_slice(),
+    )
+    .unwrap();
+    get_output_from_statepack_array(reducer, &tmp)
 }
 
 // todo: figure out how to remove me before the first release

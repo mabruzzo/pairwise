@@ -64,7 +64,6 @@ use core::{
     num::NonZeroUsize,
     ops::{Index, IndexMut},
 };
-use ndarray::{ArrayView2, ArrayViewMut2};
 
 pub struct AccumStateView<'a> {
     // when we refactor this to stop wrapping ArrayView1, we really *need* to
@@ -210,13 +209,12 @@ impl<'a> StatePackView<'a> {
         Self { data, idx_spec }
     }
 
-    // todo: remove this method before our release
-    pub fn as_array_view(&self) -> ArrayView2<f64> {
-        ArrayView2::from_shape([self.state_size(), self.n_states()], self.data).unwrap()
+    pub fn as_slice(&self) -> &[f64] {
+        &self.data
     }
 
     #[inline]
-    pub fn get_state(&self, i: usize) -> AccumStateView {
+    pub fn get_state(&self, i: usize) -> AccumStateView<'_> {
         let start = self.idx_spec.map_idx2d_to_1d(0, i);
         let len = unsafe { NonZeroUsize::new_unchecked(self.state_size()) };
         AccumStateView::internal_new(len, self.idx_spec.strides()[0], &self.data[start..])
@@ -298,14 +296,12 @@ impl<'a> StatePackViewMut<'a> {
         Self { data, idx_spec }
     }
 
-    // todo: remove this method before our release
-    pub fn as_array_view(&self) -> ArrayView2<f64> {
-        ArrayView2::from_shape([self.state_size(), self.n_states()], self.data).unwrap()
+    pub fn as_slice_mut(&mut self) -> &mut [f64] {
+        &mut self.data
     }
 
-    // todo: remove this method before our release
-    pub fn as_array_view_mut(&mut self) -> ArrayViewMut2<f64> {
-        ArrayViewMut2::from_shape([self.state_size(), self.n_states()], self.data).unwrap()
+    pub fn as_slice(&self) -> &[f64] {
+        &self.data
     }
 
     pub fn as_view<'b>(&'b self) -> StatePackView<'b> {
@@ -316,14 +312,14 @@ impl<'a> StatePackViewMut<'a> {
     }
 
     #[inline]
-    pub fn get_state(&self, i: usize) -> AccumStateView {
+    pub fn get_state(&self, i: usize) -> AccumStateView<'_> {
         let start = self.idx_spec.map_idx2d_to_1d(0, i);
         let len = unsafe { NonZeroUsize::new_unchecked(self.state_size()) };
         AccumStateView::internal_new(len, self.idx_spec.strides()[0], &self.data[start..])
     }
 
     #[inline]
-    pub fn get_state_mut(&mut self, i: usize) -> AccumStateViewMut {
+    pub fn get_state_mut(&mut self, i: usize) -> AccumStateViewMut<'_> {
         let start = self.idx_spec.map_idx2d_to_1d(0, i);
         let len = unsafe { NonZeroUsize::new_unchecked(self.state_size()) };
         AccumStateViewMut::internal_new(len, self.idx_spec.strides()[0], &mut self.data[start..])
