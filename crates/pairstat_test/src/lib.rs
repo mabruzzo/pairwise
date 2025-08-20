@@ -4,10 +4,6 @@ use rand::distr::{Distribution, Uniform};
 use rand_xoshiro::Xoshiro256PlusPlus;
 use rand_xoshiro::rand_core::SeedableRng;
 
-// it may be better to specify things in terms of CartesianBlocks and then
-// to generate PointProp instances from CartesianBlocks. (In fact, we may wish
-// to consider adding that to the main API -- there are some clear use-cases)
-
 // this is used to compare operations with CartesianBlock and
 // UnstructuredPoints
 pub struct TestDataWrapper {
@@ -25,6 +21,8 @@ pub struct TestDataWrapper {
 
 impl TestDataWrapper {
     /// constructs an instance using a set of points with integer positions
+    /// Uses the smallest possible bounding CartesianBlock with weight 0
+    /// for missing points.
     pub fn from_integer_position_points(
         positions: ArrayView2<i32>,
         values: ArrayView2<f64>,
